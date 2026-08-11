@@ -309,10 +309,11 @@ def build_content(T):
         my += 22
         s.append(dot(px + 24, my + 18, 2.6, T["accent2"]))
         s.append(text(px + 36, my + 22, line, 10.5, T["t3"], w=400))
-    # buttons
-    by = 764
+    # buttons — click-through pairs to the Agent detail screen (run history + logs · ISI-2162 · screen 11)
+    by = 758
     s.append(rect(px + 20, by, pw - 40, 40, T["accent"], rx=9))
-    s.append(text(px + pw / 2, by + 25, "Open agent detail  →", 13, "#fff", w=600, anchor="middle"))
+    s.append(text(px + pw / 2, by + 25, "Open agent detail  ·  runs + logs  →", 12.5, "#fff", w=600, anchor="middle"))
+    s.append(text(px + pw / 2, by + 54, "run history · tool-call · LLM · build · traces", 10, T["t3"], w=400, anchor="middle"))
 
     return "".join(s)
 

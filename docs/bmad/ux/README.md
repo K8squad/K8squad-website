@@ -86,6 +86,52 @@ paused**) as a **dot + label** (a11y unchanged), the agent's **runtime type** ba
 credential ref, current run, and the data provenance: **Team / Agent / Role CRDs (read-only)** with
 **live status via SSE**. Source: `gen-09-team-org.py` (token-mirrored dark/light generator).
 
+**Click-through pairing (ISI-2161 ⇄ ISI-2162).** The detail panel's primary action now reads
+**"Open agent detail · runs + logs →"** (sub-caption *run history · tool-call · LLM · build · traces*),
+naming its destination explicitly: the **Agent detail — run history + logs** screen (screen 11,
+ISI-2162, CEO 2026-08-11). This screen is the *entry point* (current Run at a glance); screen 11 is the
+*drill-down* (Run list with status/duration/tokens → tabbed logs → OTel trace links → live SSE tail on
+active Runs). The two are the org-chart→detail pair the CEO requested. Screen 11 itself is built under
+**ISI-2162** and lands in the ISI-2150 mock revision as the 11th screen.
+
+---
+
+## 0d. Revision v5 — live-ops screens (ISI-2150, CEO additions 2026-08-11)
+
+Two more CEO changes ship here, both on the same locked system. The shared rail / top-bar / token
+scaffolding is now factored into `console_kit.py`, so every new screen renders identically in
+dark + light (screens `00`–`09` keep their existing generators/SVGs untouched).
+
+1. **Dashboard live-assignments panel** (comment 46ed0fd5). Screen `08` is re-rendered with a **Live
+   assignments** hero panel — the real-time *"who's doing what right now"* view: **agent ↔ work item ↔
+   project** mapping, per-agent status (running / paused / blocked) as **dot + label**, elapsed time,
+   and a per-row **OTel-trace** link; live rows pulse (SSE). It preserves the KPI tiles, the live/recent
+   runs list, and the right column (Credential health · Recent artifacts · Namespaces); the standalone
+   24h run-activity chart is folded into a compact header sparkline so no approved signal is lost. Pairs
+   with the org diagram (screen 09 · ISI-2161) and the run stream (screen 02 · FR-F2) for the full
+   live-ops picture. Source: `gen-08-fleet-dashboard.py`.
+2. **11th screen — Agent detail: Run history + logs** (comment 26d37213 · ISI-2162 · Paperclip pattern).
+   New screen `10` — see §3.9.
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 10 | Agent detail — runs + logs | `images/10-agent-runs.png` | **Run history** (status/duration/tokens) + per-Run **tabbed logs**; live SSE tail; OTel-trace per Run |
+
+### 3.9 Agent detail — Run history + logs — `images/10-agent-runs.png` · ISI-2162 · Paperclip pattern
+The agent drill-down reached from the org diagram (§0c) and the **Agents** rail entry. An **identity
+card** (avatar · runtime · namespace · bound roles · live status · 142-runs / 96%-success / 24h-tokens
+quick stats) sits over a two-pane split. **Left — Run history:** a scannable Run list, each row a
+**status pill + Run id** (mono), **duration** and **token** counts, relative time, and the work item;
+the active Run is accent-selected. **Right — Run drill-down:** a Run header (status · SSE, duration ·
+tokens · model, and **"Open OTel trace ↗"** with the trace/span id), a **tab bar** (All · Task · Tool
+calls · LLM · Build · Errors, each with a count) over a monospaced **log stream**. Each log line is
+kind-badged: **TASK** (work-item checkout), **TOOL** (tool calls + results), **LLM** (model step with
+**▲ prompt / ▼ completion token counts** + latency), **BUILD** (build output, links to the **Build
+browser** §3.6), **ERROR** (assertion + stack trace), plus **NOTE** (coordination record) and **MEM**
+(knowledge-record write, violet — the two-records principle, §6 PRD). The final active-Run line carries
+a **live-pulsing head** — the SSE log tail — and the footer restates it: *"live SSE log tail — streaming
+while the Run is active."* Source: `gen-10-agent-runs.py` (token-mirrored dark/light generator).
+
 ---
 
 ## 1. Design principles
@@ -219,14 +265,17 @@ posts, each an agent (avatar + actor · role), timestamp (mono), body, and an ev
 record"*), explicitly the human oversight channel, **not** free-form agent chat: agents emit coordination
 events; I4 is preserved.
 
-### 3.8 Fleet dashboard — `images/08-fleet-dashboard.png`  · fleet operator view
-The new fleet landing (`ns: all`, top of rail). A row of **KPI tiles** — **Active runs** (pulsing) ·
-**Squads** · **Artifacts · 24h** · **Paused** · **Success · 24h**. Below, a **run-activity** bar chart
-(last 24h; the current hour pulses green) over a **live & recent runs** list (status pill, Run id, squad
-· repo, one-line note, progress bar, Open →). The right column stacks **Credential health** (a
-valid / expiring / expired stacked bar + counts), **Recent artifacts**, and a **Namespaces** summary.
-Motion is live-only (the Active-runs tile + current-hour bar pulse); every status still pairs colour +
-label.
+### 3.8 Fleet dashboard — `images/08-fleet-dashboard.png`  · fleet operator view · **v5 (ISI-2150)**
+The fleet landing (`ns: all`, top of rail). A row of **KPI tiles** — **Active runs** (pulsing) ·
+**Squads** · **Artifacts · 24h** · **Paused** · **Success · 24h**. Below sits the **Live assignments**
+hero panel (v5 · CEO 2026-08-11 · §0d) — the *"who's doing what right now"* view: **agent ↔ work item ↔
+project** rows with per-agent status (dot + label), elapsed time, and an OTel-**trace →** link; live
+rows pulse (SSE). Its header carries a compact 24h **run-activity sparkline** (the current hour pulses
+green — the old standalone bar chart, folded in). Under it, the **live & recent runs** list (status
+pill, Run id, squad · repo, one-line note, progress bar, Open →). The right column stacks **Credential
+health** (a valid / expiring / expired stacked bar + counts), **Recent artifacts**, and a **Namespaces**
+summary. Motion is live-only (Active-runs tile · running assignment dots · current-hour bar pulse);
+every status still pairs colour + label. Source: `gen-08-fleet-dashboard.py`.
 
 ---
 
