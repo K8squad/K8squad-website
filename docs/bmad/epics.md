@@ -26,11 +26,14 @@
 > shape** beside Claude-OAuth and second-runtime API-key. **Architecturally this is the §10.3
 > model-endpoint seam — `Agent.spec.modelEndpointRef` → per-user Secret + per-Agent `Agent.spec.model`,
 > negotiated by a `byoModelEndpoint` capability (§10.1) — orthogonal to `AgentRuntime.type`, NOT a new
-> runtime flavor (ADR-026):** an existing runtime (OpenClaw/Hermes) rides the OpenAI-compatible wire to
-> the endpoint — **zero new image, zero core change**. The same lane doubles as the **$0 release-testing path** (Ollama service
-> container / self-hosted GPU runner) for smoke + e2e squad scenarios in CI (**ISI-2157**) — no paid API
-> credits. Threaded into **Epic 5** (model-backend seam + conformance Ollama lane, ISI-2114), **Epic 7**
-> (endpoint-ref credential shape, 7.5), and the **Epic X / CI free lane**. Items (a)–(d), (f) and (g)
+> runtime flavor (ADR-026):** a runtime rides the OpenAI-compatible wire to the endpoint — **zero new
+> image, zero core change**. **CEO 2026-08-11 follow-up: Ollama is covered through the `opencode` runtime**
+> (SST/opencode — natively Ollama-compatible; `ollama launch opencode`), **pulled from Phase 2 into the
+> v1 shim set** (story 5.8) as the reference Ollama runtime. The same lane doubles as the **$0
+> release-testing path** (in-cluster Ollama / self-hosted GPU runner) for smoke + e2e squad scenarios in
+> CI (**ISI-2157**) — no paid API credits. Threaded into **Epic 5** (5.7 model-endpoint + 5.8 opencode
+> shim + 5.6 conformance Ollama lane, ISI-2114), **Epic 7** (endpoint-ref credential shape, 7.5), and the
+> **Epic X / CI free lane**. Items (a)–(d), (f) and (g)
 > are **new scope vs the PRD** — Gate 2 must ratify them as a PRD addendum (see FR coverage check).
 >
 > **Sources:** PRD `02-prd.md` (FR/NFR contract, §9/§10), Architecture `03-architecture.md`
@@ -163,8 +166,11 @@ tenancy), §9.2 (egress), §9.3 (workspace + concurrent Runs). **FR:** FR-C2, FR
 in one squad; express capability gaps as first-class Agent Card flags; pin protocol versions behind the
 seam; deliver a runnable conformance suite. **Zero core changes to add a runtime.** The **model backend
 an Agent runs against is a separate seam** from the runtime flavor (§10.3, ADR-026): `Agent.spec.model`
-+ `Agent.spec.modelEndpointRef` (→Secret) point an existing runtime at a **BYO Ollama / OpenAI-compatible
++ `Agent.spec.modelEndpointRef` (→Secret) point a runtime at a **BYO Ollama / OpenAI-compatible
 endpoint** (story 5.7) — model-endpoint config, **not** a new `AgentRuntime.type` and not a new shim.
+**CEO 2026-08-11:** Ollama is covered **through the `opencode` runtime** (SST/opencode — natively
+Ollama-compatible via the OpenAI-compatible provider, OSS, no paid credential), so the `opencode` shim
+is **pulled from Phase 2 into v1** as the reference Ollama runtime + the $0 CI lane driver (story 5.8).
 
 **Arch:** §7.1 (shim contract), §7.2 (Agent Card + capability + credential metadata), §7.3 (credential
 injection), §7.4 (version isolation), §7.5 (launch runtimes + conformance). **FR:** FR-D1–D5. **NFR:**
@@ -177,9 +183,10 @@ shim spec + reference shim + conformance assertions `[GATE-BLOCKING: conformance
 | 5.2 | As the system, I want the **Agent Card generated from the `Agent` CRD**, advertising skills, model, capability flags, and credential metadata. | **Given** an `Agent` CR, **When** its card is generated, **Then** it advertises `skills` (from `Skill` refs), `model`, **capability flags** (streaming/tool-calls/interactive as first-class metadata, not failures), and **credential capability metadata** (`credentialType`, `credentialLifecycle`). | Arch §7.2. FR-D4, R3, Challenger F15. Feeds Epic 7 credential handling. |
 | 5.3 | As the system, I want **protocol version pinning behind the seam** so upstream A2A/MCP churn never touches core. | **Given** `internal/protocol/versions.go`, **When** an external-spec touchpoint is added, **Then** it sits behind the shim/adapter seam; **And** a version bump changes an adapter, never core. | Arch §7.4, OQ12, R11. `protocol/versions.go`. |
 | 5.4 | As a runtime integrator, I want the **credential injection contract** so a shim maps a generic Secret into runtime-native form without logging it. | **Given** a per-user Secret ref on `Agent`, **When** the sandbox is claimed, **Then** the shim receives creds as env/volume and maps them to the runtime's expected form (e.g. `CLAUDE_CODE_OAUTH_TOKEN` vs an API-key env); **And** the shim **never persists or logs** the credential. | Arch §7.3, AD-9. FR-G1, NFR-SEC3. Coupled with Epic 7. |
-| 5.5 | As an ecosystem, I want the **OpenClaw and Hermes shims** to ship and both run real Runs in one squad. | **Given** a squad with an OpenClaw agent and a Hermes agent, **When** a Run executes, **Then** both runtimes run real Runs in the **same squad** (S6). | Arch §7.5, §11.2 (`shims/openclaw`, `shims/hermes`). FR-D3. Claude Code / OpenCode are Phase 2. |
-| 5.6 | **[GATE-BLOCKING]** As a vendor, I want a **runnable conformance suite** I can execute independently. | **Given** a shim, **When** the conformance suite runs, **Then** it checks Agent Card validity, task-lifecycle conformance, SSE progress, artifact emission, capability-flag honesty, and credential-metadata correctness; **And** passing = "works in any squad, zero core changes." **And** the suite exposes an **Ollama lane** — the same assertions run with the runtime's model resolved to a BYO Ollama endpoint (story 5.7), giving vendors a $0 way to prove conformance. | Arch §7.5, §11.2 (`shims/conformance`). FR-D5. **Deps: ISI-2114** — the suite + reference shim are produced there (Ollama lane included); §7 is the architecture-altitude input ISI-2114 formalizes. |
-| 5.7 | **[CEO 2026-08-11]** As an operator, I want to point an `Agent` at my **own Ollama endpoint** (BYO local model) so a squad runs on a self-hosted model with **no paid API credits**. | **Given** an `Agent` with `Agent.spec.modelEndpointRef` → a per-user Secret (BYO Ollama / OpenAI-compatible endpoint) and `Agent.spec.model` set, **When** a Run dispatches, **Then** the resolved runtime (OpenClaw/Hermes) rides the **OpenAI-compatible wire** to that endpoint through the **existing shim seam — no new `AgentRuntime.type`, no new image, zero core change** — and the Agent Card advertises the `byoModelEndpoint` capability + honest capability flags. **And** the **conformance Ollama lane** (5.6/ISI-2114) proves an Ollama-backed runtime passes task-in → run → artifacts-out. | **Ollama is a model backend (§10.3 model-endpoint seam, ADR-026), not an `AgentRuntime.type`.** Requires the resolved runtime to speak an OpenAI-compatible / Ollama-native wire — the **`byoModelEndpoint` capability (§10.1)**, gated by conformance; a runtime lacking it advertises the gap honestly (weak local models must not fail silently mid-Run). Credential shape = Epic 7.5. Free CI lane = ISI-2157. **Gap flagged:** arch §5.1 now adds `modelEndpointRef` to the `Agent` CRD — **Epic 1 story 1.2 must add that field** (and reconcile the `AgentRuntime` CRD, §5.3/ISI-2144, still absent from 1.2) at Gate 2 before 5.7 builds. |
+| 5.5 | As an ecosystem, I want the **OpenClaw and Hermes shims** to ship and both run real Runs in one squad. | **Given** a squad with an OpenClaw agent and a Hermes agent, **When** a Run executes, **Then** both runtimes run real Runs in the **same squad** (S6). | Arch §7.5, §11.2 (`shims/openclaw`, `shims/hermes`). FR-D3. Claude Code is Phase 2; **`opencode` is pulled into v1** (story 5.8, CEO 2026-08-11) as the Ollama/CI runtime. |
+| 5.6 | **[GATE-BLOCKING]** As a vendor, I want a **runnable conformance suite** I can execute independently. | **Given** a shim, **When** the conformance suite runs, **Then** it checks Agent Card validity, task-lifecycle conformance, SSE progress, artifact emission, capability-flag honesty, and credential-metadata correctness; **And** passing = "works in any squad, zero core changes." **And** the suite exposes an **Ollama lane** — the same assertions run with the runtime's model resolved to a BYO Ollama endpoint (story 5.7), **driven by the `opencode` runtime (5.8)**, giving vendors a $0 way to prove conformance. | Arch §7.5, §11.2 (`shims/conformance`). FR-D5. **Deps: ISI-2114** — the suite + reference shim are produced there (Ollama lane included); §7 is the architecture-altitude input ISI-2114 formalizes. |
+| 5.7 | **[CEO 2026-08-11]** As an operator, I want to point an `Agent` at my **own Ollama endpoint** (BYO local model) so a squad runs on a self-hosted model with **no paid API credits**. | **Given** an `Agent` with `Agent.spec.modelEndpointRef` → a per-user Secret (BYO Ollama / OpenAI-compatible endpoint) and `Agent.spec.model` set, **When** a Run dispatches, **Then** the resolved runtime (**`opencode` by default, story 5.8; any `byoModelEndpoint`-capable runtime**) rides the **OpenAI-compatible wire** to that endpoint through the **existing shim seam — no new `AgentRuntime.type`, no new image, zero core change** — and the Agent Card advertises the `byoModelEndpoint` capability + honest capability flags. **And** the **conformance Ollama lane** (5.6/ISI-2114) proves an Ollama-backed runtime passes task-in → run → artifacts-out. | **Ollama is a model backend (§10.3 model-endpoint seam, ADR-026), not an `AgentRuntime.type`.** Requires the resolved runtime to speak an OpenAI-compatible / Ollama-native wire — the **`byoModelEndpoint` capability (§10.1)**, gated by conformance; a runtime lacking it advertises the gap honestly (weak local models must not fail silently mid-Run). Credential shape = Epic 7.5. Free CI lane = ISI-2157. **Reference runtime = `opencode` (story 5.8)** — natively Ollama-compatible. **Gap flagged:** arch §5.1 now adds `modelEndpointRef` to the `Agent` CRD — **Epic 1 story 1.2 must add that field** (and reconcile the `AgentRuntime` CRD, §5.3/ISI-2144, still absent from 1.2) at Gate 2 before 5.7 builds. |
+| 5.8 | **[CEO 2026-08-11]** As the platform, I want the **`opencode` runtime shim in v1** (pulled from Phase 2) so Ollama is covered through a concrete, natively-compatible OSS runtime. | **Given** an `AgentRuntime` of `type: opencode`, **When** its `Agent` sets `modelEndpointRef` → an Ollama endpoint and `model` (e.g. `qwen3`/`llama`/`deepseek`), **Then** the opencode shim runs a real A2A Run against that local model — via opencode's OpenAI-compatible provider (`baseURL …:11434/v1`) — with **zero paid credential** — and **passes the conformance Ollama lane** (5.6). **And** opencode also runs against paid providers unchanged (the endpoint is config, not baked in). | opencode = SST OSS coding agent, native Ollama support (`ollama launch opencode`, 75+ providers). **Pulls opencode forward from Phase 2 (§10.1) into the v1 shim set {OpenClaw, Hermes, opencode}** — **v1-scope change, Gate 2 must ratify.** Justified: cheapest runtime to stand up (OSS + local model + no OAuth) **and** it is the driver for the $0 CI lane (ISI-2157, Epic X). `shims/opencode`. |
 
 ---
 
@@ -347,9 +354,10 @@ NFR-SEC5, NFR-SEC6, S4. **Deps:** Epic 4 (isolation), Epic 6 (memory). **Spike g
 the RuntimeClass under test.
 
 **CI free-testing lane (CEO 2026-08-11, ISI-2157):** these adversarial tests and the conformance suite
-(5.6) run in CI against an **Ollama-backed squad** (Ollama service container / self-hosted GPU runner,
-model resolved per Epic 5.7 / 7.5) so smoke + e2e squad scenarios execute with **no paid API credits**.
-ISI-2157 owns the CI wiring; this epic and Epic 5 own the scenarios it runs.
+(5.6) run in CI against an **Ollama-backed squad running the `opencode` runtime (Epic 5.8)** (Ollama
+service container / self-hosted GPU runner, model resolved per Epic 5.7 / 7.5) so smoke + e2e squad
+scenarios execute with **no paid API credits**. `opencode` is the natural driver — OSS + native Ollama +
+no OAuth. ISI-2157 owns the CI wiring; this epic and Epic 5 own the scenarios it runs.
 
 | Story | Statement | Key acceptance criteria (GWT) | Notes |
 |-------|-----------|-------------------------------|-------|
