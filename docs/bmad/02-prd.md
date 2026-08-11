@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -14,10 +14,13 @@ inputDocuments:
   - ISI-2148                         # CEO r3: Build browser (per-Run files/diffs/code view) → Theme K
   - ISI-2149                         # CEO r3: Helm install — Gateway API exposure + explicit StorageClass → Theme L
   - ISI-2150                         # CEO r3: Dark + light mode as v1 console requirement → FR-F7
+  - ISI-2134                         # CEO NATS decision r4: plugin event backbone (Postgres stores, NATS flows) → Theme M (FR-M*), FR-L4
+  - docs/bmad/03-architecture.md     # r13 (ISI-2134): NATS event backbone §17.4/§16/§6.6/§7.6/ADR-023 — FR↔architecture lockstep source
 revisions:
   - r1 (2026-08-10, ISI-2118): initial PRD synthesis
   - r2 (2026-08-10, ISI-2125): Challenger findings (ISI-2121) folded in — see §13.2 for the finding→change map
   - r3 (2026-08-11, ISI-2152): six new CEO requirements (ISI-2145..2150) folded in — new Themes H/I/J/K/L, FR-F7, NFR updates, OQ13–OQ17, risks R13–R17; see §13.3 for the requirement→change map. Re-review requested at CEO gate.
+  - r4 (2026-08-11, ISI-2152 ← CEO NATS decision ISI-2134): closes the CTO-found gap (PRD r3 predated the NATS decision; architecture r13 had 56 NATS refs, PRD had 0). Adds Theme M (FR-M1…M5 — plugin architecture on a NATS event backbone, `FR-PLUG`) + FR-L4 (NATS JetStream Helm dependency, `FR-HELM`), NFR-REL4/EXT3/SEC9, OQ18, R18; see §13.4 for the requirement→change map. FR↔architecture lockstep restored. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
 project_name: 'KSquad'
@@ -30,10 +33,10 @@ program: 'ISI-2115'
 # Product Requirements Document — KSquad
 
 **Author:** John (Product Manager)
-**Date:** 2026-08-10 · **Revised:** 2026-08-11 (r3 — CEO requirements ISI-2145..2150)
+**Date:** 2026-08-10 · **Revised:** 2026-08-11 (r4 — CEO NATS/plugin decision ISI-2134; r3 — CEO requirements ISI-2145..2150)
 **Phase:** BMAD Phase 2 — PRD
-**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r3 re-review requested (§14)**
-**Source ticket:** ISI-2118 (r1/r2) · ISI-2152 (r3) · **Parent:** ISI-2116 · **Program:** ISI-2115
+**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r4 re-review requested (§14)**
+**Source ticket:** ISI-2118 (r1/r2) · ISI-2152 (r3/r4) · **Parent:** ISI-2116 · **Program:** ISI-2115
 
 > **Scope discipline.** This PRD builds on the seven LOCKED decisions in the kickoff brief
 > (`00-kickoff-brief.md`, commit 90747e3) and the six themes + two-records principle in the
@@ -561,6 +564,58 @@ credentials**, the following are first-class domain constraints, not optional NF
 - **FR-L3** These install requirements SHALL be part of the **S1 day-one install acceptance test**: a
   platform engineer following docs alone provisions Gateway API exposure and a named StorageClass and
   reaches a first running squad in ≤ 4h. *(MVP — extends S1, NFR-USE1.)*
+- **FR-L4** The Helm install SHALL provision **NATS with JetStream enabled** as the plugin **event
+  backbone** (Theme M / FR-M*), shipped as a **bundled subchart** with a **single-replica default** and
+  a JetStream PVC (`storageClassName` from values per FR-L2), HA behind a values toggle — the same
+  lightweight, "boring by default" install pattern as the Postgres (CNPG) subchart. NATS is a
+  **second stateful dependency, event-flow-only** (no state of record; ADR-001 one-Postgres stays
+  intact) and its presence SHALL NOT break the ≤4h S1 install. *(MVP — CEO NATS decision 2026-08-11,
+  ISI-2134; architecture §16 / §17.4 / ADR-023.)*
+
+### 9.13 Plugin architecture & event backbone — NATS (Theme M — r4, ISI-2134/2155/2156; CEO NATS decision 2026-08-11)
+> **CEO decision (Henrik, 2026-08-11): "store the data in Postgres, flow the events on NATS."** KSquad
+> exposes a **plugin seam** so third parties can observe and integrate off platform events without
+> touching core. **Postgres stays the single source-of-truth for ALL durable state** (coordination,
+> memory, discussion, work items, artifacts — ADR-001 intact); **event *delivery* to plugins flows over
+> a NATS/JetStream bus**. Plugins are **out-of-process, read-only observers — never a coordination
+> path** (the §6 no-P2P lock applied a third time, alongside memory §6 and the room §6.1). Architecture
+> owns the mechanism: §17.4 (plugin seam), §6.6 (coordination events), §7.6 (GRAIL as first consumer),
+> ADR-023 (NATS delivery, supersedes the r6 outbox-consumer contract). *(Maps to the CEO's `FR-PLUG`
+> label.)*
+- **FR-M1** The system SHALL provide a **plugin architecture** in which out-of-process plugins
+  (sidecar/service, per Project/squad) **subscribe to platform domain events** to observe and integrate,
+  with **zero core changes** to add a plugin (extends NFR-EXT1 to the event seam). *(MVP.)*
+- **FR-M2** Platform events SHALL be delivered over **NATS as the event backbone**, published to
+  **subject-addressed topics** of the form `ksquad.{entity}.{project}.{squad}.{event_type}`, so plugins
+  can select flows with **wildcard subscriptions** (e.g. per-entity, per-project, or per-event-type
+  filtering). Plugin developers integrate by subscribing to a NATS subject (`nats_sub`), **not** by
+  building a bespoke consumer of the internal event store. *(MVP.)*
+- **FR-M3** Event delivery SHALL be **durable and replayable via JetStream**: a plugin that is down or
+  newly added SHALL be able to **catch up / replay** missed events from the JetStream buffer (core-NATS
+  fire-and-forget is acceptable only where replay is not required). Durability of the underlying event
+  record is guaranteed by capturing the event **in the same Postgres transaction as the state change**
+  (append-only outbox/journal), which a **relay worker publishes to NATS** and marks published —
+  republishing unflushed rows on failure. This yields **at-least-once delivery with no dual-write
+  hole**. *(MVP — architecture §17.4, ADR-023.)*
+- **FR-M4** The event seam SHALL be **one-way and non-coordinating**: events flow **outbox → NATS →
+  plugins** only. Plugins **SHALL NOT claim, hand off, lease, or mutate** coordination/knowledge state,
+  and **nothing a plugin publishes on NATS re-enters the coordination record** (FR-B1/B3). The seam is a
+  **read-only observation/integration surface**, structurally fenced from the two records exactly as the
+  discussion room is (§6.1, §6). *(MVP — hard boundary; a third application of the no-P2P lock.)*
+- **FR-M5** The relay SHALL **decouple** the event bus from the correctness-critical path: a **failing
+  plugin — or NATS being unavailable — SHALL NEVER block** a Run, a claim/lease, a memory write, or
+  reconcile. The Postgres outbox is the durable retry buffer; the core proceeds and events flush when
+  the bus recovers. Plugin outbound integrations SHALL use **BYO per-plugin Kubernetes Secret refs**
+  (consistent with FR-G1); plugin credentials SHALL never be logged or exposed cross-tenant. *(MVP —
+  NFR-REL4, NFR-SEC9.)*
+- **Event catalog (illustrative, versioned — Architecture owns the schema).** Run lifecycle
+  (start/claim/succeed/fail/cancel), work-item changes, build outputs (Theme K), CI/PR sync (Theme H),
+  memory writes (Theme E — GRAIL is the first consumer, §7.6/ADR-024), and credential refresh. The
+  catalog is **versioned** under the §10.2 drift discipline.
+- **Scope guard:** the plugin seam is an **event-observation / integration** surface. It is **not** a
+  coordination channel, **not** a second source of truth (NATS holds only in-flight/replayable copies,
+  not authoritative state), and **not** a general external message bus for arbitrary app traffic
+  (guards R5, R18). Postgres remains the sole store of record; NATS is event-flow-only.
 
 ---
 
@@ -595,6 +650,13 @@ Only NFRs that matter for KSquad are listed (selective by design).
   ref (no shared master token), **verify inbound webhook signatures** before mutating state, and treat
   all ingested external content as untrusted input (D8). Sync-connector credentials SHALL never be
   logged or exposed cross-tenant. *(r3 — ISI-2145.)*
+- **NFR-SEC9** The plugin event seam (Theme M) SHALL be **one-way and read-only**: plugins observe
+  events but SHALL NOT claim, hand off, or mutate coordination/knowledge state, and nothing a plugin
+  publishes on NATS re-enters the coordination record (FR-M4, enforcing the §6 no-P2P fence a third
+  time). NATS holds **no authoritative state** — only in-flight/replayable event copies. Plugins
+  authenticate outbound integrations via **BYO per-plugin Secret refs** (no shared master token);
+  plugin credentials SHALL never be logged or exposed cross-tenant, and the bus SHALL NOT cross tenancy
+  boundaries. *(r4 — ISI-2134; FR-M4/M5.)*
 
 ### 10.2 Reliability & recoverability
 - **NFR-REL1** No committed coordination state SHALL be lost on sandbox/agent/controller failure
@@ -602,6 +664,11 @@ Only NFRs that matter for KSquad are listed (selective by design).
 - **NFR-REL2** A `Run` SHALL be resumable/retryable with backoff after transient failure.
 - **NFR-REL3** Memory-service writes SHALL be durable; a crashed agent SHALL NOT corrupt the
   knowledge record.
+- **NFR-REL4** The plugin event backbone (Theme M) SHALL be **decoupled from the correctness-critical
+  path**: a failing plugin or an unavailable NATS bus SHALL NEVER block a Run, claim/lease, memory
+  write, or reconcile. Events are captured durably in Postgres (same transaction as the state change)
+  and delivered **at-least-once** by the relay when the bus recovers — **no dual-write hole**, no lost
+  committed event. *(r4 — ISI-2134; FR-M3/M5; architecture §17.4, ADR-023.)*
 
 ### 10.3 Performance & latency
 - **NFR-PERF1** `Run` start latency SHALL be dominated by **claim time**, not sandbox cold-boot
@@ -627,6 +694,9 @@ Only NFRs that matter for KSquad are listed (selective by design).
 ### 10.6 Extensibility & interoperability
 - **NFR-EXT1** Adding a new runtime SHALL require only a conformant shim, **zero core changes** (S5).
 - **NFR-EXT2** Tool access SHALL be via MCP; agent invocation via A2A — no bespoke lateral protocols.
+- **NFR-EXT3** Adding a plugin SHALL require only **subscribing to a NATS subject** (FR-M1/M2), **zero
+  core changes**; the event catalog is **versioned** and evolves under the §10.2/drift discipline so a
+  plugin built against a catalog version is not silently broken. *(r4 — ISI-2134; Theme M.)*
 
 ### 10.7 Observability & auditability
 - **NFR-OBS1** The coordination record SHALL serve as a queryable audit trail (D4).
@@ -671,7 +741,13 @@ required to run *anything* safely and legibly.
     user/agent/Run/Project).
   - **Per-Project discussion room** — FR-J1…J4 (collaboration surface, fenced from coordination — §6.1).
   - **Build browser** — FR-K1…K2 (read-only per-Run files/diffs/code view).
-  - **Install & exposure** — FR-L1…L3 (Gateway API exposure + explicit StorageClass, part of S1).
+  - **Install & exposure** — FR-L1…L4 (Gateway API exposure + explicit StorageClass + **NATS JetStream
+    subchart**, part of S1).
+- **r4 — CEO NATS/plugin decision (ISI-2134):** FR-M1…M5 (**plugin architecture on a NATS event
+  backbone** — subject-based pub/sub, JetStream durability/replay, Postgres source-of-truth + NATS
+  event-flow, read-only out-of-process plugins) + FR-L4 (NATS JetStream Helm dependency). The seam
+  generalizes the SSE progress bus; **GRAIL is its first consumer** (§7.6/ADR-024). Lands *around* the
+  spine — the outbox relay keeps it off the correctness-critical path (NFR-REL4).
 - **Named design partner + day-one install acceptance test (resolves OQ8):** Paperclip platform team
   (internal, confirmed at CEO Gate 1); S1 now includes the FR-L1/L2 exposure+storage acceptance.
 
@@ -714,6 +790,12 @@ ISI-2126.)*
 - **Bring-your-own external memory as the primary store** — memory is first-class; external stores are
   not the v1 model.
 - **Message bus / blackboard / tuple-space coordination** — rejected in Phase 1 (§6.2); not in scope.
+  The **NATS event backbone (Theme M)** does **not** reopen this: it carries **read-only observation
+  events to plugins only** (FR-M4), holds no authoritative state, and nothing on it re-enters
+  coordination — it is not an agent-to-agent bus and not a source of truth. *(r4.)*
+- **NATS as a store of record / coordination or agent-to-agent channel** — out of scope by locked
+  decision. Postgres is the sole source-of-truth (ADR-001); NATS is **event-flow-only** for the plugin
+  seam (FR-M2/M4, NFR-SEC9). *(r4 — ISI-2134.)*
 - **The discussion room as a coordination channel** — the room (Theme J) is a human-in-the-loop
   *collaboration* surface only; agent coordination stays in work items. Using it for agent-to-agent
   handoff is out of scope by locked decision (§6.1). *(r3.)*
@@ -751,6 +833,7 @@ resolved here.
 | OQ15 | Discussion-room storage/persistence and how it stays structurally distinct from the coordination and knowledge records | Architecture | **New (r3, ISI-2147).** Boundary set (§6.1): third surface, no checkout/claim, not authoritative. Backing store + enforcement mechanism = Architecture. |
 | OQ16 | Gateway API exposure specifics — GatewayClass choice, TLS, and how defaults keep the ≤4h install true across clusters that may not have a Gateway controller | Architecture | **New (r3, ISI-2149).** Requirement set (FR-L1, NFR-USE1); implementation + fallback for Gateway-less clusters = Architecture. |
 | OQ17 | Build-browser content source — workspace PVC vs git/PR diff vs artifact store, and read-only access scoping per principal | Architecture | **New (r3, ISI-2148).** Requirement set (FR-K1/K2, read-only). Source + per-principal access model = Architecture (aligns with FR-C6/NFR-SEC5). |
+| OQ18 | NATS/JetStream operational shape for the plugin seam — subject taxonomy + versioned event catalog schema, JetStream retention/replay window, single-replica-default vs HA toggle, and outbox→relay→NATS publish/reconciliation mechanics (`published_at`, unflushed-row republish) | Architecture | **New (r4, ISI-2134).** Direction set (FR-M1…M5, FR-L4): Postgres source-of-truth, NATS event-flow-only, at-least-once via outbox relay, read-only plugins. **Largely resolved in architecture §17.4 / §16 / ADR-023 (r13)** — carried here so the FR↔architecture lockstep is explicit. Exact subject schema, catalog versioning, and retention tuning = Architecture. |
 
 ---
 
@@ -789,6 +872,14 @@ resolved here.
 - **Scope-growth watch item (not an escalation):** r3 adds real MVP scope (§11.2 scope-impact note). It
   lands around the spine, not on the R10 correctness-critical path, but the CEO should confirm the v1
   cut (recommended order-to-defer: K → I-depth → H-breadth; J-fence and L-install not cuttable).
+- **r4 folded in (ISI-2152 ← CEO NATS decision, ISI-2134) — closes the CTO-found gap:** PRD r3 was
+  finalized before the CEO's "data in Postgres, events on NATS" decision, so the architecture (r13, 56
+  NATS references) and the PRD (zero) had drifted — the sole gap blocking CEO sign-off (Alfred, CTO,
+  2026-08-11). r4 adds **Theme M (FR-M1…M5)** — the plugin architecture on a NATS event backbone
+  (`FR-PLUG`) — and **FR-L4** — NATS JetStream as a Helm dependency (`FR-HELM`) — plus NFR-REL4/EXT3/SEC9,
+  OQ18, R18, and scope/traceability updates (§13.4). **No locked decision is reopened** — the seam is a
+  read-only, one-way observation surface fenced from coordination (the §6 no-P2P lock applied a third
+  time). FR↔architecture lockstep restored and cross-checked (§13.4).
 
 ### 13.1 Risk register (Phase 1 R1–R7 + Challenger-driven R8 upgrade and R9–R12, mapped to requirements)
 | # | Risk | Sev | Mitigation in this PRD |
@@ -810,6 +901,7 @@ resolved here.
 | R15 | Console scope creep — build browser → IDE, dashboard → BI tool | Med | Revised console scope guard (§9.6); FR-K read-only, FR-I operational-only scope guards; §11.5 out-of-scope refinements. |
 | R16 | Cost/token metering inaccurate or forgeable across heterogeneous runtimes | Med | FR-I3 + NFR-OBS3 derive metering from Run lifecycle/coordination record, not agent self-report; attribution axes are the v1 requirement, precision best-effort per runtime (OQ14). |
 | R17 | Gateway API / explicit-StorageClass assumptions break the ≤4h install on clusters lacking a Gateway controller or default storage | Med | FR-L1/L2 documented defaults + surfaced-at-install requirement; S1 acceptance includes it (FR-L3); Gateway-less fallback = Architecture (OQ16). |
+| R18 | **NATS as a second stateful dependency** — dual-write hole (event lost or double-committed vs Postgres), a failing/absent plugin bus blocking the core, or the seam eroding into a coordination/second-source-of-truth path (r4, ISI-2134) | Med | **Transactional outbox** captures the event in the same Postgres txn as the state change; a **relay** publishes to NATS at-least-once and republishes unflushed rows → **no dual-write hole** (FR-M3). Relay decoupling means **NATS-down never blocks a Run/claim/memory write** (FR-M5, NFR-REL4). One-way read-only seam (FR-M4, NFR-SEC9) + §11.5 out-of-scope keep it off coordination. Single-replica-default subchart bounds install/ops cost (FR-L4). Postgres stays sole store of record (ADR-001). Operational specifics = Architecture (OQ18). |
 
 ### 13.2 Challenger finding → PRD change map (ISI-2121 → r2 via ISI-2125)
 | Finding | Gist | Where folded in |
@@ -845,6 +937,22 @@ explicit OQ rather than resolving it here: OQ13 (sync conflict/loop), OQ14 (mete
 (room storage/distinctness), OQ16 (Gateway API specifics + Gateway-less fallback), OQ17 (build-browser
 source + per-principal access). The Architect ticket is notified via the §14 handoff so the two
 documents stay in lockstep.
+
+### 13.4 CEO NATS/plugin decision → PRD change map (r4 via ISI-2152, closing the CTO gap)
+**Gap found by Alfred (CTO), 2026-08-11:** PRD r3 was finalized **before** the CEO NATS decision. The
+architecture (`03-architecture.md` r13, ISI-2134) had folded NATS as the plugin event backbone (§17.4,
+§16, §6.6, §7.6, ADR-023) — **56 references** — while the PRD had **zero**, the sole gap blocking CEO
+sign-off. r4 closes it, restoring FR↔architecture lockstep.
+
+| Source | Requirement | Where folded in (r4) |
+|--------|-------------|----------------------|
+| **CEO NATS decision (Henrik, 2026-08-11) / ISI-2134** — "store data in Postgres, flow events on NATS" | Plugin architecture on a **NATS event backbone**: subject-based pub/sub (`ksquad.{entity}.{project}.{squad}.{event_type}`), **JetStream** durability/replay, wildcard subscriptions, **Postgres source-of-truth + NATS event-flow**, out-of-process **read-only** plugins (never coordination), outbox relay → at-least-once, no dual-write hole | **Theme M (FR-M1…M5)** (§9.13), maps to the CEO's `FR-PLUG` label; NFR-REL4, NFR-EXT3, NFR-SEC9; §11.2 MVP; §11.5 out-of-scope; OQ18; R18 |
+| **CEO NATS decision / ISI-2134 (Helm)** | **NATS JetStream as a Helm dependency** — bundled subchart, single-replica default + JetStream PVC, event-flow-only, doesn't break ≤4h S1 | **FR-L4** (extends Theme L, the CEO's `FR-HELM`); NFR-USE1 context; architecture §16 |
+
+**Architecture cross-references verified consistent (r13):** §17.4 (plugin seam), §16 (NATS subchart /
+Helm), §6.6 (coordination events), §7.6 + ADR-024 (GRAIL first consumer), ADR-023 (NATS delivery,
+supersedes r6 outbox-consumer). Subject scheme, JetStream durability, one-way non-coordinating seam,
+and "Postgres stores / NATS flows" all match between the two documents.
 
 ---
 
@@ -894,6 +1002,7 @@ documents stay in lockstep.
 | CEO r3 ISI-2149 (Helm/Gateway/StorageClass) | FR-L*, NFR-USE1, S1, OQ16, R17 |
 | CEO r3 ISI-2150 (dark/light mode) | FR-F7, NFR-USE2, §11.4 |
 | CEO r3 ISI-2145..2150 | §13.3 requirement→change map (r3 via ISI-2152) |
+| CEO NATS decision (r4, ISI-2134) — plugin backbone | Theme M (FR-M*), FR-L4, NFR-REL4/EXT3/SEC9, OQ18, R18, §13.4 |
 
 ---
 
@@ -928,3 +1037,36 @@ re-review of:
 **Parallel:** the Architecture revision consumes r3's OQ13–OQ17 and the new security bar
 (NFR-SEC7/SEC8, D8) — Architect notified via child issue so the two documents stay in lockstep. **Phase 4
 story writing should wait on this r3 re-review** so stories are written against the ratified cut.
+
+---
+
+## CEO Gate — r4 Re-Review Requested — 2026-08-11 (NATS/plugin gap closed)
+
+**Status: PENDING CEO (BigBoss) re-review — supersedes the r3 request above.**
+
+**Why r4:** Alfred (CTO) found that PRD r3 was finalized **before** the CEO NATS decision (ISI-2134).
+The architecture (`03-architecture.md` r13) had **56 NATS references**; the PRD had **zero** — the sole
+gap blocking CEO sign-off. r4 closes it (§13.4 map): the "data in Postgres, events on NATS" plugin
+backbone is now first-class in the PRD.
+
+**What changed in r4:**
+
+1. **Theme M — plugin architecture on a NATS event backbone (FR-M1…M5; the CEO's `FR-PLUG`).**
+   Subject-based pub/sub (`ksquad.{entity}.{project}.{squad}.{event_type}`), **JetStream**
+   durability/replay, wildcard subscriptions; **Postgres stays source-of-truth, NATS carries event flow
+   only**; **read-only, out-of-process plugins that never touch coordination** (the §6 no-P2P lock
+   applied a third time); **outbox relay → at-least-once, no dual-write hole**; a failing plugin or
+   NATS-down **never blocks** a Run/claim/memory write.
+2. **FR-L4 — NATS JetStream as a Helm dependency (the CEO's `FR-HELM`).** Bundled subchart,
+   single-replica default + JetStream PVC, event-flow-only, doesn't break the ≤4h S1 install.
+3. **Supporting:** NFR-REL4 (decoupled from critical path), NFR-EXT3 (plugin = subscribe a subject,
+   zero core changes), NFR-SEC9 (one-way read-only, BYO Secret, no tenancy crossing); OQ18; R18;
+   §11.2/§11.5 scope updates.
+
+**Requesting BigBoss confirm:** (a) the NATS backbone framing matches the decision — **Postgres stores,
+NATS flows, plugins observe** — and (b) the three r3 ratification items still stand (discussion-room
+fence, v1 scope cut, best-effort metering precision) unchanged.
+
+**FR↔architecture lockstep verified (§13.4):** Theme M / FR-L4 cross-checked against architecture §17.4,
+§16, §6.6, §7.6, ADR-023/024 (r13) — subject scheme, JetStream durability, one-way non-coordinating
+seam, and "Postgres stores / NATS flows" all match. **Phase 4 story writing waits on this r4 re-review.**
