@@ -81,8 +81,8 @@ rail item — the locked 8-entry rail is preserved, and "Agents" finally gets a 
 **What it shows.** A three-column lineage tree — **Teams** → **Agents** → **Roles** — with the
 selected parent connected to its children by accent elbow connectors, plus a click-through **agent
 detail** panel on the right. Every node carries real-time status (**idle / running / blocked /
-paused**) as a **dot + label** (a11y unchanged), the agent's **runtime type** badge (OpenClaw /
-Hermes), and **role** badges. Detail panel surfaces runtime, namespace, bound roles, skills,
+paused**) as a **dot + label** (a11y unchanged), the agent's **runtime type** badge (`AgentRuntime.type`
+— e.g. Claude Code / OpenCode / Ollama adapter), and **role** badges. Detail panel surfaces runtime, namespace, bound roles, skills,
 credential ref, current run, and the data provenance: **Team / Agent / Role CRDs (read-only)** with
 **live status via SSE**. Source: `gen-09-team-org.py` (token-mirrored dark/light generator).
 
