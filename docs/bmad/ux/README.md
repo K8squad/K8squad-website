@@ -15,7 +15,7 @@ non_blocking: true               # parallel to the CEO gate on ISI-2118; not a b
 
 > **What this is.** The UX/visual direction the PRD delegated (§11.4, NFR-USE2). It gives
 > Architecture and Epics a concrete target for the "polished UI/UX" mandate: an information
-> architecture, five key-screen mocks, and a coherent visual system — all scoped to
+> architecture, nine key-screen mocks, and a coherent visual system — all scoped to
 > **legibility + composition**, never an IDE (FR-F scope guard · risk R6).
 >
 > **What this is not.** Not a component library, not final pixel spec, not a framework choice.
@@ -42,7 +42,9 @@ Two CEO changes are applied here:
    preserved with darker on-light hues (green `#059669`, amber `#B45309`, rose `#E11D48`, slate
    `#64748B`, violet `#7C3AED`) over light tints, always paired with dot + label (a11y unchanged).
 
-Delivered this revision: `00`–`05` in dark (logo-swapped) **and** light.
+Delivered this revision: `00`–`05` in dark (logo-swapped) **and** light. The rail on `00`–`05`
+now also carries the new **Dashboard / Builds / Discussion** entries (see §0b), so the menu is
+consistent across the whole set.
 
 ---
 
@@ -59,9 +61,10 @@ dark→light token map (accent `#3D7DFF` is theme-invariant; status hues darken 
 | 07 | Discussion room | `images/07-discussion-room.png` | Coordination record as a threaded room (not chat · I4) |
 | 08 | Fleet dashboard | `images/08-fleet-dashboard.png` | Fleet-level stat tiles + trends over squads/runs |
 
-**Rail evolution.** The left rail gains **Dashboard** (new fleet landing, top of rail), **Builds**, and
-**Discussion** (both under the Runs surface). These three appear on screens `06`–`08`; the earlier
-`00`–`05` keep their committed 5-item rail and pick up the new entries on their next re-render.
+**Rail evolution.** The left rail now carries **Dashboard** (new fleet landing, top of rail), **Builds**,
+and **Discussion** (both Runs-adjacent surfaces) — an **8-entry rail** (Dashboard · Overview · Runs ·
+Builds · Discussion · Projects · Agents · Credentials). This revision re-rendered **all** screens
+(`00`–`08`, both themes) against the new rail, so every mock shows the same menu.
 
 ---
 
@@ -113,8 +116,10 @@ Top bar:  context switcher (kube-context)  ·  namespace / tenant selector  ·  
 Rail footer:  connected cluster context (green = reconciling)
 ```
 
-**Navigation model.** The five rail objects *are* the CRD kinds an operator reasons about. Runs are
-the verb; everything else is a noun. Search spans squads, runs, and artifacts. The namespace selector
+**Navigation model.** The rail's *object* entries map to the CRD kinds an operator reasons about
+(Overview → Team, Projects, Agents, Credentials); **Dashboard, Runs, Builds** and **Discussion** are
+the verbs/views over them. Runs are the verb; everything else is a noun. Search spans squads, runs, and
+artifacts. The namespace selector
 is the multi-tenancy lens (OQ7 — squad = tenancy boundary); "ns: all" is the fleet view.
 
 **Two-records fidelity.** The console visibly respects the PRD's two-records principle (§6): the
@@ -173,29 +178,35 @@ Expired/expiring rows are amber-tinted and sorted to attention. The footer resta
 (FR-G3 · S10)."* Exact refresh UX is **gated on ISI-2112 evidence** (OQ1) — this screen shows the
 *shape* of the signal, and is the surface that flexes when that evidence lands.
 
-### 3.6 Build browser — `images/06-build-browser.png`  · successor to Runs/Artifacts
-A master–detail successor to the Runs/Artifacts surface. Left: a **build history** list (build id,
-status pill, commit `sha` + branch, squad, duration, artifact count; the live build pulses). Main: the
-selected build's detail — a **stage strip** (Checkout → Review → Fix → Test → Publish, with per-stage
-durations and a live-pulsing current stage) over an **artifacts grid** (each card = kind badge, name in
-mono, producer, metric, size + produced-at, a download affordance). The footer holds the same R6 guard
-as §3.3: *"builds & artifacts are read-only; apply happens in the repo PR, not here (not an IDE)."*
+### 3.6 Build browser — `images/06-build-browser.png`  · cross-run artifact catalog
+A read-only catalog of **every artifact produced across Runs**. Left: a **facet rail** — filter by
+**Type** (diff / report / file / log / image), **Squad**, and **Status**, each with live counts and
+checkboxes (Diff + payments-review pre-selected). Main: a **build table** where each row is a produced
+artifact — a kind-badged icon, artifact name in mono + one-line metric, a **type** chip, the **squad**,
+the **Run** ref (mono), the **producer** (agent · role), and a **status pill** (Passed / Failed /
+Superseded). The footer holds the same R6 guard as §3.3: *"read-only catalog — opening a build shows the
+artifact inspection view; KSquad never mutates a produced artifact (scope guard · R6)."*
 
 ### 3.7 Discussion room — `images/07-discussion-room.png`  · two-records principle I4
-The coordination discussion surface — and deliberately **not a chat**. It renders the *coordination
-record* (comments · checkouts · handoffs · artifacts) as a **threaded room**: left = work-item threads;
-main = the selected thread's posts, each with actor · role, a kind tag (`CHECKOUT`/`COMMENT`/`HANDOFF`/
-`ARTIFACT`), timestamp (mono), and threaded replies. A **memory** write is tagged violet and a rail note
-states it was routed to the *knowledge record*, **not** this thread — the two-records split made visible
-(§6 PRD · I4). The composer is intentionally inert: *"no free-form chat input — posts are coordination
-events agents emit."* Right rail: participants + work-item meta.
+The coordination discussion surface — and deliberately **not a chat**. It renders one work item's
+*coordination record* as a **thread**: a header (work-item id, status pill, stage + message count) over
+posts, each an agent (avatar + actor · role), timestamp (mono), body, and an event **kind tag**
+(`COMMENT` / `HANDOFF` / `MEMORY` / `ARTIFACT`). A **memory** write is tagged violet with an inline
+`memory · <fact>` chip — routed to the *knowledge record*, distinct from coordination (§6 PRD · I4); an
+**artifact** post carries an inline artifact chip. Right rail: **participants** (per-agent state),
+**work-item** progress, and **referenced artifacts**. The bottom bar is an **operator-note** affordance
+— an operator annotation onto the durable coordination record (*"add an operator note to the coordination
+record"*), explicitly the human oversight channel, **not** free-form agent chat: agents emit coordination
+events; I4 is preserved.
 
 ### 3.8 Fleet dashboard — `images/08-fleet-dashboard.png`  · fleet operator view
-The new fleet landing (`ns: all`). A row of **stat tiles** (Squads · Runs live · Success 24h · Failed
-24h · Avg run · Paused), then **trends**: a *runs-over-time* area line (12h, with failed runs ringed in
-rose) beside a *run-outcomes* bar breakdown; below, a **squad-activity** leaderboard (runs, success %,
-a per-squad sparkline, status pill) beside a **needs-attention** queue (paused/failed/expiring, sorted
-to the top). Motion is live-only (the Runs-live tile pulses); every status still pairs colour + label.
+The new fleet landing (`ns: all`, top of rail). A row of **KPI tiles** — **Active runs** (pulsing) ·
+**Squads** · **Artifacts · 24h** · **Paused** · **Success · 24h**. Below, a **run-activity** bar chart
+(last 24h; the current hour pulses green) over a **live & recent runs** list (status pill, Run id, squad
+· repo, one-line note, progress bar, Open →). The right column stacks **Credential health** (a
+valid / expiring / expired stacked bar + counts), **Recent artifacts**, and a **Namespaces** summary.
+Motion is live-only (the Active-runs tile + current-hour bar pulse); every status still pairs colour +
+label.
 
 ---
 
@@ -276,5 +287,5 @@ Violet appears **only** as the reserved memory-event tag, never as chrome.
   look + flows only.
 
 **Consumers:** Phase 3 Architecture (frontend approach, SSE contract, console↔API surface) and Phase 4
-Epics (this doc's five screens map cleanly to console stories under Theme F). Non-blocking to the CEO
+Epics (this doc's nine screens map cleanly to console stories under Theme F). Non-blocking to the CEO
 gate on ISI-2118 per §11.4.
