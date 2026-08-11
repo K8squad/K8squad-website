@@ -32,6 +32,7 @@ revisions:
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
   - r7 (2026-08-11, ISI-2135): closed the ISI-2132 review's four blocking coordination-spine findings (F1–F4) ahead of the R10 epic — §6.1 cardinality pinned (exactly-one-active claim per work item, monotonic fence, artifact upsert key); §6.2 renewal guard (holder AND fence AND unexpired lease); §6.3 **reclaim protocol: fence the pod (terminate + egress-deny + confirm) BEFORE releasing the claim**, plus resource-layer fence checks (memory write validation, fence-guarded artifact registration, workspace-lease discipline) and the named external-git residual; §6.4 re-entrancy designed for external-effect steps (deterministic `a2a_task_id = run_id` + shim-side dedup + durable dispatch marker; artifact upsert; conditional status UPDATEs); §8 failure path now runs the reclaim protocol; §15 names the zombie-writer-vs-PVC (F1) and double-dispatch (F4) chaos cases as R10 acceptance gates; ADR-025 added. No locked decision reopened; ADR-001/003 intact
+  - r13 (2026-08-11, ISI-2134 / CEO NATS decision, Henrik — **supersedes ADR-023 r6 outbox delivery**): "store the data in Postgres, flow the events on NATS." **Postgres stays source-of-truth for ALL durable state** (coord/memory/discussion/work-items/artifacts, ADR-001 intact); **plugin event *delivery* moves to a NATS/JetStream bus**. Mechanism: state commits in Postgres with the event in a durable **outbox/journal** (unchanged durability), a **relay worker publishes to NATS subjects** (`ksquad.{entity}.{project}.{squad}.{event_type}`, wildcard subscriptions) and stamps `published_at`, republishing unflushed rows on failure → **at-least-once, no dual-write hole**; plugins **`nats_sub`** (JetStream replay/catch-up; core NATS fire-and-forget), no outbox-consumer framework. **NATS/JetStream = stateful dependency #2** — the §4 single-Postgres constraint is **relaxed for the plugin event seam only** (CEO-named trade); it is event-flow-only (no state of record), single-replica-default Helm subchart (CNPG pattern), and the relay decouples it so **NATS-down never blocks a Run/claim/memory write** — S1 ≤4h holds. **no-P2P preserved:** the seam is one-way (outbox→NATS→plugins); nothing a plugin publishes on NATS re-enters coordination. Rewrote ADR-023; touched §1/§4/§6.6/§16/§17.3/§17.4/§7.6, ADR-024 (GRAIL now subscribes off NATS memory subjects); traceability row. Coordination spine (§6) + discussion room (§7.5) unchanged. Post-Gate-2; the CEO's own decision (not a reopened lock). *(Folded jointly with the ISI-2151 revision run; §17.4/§4/§16/ADR-023 authored there, §6.6 + this changelog + traceability finalized here.)*
   - r12 (2026-08-11, ISI-2134 / CEO clarifications, Henrik): refined §8.5 budget to a **hierarchical, operator-tunable model** — `Project.contextBudget` default → `Agent.contextBudgetOverride` → **Run-level dynamic trim** (work-item size + memory-recall relevance), all **clamped by the resolved model `contextWindow`** (an override above the window is a fail-closed validation error). New CRD fields on `Project` (`contextBudget`, `goals`) + `Agent` (`contextBudgetOverride`), §5.1. Added **§8.6 Agent↔Work-Item Lifecycle (the core loop)** — confirmed Paperclip-style ergonomics (claim→contextualize→work→emit artifacts→transition status→complete) on **KSquad-native fenced Postgres coordination** (§6, not CRDs); the deltas are that every mutation is fenced (§6.3), at-most-once (§6.1/6.4), and status is never a self-declared P2P handoff. Noted the **agent-detail console page (ISI-2162)** as the §13 read-only surface. ADR-028 extended; traceability row. No new mechanism (§8.6 names what §6/§7/§8/§13 already implement); post-Gate-2, gate not reopened
   - r11 (2026-08-11, ISI-2134 / CEO+CTO comment, Henrik+Alfred): added **§8.5 Context Injection & Agent Handoff** — evaluated Alfred's proposed design (context envelope, token budgeting, structured handoff, goal propagation) and **adopted it with three load-bearing refinements**: (1) the envelope is **assembled by the control plane** (a Context Assembler in the Run reconciler at `Claiming→Running`), not the agent, and passed via the shim (§10); (2) it is **provenance-tiered** — authoritative (work item/goals) vs untrusted-recall (memory §7.3) vs untrusted-external (D8) — so injected memory/external text can't smuggle instructions (F16 applied to context = the correctness crux); (3) the **token budget is keyed to the resolved model `contextWindow`** (§10.1/§10.3, Claude ~200K vs BYO Ollama ~8K), priority-ordered, must-include never truncated, **fail-closed** on overflow. **Handoff is knowledge transfer, not custody** — the `{did,decisions,next,blockers}` artifact rides §6.5 + a provenanced memory write, but custody stays the fenced §6.2/6.3 release→re-dispatch→claim (no-P2P lock preserved a fifth time). Goals versioned via Project CRD revision; resolved envelope **snapshotted on the Run** for audit + re-entrant reuse (§6.4/6.5). ADR-028; traceability row; threads into ISI-2131 stories. No locked decision reopened; post-Gate-2 elaboration riding existing seams — **does not reopen the passed gate**
   - r10 (2026-08-11, ISI-2134 / CEO comment, Henrik): folded the CEO **Team organization diagram** console requirement (ISI-2161) into §13 — a squad org-chart view (`Team→Agent→Role` hierarchy, live per-Agent status idle/running/blocked/paused, runtime + role badges, click-through). Designed as a **pure read model, coordination-free**: hierarchy from the `Team`/`Agent`/`Role` CRDs (read-only) via BFF, live status derived from Run/claim state (§6/§8) over the **existing SSE bus**, **`Team`-scoped** (§12.1), no mutate/claim affordance (no-P2P applied to the console). No new CRD, no new data source; the mock is the 10th screen in ISI-2150 (UX). Post-Gate-2 addition that rides existing seams — **does not reopen the passed CEO Gate 2**. Touchpoints §13, traceability row. No locked decision reopened
@@ -90,8 +91,11 @@ not in etcd/CRDs. CRDs carry *desired state* (Team/Agent/Role/Skill/Project/Run)
 for contended, queryable, high-write coordination and knowledge data. This one decision de-risks the
 coordination spine (F8/R10 — Postgres row locks + fencing instead of a from-scratch distributed
 lock) and the memory build-vs-integrate trade (OQ10 — pgvector, not a new vector DB), and it keeps
-the install to a **single stateful dependency** so the S1 "≤4h install-to-first-squad" acceptance
-test stays reachable.
+the coordination/knowledge core to a **single stateful dependency (Postgres)** so the S1 "≤4h
+install-to-first-squad" acceptance test stays reachable. **(Amended by CEO 2026-08-11:** the plugin
+event seam adds **NATS/JetStream as stateful dependency #2** — data stays in Postgres, events flow on
+NATS, §17.4/ADR-023. It is single-replica-default, same lightweight install pattern as CNPG, and the
+outbox relay decouples it so NATS-down never blocks the core — the ≤4h target holds.**)**
 
 **Review-cycle surfaces (r3, ISI-2145…2150).** Six requirements raised in CEO review are folded in
 **without disturbing the spine**: source-control sync (§5.4), project/work-item/consumption
@@ -105,18 +109,20 @@ discipline that isolates A2A/MCP drift (§10.2); and the discussion room re-appl
 trust boundary (§7.3) so it is legible, provenanced knowledge — **never a coordination back-channel**
 (the no-P2P lock stands). No locked decision is reopened.
 
-**Extensibility surfaces (r5→r6, CEO 2026-08-11, ISI-2156).** Two further requirements land the same
-way: a **plugin architecture + event seam** (§17.4) and **memory fan-out to GRAIL** (§7.6). The event
-seam is a **transactional Postgres `outbox`** — events append-only in the *same transaction* as the
-state change (at-least-once), delivered by **async workers with dead-letter + circuit breaker** so a
-**failing plugin can never block the reconcile/coordination path**. Plugins are **out-of-process**
-(sidecar/service) per Project/squad, and — for the **third** time — the no-P2P discipline is applied by
-construction: consumption is **read-only**, the seam has no claim/lease/fence surface, and **plugins
-cannot claim, hand off, or mutate state** (the lock stands). GRAIL (ISI-2142) is the seam's **first
-consumer** — memory writes stream to it via OTLP/SmartScape/DQL — while **`pgvector` remains
-source-of-truth** and the §7.3 trust model is enforced above storage and before fan-out. The outbox is
-**one table in the same Postgres, not an external broker** (§4 single-stateful-dependency) — no new
-datastore forced, no locked decision reopened.
+**Extensibility surfaces (r5→r6→r12, CEO 2026-08-11, ISI-2156).** Two further requirements land the same
+way: a **plugin architecture + event seam** (§17.4) and **memory fan-out to GRAIL** (§7.6). Durability is
+a **transactional Postgres `outbox`** — events append-only in the *same transaction* as the state change
+(at-least-once) — and **(CEO revision r12, "data in Postgres, events on NATS") a relay worker publishes
+those events to NATS JetStream subjects**, where **plugins subscribe** (`nats_sub`, wildcard subjects,
+replay) instead of building an outbox consumer. The relay is decoupled, so a **failing plugin — or
+NATS being down — can never block the reconcile/coordination path** (the outbox is the durable retry
+buffer). Plugins are **out-of-process** (sidecar/service) per Project/squad, and — for the **third**
+time — the no-P2P discipline is applied by construction: consumption is **read-only**, the seam has no
+claim/lease/fence surface, and **plugins cannot claim, hand off, or mutate state** (the lock stands).
+GRAIL (ISI-2142) is the seam's **first consumer** — memory writes stream to it via OTLP/SmartScape/DQL —
+while **`pgvector` remains source-of-truth** and the §7.3 trust model is enforced above storage and
+before fan-out. **Postgres stays the single source-of-truth**; **NATS/JetStream is a second stateful
+dependency for event transport only** (§4 amended — CEO-named trade) — no locked decision reopened.
 
 > **Honesty note carried throughout.** ISI-2112 (setup-token longevity), ISI-2113 (sandbox claim
 > latency), and ISI-2114 (shim contract) are **still `backlog` and unassigned** as of this writing —
@@ -228,7 +234,19 @@ come from the same proven engine.
 install. Consumers: apiserver (coord schema, read-write), memory service (memory schema, read-write);
 no other component touches the DB directly.
 
-*Satisfies:* FR-B1…B4, FR-E1…E7, NFR-REL1/REL3, NFR-OBS1. *Trade recorded:* ADR-001.
+**Second dependency — NATS for event flow only (locked CEO decision 2026-08-11, ADR-023).** The
+"single stateful dependency" framing above is **deliberately relaxed** by a locked CEO decision: plugin
+event delivery flows over **NATS/JetStream** (§17.4), added as a second Helm dependency (§16). The
+relaxation is **narrow by design** — **Postgres remains the sole *store of record* for all durable
+state** (coordination, memory, discussion, work items, artifacts); **NATS holds no authoritative
+state**, only in-flight/replayable event copies (JetStream retention is a catch-up buffer, not a source
+of truth). The *two-records-in-one-Postgres* invariant and its trust boundaries are therefore untouched;
+what moved is only the *event fan-out to plugins* — from an internal Postgres outbox to a NATS bus, for
+plugin-developer ergonomics (a plugin writes `nats_sub(subject)`, not an outbox consumer). S1's install
+budget absorbs one more boring, single-replica-default Helm dependency (same pattern as CNPG).
+
+*Satisfies:* FR-B1…B4, FR-E1…E7, NFR-REL1/REL3, NFR-OBS1. *Trade recorded:* ADR-001; ADR-023 (NATS event
+bus as dependency #2, event-flow only).
 
 ---
 
@@ -654,10 +672,12 @@ the console renders it (§13).
 
 Every coordination state change — claim acquired, handoff, comment, completion — **also writes a domain
 event to the Postgres `outbox` table in the same transaction** (§17.4). The audit log (§6.5) and the
-outbox are complementary: the audit log is the **queryable durable history**; the outbox is the
-**at-least-once delivery feed** to out-of-process plugin consumers. Both are Postgres rows written in the
-state-change transaction, so neither can diverge from what actually committed. **The outbox is emit-only
-and read-only downstream — it grants no custody and exposes no claim/lease/fence surface** (the §17.4
+outbox are complementary: the audit log is the **queryable durable history**; the outbox is the **durable
+event journal** from which a relay worker **publishes to NATS** for at-least-once delivery to
+out-of-process plugin consumers (§17.4, CEO NATS decision — data in Postgres, events on NATS). Both are
+Postgres rows written in the state-change transaction, so neither can diverge from what actually
+committed. **The event seam is emit-only and read-only downstream — it grants no custody and exposes no
+claim/lease/fence surface, and nothing a plugin publishes on NATS re-enters coordination** (the §17.4
 guard); coordination custody remains solely in the fenced `claim` table (§6.2/6.3).
 
 *Satisfies:* FR-B1…B4, NFR-REL1/REL2, NFR-OBS1, D4. *Risk owned:* R10. *Closes review findings
@@ -788,12 +808,12 @@ memory-projected, coordination-free by construction). *Touchpoints:* §7.3 (trus
 
 > **Decision (Henrik, CEO 2026-08-11, refined via ISI-2156):** **Postgres/pgvector remains the memory
 > source-of-truth.** GRAIL (ISI-2142) is the **event seam's first consumer** — memory-write events
-> **stream to GRAIL** (OTLP / SmartScape / DQL) via the §17.4 plugin outbox, as a downstream
+> **stream to GRAIL** (OTLP / SmartScape / DQL) via the §17.4 plugin event seam (outbox→NATS), as a downstream
 > analytical/observability sink, **not** a backend swap. The trust model and the MCP tool surface do
 > not move.
 
 - **GRAIL as the first plugin consumer (ISI-2142).** Memory writes (§7.3) already emit domain events to
-  the §17.4 outbox. GRAIL subscribes to those events as an **out-of-process plugin** and streams them to
+  the §17.4 outbox, which the relay publishes to NATS. GRAIL subscribes to the memory-write **NATS subjects** as an **out-of-process plugin** and streams them to
   Dynatrace GRAIL via OTLP/SmartScape/DQL. This is **read-only fan-out**: GRAIL *observes* memory writes;
   it does not author, gate, or hold memory. **pgvector stays source-of-truth** for
   `memory_search`/provenance/trust (§7.1/§7.3). GRAIL is its own Phase 4 story, never a v1 dependency.
@@ -1330,14 +1350,19 @@ Restated for Epics so it is staffed, not assumed:
 The architecture is shaped by the S1 acceptance test (design partner: Paperclip platform team).
 
 - **One `helm install`** brings up `ksquad-system`: CRDs, operator, apiserver, memory service,
-  console, and Postgres (CNPG dependency, single-instance default profile; HA is a values toggle).
+  console, Postgres (CNPG dependency, single-instance default profile; HA is a values toggle), and
+  **NATS/JetStream** (CEO 2026-08-11, ISI-2156/ADR-023 — the plugin event bus; Helm subchart,
+  JetStream enabled, **single-replica default with a JetStream PVC**, HA via values toggle — same
+  packaging pattern as CNPG).
 - **Sane defaults, docs alone:** default RuntimeClass (gVisor if present, else a clearly-flagged
   fallback), default warm-pool policy, default egress NetworkPolicy, bundled OpenClaw + Hermes shims.
 - **First-squad quickstart:** create a `Project` (repo + workspace), define 2–3 `Agent`s from the two
   bundled runtimes, group into a `Team`, start a `Run` — from the console or YAML, no orchestration
   code (S3).
-- **Single stateful dependency (§4)** is what keeps this a one-afternoon install; every avoided
-  datastore is time the platform engineer doesn't spend.
+- **Two lean stateful dependencies (§4)** — Postgres (sole store of record) + NATS/JetStream (plugin
+  event bus, dependency #2, single-replica default) — keep this a one-afternoon install; both are boring
+  Helm subcharts, and every *further* avoided datastore is time the platform engineer doesn't spend.
+  (NATS is event-flow-only, CEO decision 2026-08-11 / ADR-023 — no state of record lives there.)
 
 ### 16.1 Networking & exposure — Gateway API (Theme L, FR-L1…L3; ISI-2149, CEO directive 2026-08-11)
 
@@ -1409,22 +1434,26 @@ no datastore.
 discussion / dashboard read APIs, one binary) · `ksquad-memory` (MCP server + pgvector, indexes the
 `discussion` schema §7.5). Shared `pkg/a2a`, `pkg/mcp` (pinned adapter seams, §10.2), `pkg/coord`
 (claim/lease/fencing), `pkg/scm` (**source-control provider seam** §5.4, GitHub first), `pkg/events`
-(**versioned event catalog + transactional-outbox delivery workers** §17.4), `pkg/apis` (CRD types). The
-`ksquad-apiserver` additionally runs the **outbox delivery workers** (§17.4); **out-of-process plugins**
-run as sidecars/services registered per Project/squad, with **GRAIL (ISI-2142) the first such consumer**
-(§7.6); `ksquad-memory` keeps **pgvector as source-of-truth** behind a `MemoryBackend` seam (§7.1/§7.6).
-Postgres remains the **only stateful dependency** — the **append-only `outbox` is one more table in the
-same database** (not a new datastore, and pointedly **not an external broker**), alongside the `coord` /
-`memory` / `discussion` / `scm` schemas (ADR-001 intact).
+(**versioned event catalog + outbox capture + NATS relay/reconciliation publisher** §17.4), `pkg/apis`
+(CRD types). The `ksquad-apiserver` additionally runs the **outbox→NATS relay + reconciliation worker**
+(§17.4); **out-of-process plugins** subscribe to **NATS** subjects, registered per Project/squad, with
+**GRAIL (ISI-2142) the first such subscriber** (§7.6); `ksquad-memory` keeps **pgvector as
+source-of-truth** behind a `MemoryBackend` seam (§7.1/§7.6). **Postgres is the sole store of record**
+(`coord`/`memory`/`discussion`/`scm` schemas + the `event_log` outbox marker, one database, ADR-001
+intact); **NATS/JetStream is stateful dependency #2 — event flow only, no state of record** (CEO
+decision 2026-08-11, ADR-023, §4).
 
-### 17.4 Plugin Architecture & Event Seam (ISI-2156, CEO 2026-08-11) — transactional outbox, out-of-process plugins, **observers not coordination**
+### 17.4 Plugin Architecture & Event Seam (ISI-2155/2156; CEO NATS decision 2026-08-11) — Postgres stores, **NATS flows**, plugins observe
 
-> **Decision (Henrik, CEO 2026-08-11, ISI-2156):** the platform emits domain events through a
-> **transactional Postgres outbox**; **out-of-process plugins** consume them **read-only**. A failing
-> plugin can **never** block the reconcile/coordination path. Plugins are **observers, not a
-> coordination path** — they cannot claim, hand off, or mutate state. Pairs with the discussion-room
-> guardrail (§7.5, F6 family). **Internal outbox, not an external broker**, per the
-> single-stateful-dependency principle (§4/§16).
+> **Decision (Henrik, CEO 2026-08-11, ISI-2156; REVISED by CEO 2026-08-11 — "store the data in
+> Postgres, flow the events on NATS", overrides ADR-023 r6):** the platform captures domain events in a
+> **transactional Postgres outbox** (durability substrate) and a **relay worker publishes them to NATS
+> JetStream subjects**; **out-of-process plugins subscribe to NATS**, read-only. A failing plugin can
+> **never** block the reconcile/coordination path. Plugins are **observers, not a coordination path** —
+> they cannot claim, hand off, or mutate state. Pairs with the discussion-room guardrail (§7.5, F6
+> family). **The outbox is retained but hidden behind NATS**: plugin devs write `nats_sub(subject)`, not
+> an outbox consumer. **NATS/JetStream is stateful dependency #2** (Postgres stays source-of-truth; the
+> §4 single-dependency principle is relaxed for the plugin event seam only — CEO-named trade).
 
 **Event seam — transactional outbox (at-least-once).** Domain events are written **append-only to a
 Postgres `outbox` table in the SAME transaction as the state change** that produced them. Because the
@@ -1436,16 +1465,26 @@ outbox row and the state row commit atomically, an event is captured **iff** its
 - **Memory writes** (§7.3): provenanced memory + discussion writes.
 - **Sync / CI results** (§5.4 scm): issue / PR / check-run / artifact mirror updates.
 
-This keeps ADR-001 intact: the outbox is **a table in the same Postgres**, not a new datastore and
-**not** an external broker (Kafka/NATS) — the CEO-named trade, resolved for the internal outbox on the
-single-stateful-dependency principle (§4).
+This keeps ADR-001 intact for **durability**: every event is first a row in the **same Postgres** in the
+state-change transaction (source of truth, no lost/phantom events). **Transport** is where the CEO
+revised the design: events flow to plugins over **NATS**, not a direct outbox-consumer contract. Kafka
+stays rejected (too heavy for a one-afternoon install); the pure-outbox-exposed-to-plugins option is
+rejected too (every plugin dev would have to build an outbox consumer — polling, dedup, cursors).
 
-**Delivery — async workers, decoupled from the write path.** Separate **delivery workers** tail the
-outbox (`LISTEN/NOTIFY` + polling) and push to registered plugins with **at-least-once** delivery, retry
-with backoff, a **dead-letter** queue for poison messages, and a **per-plugin circuit breaker**.
-Delivery runs **outside** the reconcile/coordination transaction, so **a slow, failing, or absent plugin
-can never block a Run, a claim, or a memory write** (the CEO isolation requirement). Outbox depth,
-delivery lag, dead-letter counts, and per-plugin circuit state are OTel metrics (§17.2).
+**Delivery — outbox → NATS relay, decoupled from the write path.** A **relay worker** tails the outbox
+(`LISTEN/NOTIFY` + polling) and **publishes each event to a NATS JetStream subject**, then stamps the
+outbox row `published_at` (a simple `event_id → published_at` marker). On restart or NATS unavailability
+it **republishes unflushed rows** — so delivery is **at-least-once** even if a publish fails (the outbox
+is the durable retry buffer; no dual-write divergence). Plugins **subscribe to NATS subjects**;
+JetStream retains events so a plugin can **replay/catch up** on what it missed (core NATS for
+fire-and-forget). The relay runs **outside** the reconcile/coordination transaction, so **a slow,
+failing, or absent plugin — or an unavailable NATS — can never block a Run, a claim, or a memory write**
+(the CEO isolation requirement; NATS-down only delays fan-out, never the write path). Outbox depth,
+unflushed-event lag, NATS publish failures, and JetStream consumer lag are OTel metrics (§17.2).
+
+**Subject taxonomy.** Hierarchical subjects `ksquad.{entity}.{project}.{squad}.{event_type}` let plugins
+subscribe with NATS wildcards — e.g. `ksquad.run.*.*.completed` (all completed Runs), or
+`ksquad.*.projectX.>` (everything on one project). Subjects are part of the versioned event catalog.
 
 **Versioned event catalog (drift discipline, §10.2).** Each event type has a **versioned schema** in a
 catalog governed by the same pinned-adapter discipline as A2A/MCP (`pkg/events@rev`): consumers pin an
@@ -1461,9 +1500,9 @@ never a shared master credential (credential lock upheld). Plugins run least-pri
 **Guard — plugins are observers, NOT a coordination path (CEO; §7.3/§7.5 discipline, applied again).**
 The plugin contract is **read-only event consumption**. There is no plugin affordance to claim, lease,
 fence, hand off, or otherwise mutate coordination/knowledge state:
-1. The outbox is **emit-only downstream**: events flow out; nothing a plugin returns re-enters the
-   coord/memory transaction. A plugin **cannot move a work item** by consuming (or attempting to emit) an
-   event.
+1. The event seam is **emit-only downstream**: events flow out to NATS subjects; **nothing a plugin
+   publishes on NATS re-enters** the coord/memory transaction (the relay is one-way outbox→NATS, never
+   NATS→coord). A plugin **cannot move a work item** by consuming — or by publishing to — any subject.
 2. Custody transfer stays structurally confined to the fenced `coord` record (§6); the event seam has
    **no claim/lease/fence surface** — the same reason memory (§7.3) and the discussion room (§7.5) are
    not P2P channels, now applied to plugins a **third** time.
@@ -1472,10 +1511,11 @@ fence, hand off, or otherwise mutate coordination/knowledge state:
    coordination primitive**. Read-in via events; write-out (if any) via the same public APIs as any
    principal.
 
-*Satisfies:* new (plugin architecture, ISI-2156); D8 (untrusted + authenticated), NFR-SEC*, NFR-OBS1/2
-(outbox metrics), single-stateful-dependency (§4). *Trade recorded:* ADR-023 (transactional outbox vs
-external broker; out-of-process isolated plugins; read-only consumer contract). *Touchpoints:* §6.6
-(coord events), §7.3/§7.5 (no-P2P discipline), §7.6 (GRAIL first consumer), §10.2 (event-catalog drift),
+*Satisfies:* plugin architecture (ISI-2155/2156); D8 (untrusted + authenticated), NFR-SEC*, NFR-OBS1/2
+(outbox + NATS metrics). *Trade recorded:* ADR-023 (**Postgres source-of-truth + NATS event bus**;
+outbox marker for durable capture + relay/reconciliation; rejects outbox-as-plugin-API, Kafka, pure
+in-process). *Touchpoints:* §4 (NATS = stateful dep #2), §6.6 (event marker), §7.3/§7.5 (no-P2P
+discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (Helm NATS/JetStream),
 §17.2 (observed), §17.3 (layout), §19/§22.
 
 ---
@@ -1506,8 +1546,8 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | 020 | Consumption attribution & metering provenance (Theme I, FR-I2/I3, NFR-OBS3; ISI-2146) | **Axes anchored to Run lifecycle (operator) + kubelet/cAdvisor — non-forgeable; runtime-reported token counts are best-effort, sanity-bounded, not the billing axis (OQ14); OTel metrics labeled per-principal; estimate via price table; no billing DB** | Trust agent self-reported tokens as authoritative (forgeable — NFR-OBS3 forbids); dedicated usage/billing datastore (new stateful dep, breaks S1); read provider billing API (BYO — no shared billing visibility) |
 | 021 | Build browser (ISI-2148) | **Read-only git-worktree projection (live via shim; completed via artifact snapshot + on-demand RO reader)** | Long-lived per-Run file service (pods are torn down §9.3); bespoke diff engine (git already diffs); browser writes to workspace (violates read-only/scope guard) |
 | 022 | Exposure model (Theme L, FR-L*; ISI-2149) | **Chart creates `Gateway`+`HTTPRoute`; `gatewayClassName` required values input; `values.exposure.mode` = gateway\|ingress\|clusterip with pre-flight so a Gateway-less cluster still installs in ≤4h (OQ16); explicit `storageClassName` for every PVC** | Legacy `Ingress`-only (SSE buffering, weaker timeout control); Gateway-mode as a hard dependency (breaks S1 on Gateway-less clusters); hardcode or cluster-default gatewayClass/storageClass (non-portable, silent misconfig) |
-| 023 | Plugin architecture & event seam (ISI-2156, CEO 2026-08-11) | **Transactional Postgres `outbox` (events append-only in the state-change txn → at-least-once); async delivery workers with dead-letter + per-plugin circuit breaker so a failing plugin never blocks reconcile/coordination; out-of-process plugins per Project/squad, BYO-Secret outbound creds; versioned event catalog (§10.2 discipline); read-only consumption — plugins cannot claim/handoff/mutate (observers, not a coordination path)** | External broker (Kafka/NATS — breaks single-stateful-dependency §4/§16); in-process plugins (couple plugin failure to the reconcile path); synchronous delivery inside the write txn (a slow/failing plugin blocks claims/writes); any plugin write-back/coordination affordance (breaks no-P2P lock) |
-| 024 | Memory fan-out to GRAIL (ISI-2142 via ISI-2156) | **`pgvector` stays source-of-truth; GRAIL is the event seam's first consumer — memory writes stream via OTLP/SmartScape/DQL from the outbox (read-only fan-out), own Phase 4 story; trust enforced above storage/before fan-out** | Swap pgvector for a GRAIL backend (loses source-of-truth + §7.3 trust control, breaks air-gapped S1); synchronous dual-write to GRAIL from the memory service (non-atomic, couples writes to GRAIL availability); make GRAIL a v1 dependency |
+| 023 | Plugin architecture & event seam (ISI-2156; **REVISED by CEO 2026-08-11 — "data in Postgres, events on NATS"**) | **Postgres source-of-truth + transactional `outbox` for durability (events append-only in the state-change txn); a relay worker drains the outbox to **NATS JetStream** subjects (`ksquad.{entity}.{project}.{squad}.{event_type}`) and stamps `published_at` → at-least-once, republish-on-failure, no dual-write divergence; **plugins subscribe to NATS** (`nats_sub`, JetStream replay/catch-up), out-of-process per Project/squad, BYO-Secret outbound creds; versioned event/subject catalog (§10.2); read-only — plugins cannot claim/handoff/mutate (observers)** | Pure Postgres-outbox **exposed to plugins** (every plugin dev builds an outbox consumer — polling/dedup/cursors; the CEO's rejected r6 approach); Kafka (too heavy for S1); **dropping the outbox** and publishing to NATS inside the write txn (dual-write: NATS-down loses the event or blocks the commit); in-process plugins; any plugin write-back/coordination affordance (breaks no-P2P lock) |
+| 024 | Memory fan-out to GRAIL (ISI-2142 via ISI-2156) | **`pgvector` stays source-of-truth; GRAIL is the event seam's first consumer — memory writes stream via OTLP/SmartScape/DQL, subscribed off **NATS** (memory-write subjects) as a read-only plugin, own Phase 4 story; trust enforced above storage/before fan-out** | Swap pgvector for a GRAIL backend (loses source-of-truth + §7.3 trust control, breaks air-gapped S1); synchronous dual-write to GRAIL from the memory service (non-atomic, couples writes to GRAIL availability); make GRAIL a v1 dependency |
 | 025 | Reclaim & dispatch safety (F1/F4, ISI-2132→ISI-2135) | **Fence-the-pod-before-claim-release reclaim protocol (§6.3) + deterministic `a2a_task_id = run_id` with shim-side dedup + artifact upsert keys + conditional status UPDATEs (§6.4)** | Release-on-lease-expiry alone (zombie writer keeps mutating PVC/memory/git — Kleppmann fencing violation); reconciler in-memory dispatch dedup (lost on crash); fresh execution id per attempt (double-dispatch on re-entry) |
 | 026 | BYO model-provider seam / Ollama (ISI-2157) | **`Agent` targets a BYO model endpoint (Ollama / OpenAI-compatible) via Secret-ref endpoint + per-`Agent` model, negotiated by a `byoModelEndpoint` capability; a model axis distinct from the agent-runtime seam; doubles as the credential-free CI/e2e + conformance lane (ISI-2114 Ollama lane)** | Treat Ollama as an `AgentRuntime.type` (category error — it's a model server, not a coding CLI); hardcode vendor model endpoints (kills BYO-local + the free CI lane); paid-API-only test lane (no credential-free e2e in CI) |
 | 027 | Git-sourced skills (CEO 2026-08-11, kagent-parity) | **`Skill.spec.source` = inline \| git; git-sourced body fetched via the existing `pkg/scm` seam (§5.4) + init-container staging (§5.3.4), pinned to a commit SHA; fetched body is untrusted (D8) but the `permissions`/`mcpToolRefs` capability envelope stays CRD/operator-authorized, never self-declared by the repo; private repos via BYO read-only Secret** | New skill-registry subsystem (reinvents `pkg/scm`); floating branch ref (non-reproducible, force-push alters in-flight Runs); let the fetched repo self-declare its own permissions (privilege escalation — a malicious repo grants itself tools); shared KSquad token for private skill repos (breaks per-user Secret-ref lock, ADR-010) |
@@ -1558,6 +1598,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | Team organization diagram (CEO 2026-08-11; ISI-2161, r10) | §13 console org-chart view — `Team→Agent→Role` read-only CRD read model + live status via existing SSE bus, `Team`-scoped (§12.1), coordination-free; no new CRD/data source; mock = 10th screen in ISI-2150 |
 | Context injection & agent handoff (CEO/CTO 2026-08-11; r11) | §8.5 control-plane Context Assembler (Claiming→Running) — provenance-tiered envelope (F16/§7.3), model-window token budget (§10.1/§10.3), handoff = knowledge not custody (fenced §6.2/6.3 unchanged), versioned goals, snapshot for audit/re-entry (§6.4/6.5); ADR-028; threads to ISI-2131 stories |
 | Hierarchical context budget + agent↔ticket loop (CEO 2026-08-11; r12) | §8.5 3-layer budget `Project.contextBudget`→`Agent.contextBudgetOverride`→Run dynamic trim, clamped by model `contextWindow`; §8.6 agent↔work-item lifecycle (Paperclip ergonomics, fenced Postgres coord §6); §5.1 CRD fields; §13 agent-detail (ISI-2162); ADR-028 extended |
+| NATS event bus for plugins (CEO 2026-08-11, supersedes ADR-023 r6; r13) | §17.4 Postgres outbox (durability) → relay → **NATS/JetStream** subjects, plugins `nats_sub` read-only; §4/§16 **NATS = stateful dep #2** (event-flow-only, §4 relaxed for plugin seam); §6.6 event journal→NATS; §7.6 GRAIL via NATS; ADR-023 rewritten, ADR-024 touched; no-P2P preserved (one-way outbox→NATS) |
 | ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
 
 ---
