@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -14,13 +14,19 @@ inputDocuments:
   - ISI-2148                         # CEO r3: Build browser (per-Run files/diffs/code view) → Theme K
   - ISI-2149                         # CEO r3: Helm install — Gateway API exposure + explicit StorageClass → Theme L
   - ISI-2150                         # CEO r3: Dark + light mode as v1 console requirement → FR-F7
-  - ISI-2134                         # CEO NATS decision r4: plugin event backbone (Postgres stores, NATS flows) → Theme M (FR-M*), FR-L4
-  - docs/bmad/03-architecture.md     # r13 (ISI-2134): NATS event backbone §17.4/§16/§6.6/§7.6/ADR-023 — FR↔architecture lockstep source
+  - ISI-2134                         # CEO NATS decision r4: plugin event backbone (Postgres stores, NATS flows) → Theme M (FR-M*), FR-L4; also context injection (r5 §8.5) → Theme N
+  - ISI-2157                         # CEO r5: Ollama / BYO model-provider seam → FR-D6 (arch §10.3/ADR-026)
+  - ISI-2142                         # CEO r5: GRAIL pluggable memory backend → FR-E8 (arch §7.6/ADR-024)
+  - ISI-2161                         # CEO r5: Team organization diagram console screen → FR-F8 (arch §13)
+  - ISI-2162                         # CEO r5: Agent detail page → FR-F9 (arch §13)
+  - ISI-2131                         # CEO r5: agent↔ticket lifecycle + context stories → Theme N (arch §8.5/§8.6)
+  - docs/bmad/03-architecture.md     # r13 (ISI-2134): NATS event backbone §17.4/§16/§6.6/§7.6/ADR-023; §8.5/§8.6 context+lifecycle; §10.3 Ollama; §13 org/agent-detail — FR↔architecture lockstep source
 revisions:
   - r1 (2026-08-10, ISI-2118): initial PRD synthesis
   - r2 (2026-08-10, ISI-2125): Challenger findings (ISI-2121) folded in — see §13.2 for the finding→change map
   - r3 (2026-08-11, ISI-2152): six new CEO requirements (ISI-2145..2150) folded in — new Themes H/I/J/K/L, FR-F7, NFR updates, OQ13–OQ17, risks R13–R17; see §13.3 for the requirement→change map. Re-review requested at CEO gate.
   - r4 (2026-08-11, ISI-2152 ← CEO NATS decision ISI-2134): closes the CTO-found gap (PRD r3 predated the NATS decision; architecture r13 had 56 NATS refs, PRD had 0). Adds Theme M (FR-M1…M5 — plugin architecture on a NATS event backbone, `FR-PLUG`) + FR-L4 (NATS JetStream Helm dependency, `FR-HELM`), NFR-REL4/EXT3/SEC9, OQ18, R18; see §13.4 for the requirement→change map. FR↔architecture lockstep restored. No locked decision reopened.
+  - r5 (2026-08-11, ISI-2152): completeness pass against the CEO's *definitive checklist* — folds the six remaining checklist FRs the architecture (r8–r13) had already adopted but the PRD lacked: FR-MEM-GRAIL→FR-E8, FR-OLLAMA→FR-D6, FR-ORG→FR-F8, FR-AGENT-DETAIL→FR-F9, FR-CTX+FR-AGENT-TICKET→new Theme N (FR-N1…N5); plus FR-I2/I4 (sandbox usage + live agent↔task↔project map). Adds the §13.5 checklist-coverage matrix (all 13 checklist items → ≥1 FR). FR↔architecture lockstep verified against arch §7.6/§8.5/§8.6/§10.3/§13, ADR-024/026/028. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
 project_name: 'KSquad'
@@ -33,9 +39,9 @@ program: 'ISI-2115'
 # Product Requirements Document — KSquad
 
 **Author:** John (Product Manager)
-**Date:** 2026-08-10 · **Revised:** 2026-08-11 (r4 — CEO NATS/plugin decision ISI-2134; r3 — CEO requirements ISI-2145..2150)
+**Date:** 2026-08-10 · **Revised:** 2026-08-11 (r5 — CEO definitive-checklist completeness; r4 — NATS/plugin ISI-2134; r3 — CEO requirements ISI-2145..2150)
 **Phase:** BMAD Phase 2 — PRD
-**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r4 re-review requested (§14)**
+**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r5 re-review requested (§14)**
 **Source ticket:** ISI-2118 (r1/r2) · ISI-2152 (r3/r4) · **Parent:** ISI-2116 · **Program:** ISI-2115
 
 > **Scope discipline.** This PRD builds on the seven LOCKED decisions in the kickoff brief
@@ -412,6 +418,15 @@ credentials**, the following are first-class domain constraints, not optional NF
   against **memory poisoning / prompt-injection-into-a-knowledge-record**). At minimum for MVP:
   provenance is surfaced to readers, writes are scoped to the writer's authorization, and a
   record cannot silently impersonate another principal. *(MVP — Challenger F7; see NFR-SEC6.)*
+- **FR-E8** The memory service SHALL expose a **pluggable storage/retrieval backend seam**
+  (`MemoryBackend`) with **`pgvector` as the default and v1 source-of-truth**; alternative backends
+  SHALL plug in as a **memory-SDK/plugin** without changing the trust model. **Dynatrace GRAIL** SHALL be
+  supported as such a pluggable backend/consumer — **SmartScape graph + OTLP write + DQL read** — with
+  memory-write events streamed to it via the Theme M event seam (§9.13); **`pgvector` remains the
+  default** and GRAIL does not become the store of record. The FR-E6/E7 authorization/provenance/trust
+  boundaries are enforced **above** the backend and are **backend-independent**. *(FR-MEM-GRAIL — CEO
+  requirement; architecture §7.6 / ADR-024; GRAIL as the event seam's first consumer, ISI-2142. pgvector
+  MVP; GRAIL is its own Phase 4 story.)*
 
 > **Open trade — build vs integrate (Challenger F13, OQ10).** That memory is **first-class is LOCKED**;
 > **how it is built is open** (per OQ6, the *shape* is open). Building a memory store in-house vs
@@ -449,6 +464,14 @@ credentials**, the following are first-class domain constraints, not optional NF
   special-cased hacks. *(MVP)*
 - **FR-D5** The shim contract SHALL be accompanied by a **conformance test suite** a vendor can run
   independently (suite owned by ISI-2114). *(MVP)*
+- **FR-D6** The system SHALL provide a **BYO model-provider seam distinct from the coding-runtime shim**:
+  an `Agent` MAY target a **BYO model endpoint** — its own **Ollama** instance or any OpenAI-compatible
+  server — via a **Secret-ref endpoint + per-`Agent` configurable model**, negotiated by a
+  `byoModelEndpoint` capability flag (FR-D4). Ollama is treated on the **model axis** (a model server),
+  **not** as a coding-agent runtime, so it reinforces the BYO-credential model (Theme G) rather than
+  reopening it; egress is bounded by the model-endpoint allowlist (NFR-SEC4). This BYO/Ollama lane SHALL
+  also serve as a **credential-free CI/e2e + conformance testing lane** (no paid API credits). *(MVP —
+  FR-OLLAMA, CEO requirement ISI-2157; architecture §10.3 / ADR-026; CI lane via ISI-2114.)*
 
 ### 9.6 Operator console (Theme F — P1 adoption, UX mandate)
 - **FR-F1** The console SHALL show all squads at a glance (Teams, their Projects, and Run status).
@@ -465,6 +488,19 @@ credentials**, the following are first-class domain constraints, not optional NF
 - **FR-F7** The console SHALL support both **dark and light modes** as a v1 requirement, with a
   coherent visual system across both and respect for the operator's OS/browser preference. *(MVP —
   ISI-2150; visual direction delegated to the Graphic Designer, §11.4.)*
+- **FR-F8** The console SHALL provide a **team organization diagram**: a `Team → Agent → Role`
+  org-chart view with **live per-Agent status** (idle / running / blocked / paused), **runtime-type and
+  role badges**, and **click-through to the agent detail page** (FR-F9). It SHALL be a **pure read
+  model** sourced from the `Team`/`Agent`/`Role` CRDs with live status derived from Run/claim state over
+  the existing SSE bus, **`Team`-scoped**, and **coordination-free** (no mutate/claim affordance — the
+  no-P2P lock applied to the console). *(MVP — FR-ORG, CEO requirement ISI-2161; architecture §13;
+  10th UX mock screen under §11.4/ISI-2150.)*
+- **FR-F9** The console SHALL provide an **agent detail page** surfacing, per `Agent`: **Run history**
+  (status, duration, tokens, exit reason); **per-Run tabbed logs** (task, tool-call, LLM, build output,
+  errors); a **live SSE tail** for active Runs (FR-F2); and an **OTel trace deep link per Run**. This
+  renders the agent↔ticket lifecycle history (FR-N4) and is the click-through target of the org diagram
+  (FR-F8). *(MVP — FR-AGENT-DETAIL, CEO requirement ISI-2162; architecture §13; live tail + trace
+  linkage per NFR-OBS2.)*
 - **Scope guard (revised r3):** the console is a **legibility + composition + operational-visibility**
   surface. The r3 additions stay inside that boundary: the dashboard (Theme I) is an **operational
   dashboard** (health, throughput, cost), **not** a general BI / custom-query tool; the build browser
@@ -520,11 +556,16 @@ credentials**, the following are first-class domain constraints, not optional NF
   throughput** (e.g. items opened/claimed/closed, Runs in flight / succeeded / failed) over time.
   *(MVP.)*
 - **FR-I2** The dashboard SHALL show **token/cost consumption**, attributable at least along the axes
-  **per user, per agent, per Run, and per Project**. *(MVP — attribution axes are the requirement;
-  cost precision is bounded by what each runtime reports, OQ14.)*
+  **per user, per agent, per Run, and per Project**, and SHALL surface **sandbox resource usage** for
+  in-flight/recent Runs. *(MVP — attribution axes are the requirement; cost precision is bounded by what
+  each runtime reports, OQ14.)*
 - **FR-I3** Consumption/throughput data SHALL be derived from the coordination record and Run lifecycle
   signals (NFR-OBS2/OBS3), **not** from a separate agent self-report an agent could forge. *(MVP —
   provenance of metering.)*
+- **FR-I4** The dashboard SHALL surface a **live agent↔task↔Project mapping** (who is running what),
+  **SSE-updated**, so operators see current activity across the squad at a glance. This complements the
+  org diagram (FR-F8) and is a **read model** derived from Run/claim state (FR-I3 provenance). *(MVP —
+  the "who's running what" requirement of FR-DASH.)*
 - **Scope guard:** operational visibility over KSquad's own entities (Projects, Runs, work items,
   agents, cost). **Not** a general/custom-query analytics product, **not** external-metrics ingestion.
 
@@ -616,6 +657,39 @@ credentials**, the following are first-class domain constraints, not optional NF
   coordination channel, **not** a second source of truth (NATS holds only in-flight/replayable copies,
   not authoritative state), and **not** a general external message bus for arbitrary app traffic
   (guards R5, R18). Postgres remains the sole store of record; NATS is event-flow-only.
+
+### 9.14 Context injection & agent↔ticket lifecycle (Theme N — r5, ISI-2134/2131) — FR-CTX + FR-AGENT-TICKET
+> Two CEO/CTO-elaborated capabilities (Henrik + Alfred, 2026-08-11) that ride existing seams: how a Run
+> is *contextualized* before it starts, how agents *hand off* knowledge, and how the claim→work→complete
+> lifecycle is surfaced. **Handoff is knowledge transfer, not custody** — custody stays the fenced
+> release→re-dispatch→claim path (FR-B2/B3), so the no-P2P lock is preserved. Architecture owns the
+> mechanism: §8.5 (context injection & handoff, ADR-028), §8.6 (agent↔ticket lifecycle), §10 (shim
+> transport), §13 (agent detail surface).
+- **FR-N1** Each Run SHALL be dispatched with a **context envelope** assembled by the **control plane**
+  (not the agent) — comprising the **work item/ticket, Project + goals, scoped memory recall, and linked
+  artifacts** — and passed to the agent via the shim. The envelope SHALL be **provenance-tiered**:
+  **authoritative** (work item/goals) vs **untrusted-recall** (memory, FR-E7) vs **untrusted-external**
+  (D8), so injected memory/external text **cannot smuggle instructions** as trusted context (F16 applied
+  to context). *(MVP — FR-CTX; architecture §8.5/ADR-028.)*
+- **FR-N2** Context injection SHALL enforce a **hierarchical context budget** — **per Project**, **per
+  Agent (override)**, and **per Run (dynamic)** — keyed to the **resolved model's context window**
+  (e.g. Claude ~200K vs a BYO Ollama model ~8K, FR-D6), **priority-ordered with must-include content
+  never truncated** and **fail-closed on overflow** (never silently drop authoritative context). *(MVP
+  — FR-CTX; architecture §8.5/§10.1/§10.3.)*
+- **FR-N3** Agents SHALL exchange work via a **structured handoff artifact** with a standardized schema
+  (`{did, decisions, next, blockers}`) that **enriches the next agent's envelope** alongside full
+  work-item provenance and scoped memory recall. The handoff artifact SHALL be **knowledge transfer,
+  not custody transfer** — it SHALL NOT authorize or transfer a claim/lease; custody moves only via the
+  fenced release→re-dispatch→claim path (FR-B2/B3). This preserves the no-P2P lock. *(MVP — FR-CTX;
+  architecture §8.5, §6.5.)*
+- **FR-N4** The system SHALL support the full **agent↔ticket lifecycle, Paperclip-style**: an agent
+  **claims** a work item, **works** it, **comments**, **updates status**, **posts artifacts**, and
+  **completes** it — with the **complete history surfaced in the console** (agent detail page FR-F9;
+  coordination record FR-B1/B4). *(MVP — FR-AGENT-TICKET; architecture §8.6.)*
+- **FR-N5** **Goal propagation** SHALL be **versioned and CRD-sourced**: `Project` CRD goals and
+  **work-item acceptance criteria** SHALL be injected into each Run's envelope (FR-N1), versioned via
+  Project CRD revision; the **resolved envelope SHALL be snapshotted on the Run** for audit and
+  re-entrant reuse. *(MVP — FR-CTX; architecture §8.5, §6.4/6.5.)*
 
 ---
 
@@ -748,6 +822,17 @@ required to run *anything* safely and legibly.
   event-flow, read-only out-of-process plugins) + FR-L4 (NATS JetStream Helm dependency). The seam
   generalizes the SSE progress bus; **GRAIL is its first consumer** (§7.6/ADR-024). Lands *around* the
   spine — the outbox relay keeps it off the correctness-critical path (NFR-REL4).
+- **r5 — CEO definitive-checklist completeness (ISI-2134/2157/2142/2161/2162/2131):** the six remaining
+  checklist FRs, in lockstep with the architecture that already adopted them:
+  - **Context injection & agent↔ticket lifecycle** — FR-N1…N5 (control-plane context envelope,
+    hierarchical/model-keyed context budget, structured **knowledge-transfer** handoff — not custody,
+    versioned goal propagation, Paperclip-style lifecycle). *Correctness-relevant* (provenance-tiered
+    context is F16 applied to injection) but rides the Run reconciler + shim seams.
+  - **GRAIL pluggable memory backend** — FR-E8 (pgvector stays default/source-of-truth; GRAIL is a
+    memory-SDK plugin — its own Phase 4 story, not a v1 blocker).
+  - **Ollama / BYO model-provider seam** — FR-D6 (also the credential-free CI/e2e lane).
+  - **Console surfaces** — FR-F8 (org diagram), FR-F9 (agent detail page), FR-I4 (live agent↔task↔
+    Project map) — read-only, coordination-free legibility views.
 - **Named design partner + day-one install acceptance test (resolves OQ8):** Paperclip platform team
   (internal, confirmed at CEO Gate 1); S1 now includes the FR-L1/L2 exposure+storage acceptance.
 
@@ -954,9 +1039,32 @@ Helm), §6.6 (coordination events), §7.6 + ADR-024 (GRAIL first consumer), ADR-
 supersedes r6 outbox-consumer). Subject scheme, JetStream durability, one-way non-coordinating seam,
 and "Postgres stores / NATS flows" all match between the two documents.
 
----
+### 13.5 CEO definitive-checklist coverage matrix (r5) — every checklist item → ≥1 FR
+The issue's *definitive checklist* requires **every item covered by ≥1 FR**. r5 completes coverage
+(r3 folded the first six; r4 added the NATS backbone; r5 adds the remaining six the architecture had
+already adopted). All 13 items now map to at least one FR:
 
-## 14. Handoff & Next Steps
+| # | CEO checklist item | Covered by | Arch lockstep |
+|---|--------------------|-----------|---------------|
+| 1 | **FR-GITM** — source-control sync (GitHub) | Theme H (FR-H1…H5), §6.2, NFR-SEC8 | §14 sync |
+| 2 | **FR-DASH** — dashboard (health, throughput, cost, live map, sandbox usage) | Theme I (FR-I1…I4), NFR-OBS3; FR-F8 | §13 |
+| 3 | **FR-ROOM** — per-Project discussion room (collab, not coordination) | Theme J (FR-J1…J4), §6.1, NFR-SEC7 | §7.5 |
+| 4 | **FR-BUILD** — build browser (files/diffs/code, per-Run) | Theme K (FR-K1…K2) | §13 |
+| 5 | **FR-HELM** — Helm install (Gateway+HTTPRoute, StorageClass, component images, **NATS JetStream dep**) | Theme L (FR-L1…L4) | §16 |
+| 6 | **FR-PLUG** — plugin architecture on NATS event bus | Theme M (FR-M1…M5) | §17.4 / ADR-023 |
+| 7 | **FR-MEM-GRAIL** — GRAIL pluggable memory backend (pgvector default) | **FR-E8** | §7.6 / ADR-024 |
+| 8 | **FR-OLLAMA** — BYO Ollama model-provider seam + CI lane | **FR-D6** | §10.3 / ADR-026 |
+| 9 | **FR-ORG** — team organization diagram | **FR-F8** | §13 |
+| 10 | **FR-AGENT-DETAIL** — agent detail page (run history, tabbed logs, SSE tail, OTel deep link) | **FR-F9** | §13 |
+| 11 | **FR-CTX** — context injection & handoff (envelope, hierarchical budget, handoff artifact, goal propagation) | **Theme N** (FR-N1/N2/N3/N5) | §8.5 / ADR-028 |
+| 12 | **FR-THEME** — dark + light mode (v1) | FR-F7, NFR-USE2 | UX §11.4 |
+| 13 | **FR-AGENT-TICKET** — agent/ticket lifecycle, history in console | **FR-N4**, FR-B1/B4, FR-F9 | §8.6 |
+
+**Component-level Docker images** (FR-HELM sub-bullet: operator, apiserver, memory, console, shims) are
+an install/packaging concern owned by Architecture §16 / DevOps; the PRD requirement is the Helm chart +
+per-component deployables (FR-L*), with image build/publish tracked in the CI pipeline, not a new FR.
+
+---
 
 - **Gate:** CEO (BigBoss) approval, routed by Alfred (CTO). Per the kickoff, **no architecture work
   starts** until this PRD passes the CEO gate.
@@ -1003,6 +1111,7 @@ and "Postgres stores / NATS flows" all match between the two documents.
 | CEO r3 ISI-2150 (dark/light mode) | FR-F7, NFR-USE2, §11.4 |
 | CEO r3 ISI-2145..2150 | §13.3 requirement→change map (r3 via ISI-2152) |
 | CEO NATS decision (r4, ISI-2134) — plugin backbone | Theme M (FR-M*), FR-L4, NFR-REL4/EXT3/SEC9, OQ18, R18, §13.4 |
+| CEO checklist completeness (r5) — GRAIL/Ollama/org/agent-detail/context/lifecycle | FR-E8, FR-D6, FR-F8/F9, FR-I4, Theme N (FR-N*); §13.5 coverage matrix |
 
 ---
 
@@ -1070,3 +1179,40 @@ fence, v1 scope cut, best-effort metering precision) unchanged.
 **FR↔architecture lockstep verified (§13.4):** Theme M / FR-L4 cross-checked against architecture §17.4,
 §16, §6.6, §7.6, ADR-023/024 (r13) — subject scheme, JetStream durability, one-way non-coordinating
 seam, and "Postgres stores / NATS flows" all match. **Phase 4 story writing waits on this r4 re-review.**
+
+---
+
+## CEO Gate — r5 Re-Review Requested — 2026-08-11 (definitive-checklist completeness)
+
+**Status: PENDING CEO (BigBoss) re-review — supersedes the r3/r4 requests above.**
+
+**Why r5:** the issue is a **definitive checklist — every item covered by ≥1 FR**. A coverage audit
+found that while r3 folded the first six items and r4 the NATS backbone, **six checklist FRs were still
+uncovered in the PRD even though the architecture (r8–r13) had already adopted all of them** — the PRD
+had simply lagged. r5 closes that drift and restores full FR↔architecture lockstep. **All 13 checklist
+items now map to ≥1 FR — see the §13.5 coverage matrix.**
+
+**What changed in r5 (all in lockstep with the architecture that already designed them):**
+
+1. **Theme N — context injection & agent↔ticket lifecycle (FR-N1…N5; `FR-CTX` + `FR-AGENT-TICKET`).**
+   Control-plane-assembled, **provenance-tiered** context envelope; **hierarchical, model-keyed context
+   budget** (fail-closed on overflow); structured **`{did,decisions,next,blockers}` handoff as knowledge
+   transfer, not custody** (no-P2P preserved); versioned CRD-sourced goal propagation; Paperclip-style
+   claim→work→complete lifecycle with history in the console. *(arch §8.5/§8.6, ADR-028.)*
+2. **FR-E8 — GRAIL pluggable memory backend (`FR-MEM-GRAIL`).** `MemoryBackend` seam; **pgvector stays
+   default + source-of-truth**; GRAIL (SmartScape + OTLP + DQL) plugs in as a memory-SDK consumer; trust
+   model enforced above the backend. *(arch §7.6, ADR-024.)*
+3. **FR-D6 — BYO Ollama model-provider seam (`FR-OLLAMA`).** Secret-ref endpoint + per-Agent model on
+   the *model axis* (not a coding runtime); doubles as the **credential-free CI/e2e lane**. *(arch §10.3,
+   ADR-026.)*
+4. **FR-F8 org diagram, FR-F9 agent detail page, FR-I4 live agent↔task↔Project map (`FR-ORG`,
+   `FR-AGENT-DETAIL`, part of `FR-DASH`).** Read-only, coordination-free console legibility. *(arch §13.)*
+
+**Requesting BigBoss confirm:** (a) the checklist is now **fully covered** (§13.5), and (b) the prior
+ratification items still stand unchanged — discussion-room fence (§6.1), NATS framing (Postgres stores /
+NATS flows), v1 scope cut, best-effort metering precision. **No locked decision reopened**; every r5 add
+rides an existing seam (Run reconciler, shim, memory seam, console read models).
+
+**FR↔architecture lockstep re-verified (§13.5):** FR-E8↔§7.6/ADR-024, FR-D6↔§10.3/ADR-026,
+FR-F8/F9↔§13, Theme N↔§8.5/§8.6/ADR-028. **Phase 4 story writing waits on this r5 re-review** so stories
+are written against the complete, ratified capability contract.
