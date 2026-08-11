@@ -22,6 +22,7 @@ inputDocuments:
   - ISI-2134                        # CEO Gate 2 review comment (Henrik 2026-08-11): git-sourced skills (kagent-parity) — Skill.spec.source inline|git via pkg/scm — folded into §5.3.6 (r9)
   - ISI-2161                        # Team organization diagram console screen (CEO Henrik 2026-08-11): Team→Agent→Role org-chart read model + live SSE status — folded into §13 (r10); mock = 10th screen in ISI-2150
   - ISI-2134                        # CEO/CTO question (Henrik+Alfred 2026-08-11): context injection + agent handoff — evaluated Alfred's design, adopted w/ refinements — new §8.5 (r11); threads to ISI-2131
+  - ISI-2134                        # CEO clarifications (Henrik 2026-08-11): hierarchical context budget (Project/Agent CRDs) + agent↔ticket lifecycle loop — §8.5/§8.6 (r12); agent-detail console = ISI-2162
   - MemPalace (org shared memory)   # First-hand Sympozium production intel (Ensemble/Agent/Model CRDs, memory sidecar, NATS, PR#45, OTel PRs #11/#18, ISI-1406)
 revisions:
   - r1 (2026-08-10, ISI-2119): initial architecture synthesis from CEO-approved PRD r2
@@ -31,6 +32,7 @@ revisions:
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
   - r7 (2026-08-11, ISI-2135): closed the ISI-2132 review's four blocking coordination-spine findings (F1–F4) ahead of the R10 epic — §6.1 cardinality pinned (exactly-one-active claim per work item, monotonic fence, artifact upsert key); §6.2 renewal guard (holder AND fence AND unexpired lease); §6.3 **reclaim protocol: fence the pod (terminate + egress-deny + confirm) BEFORE releasing the claim**, plus resource-layer fence checks (memory write validation, fence-guarded artifact registration, workspace-lease discipline) and the named external-git residual; §6.4 re-entrancy designed for external-effect steps (deterministic `a2a_task_id = run_id` + shim-side dedup + durable dispatch marker; artifact upsert; conditional status UPDATEs); §8 failure path now runs the reclaim protocol; §15 names the zombie-writer-vs-PVC (F1) and double-dispatch (F4) chaos cases as R10 acceptance gates; ADR-025 added. No locked decision reopened; ADR-001/003 intact
+  - r12 (2026-08-11, ISI-2134 / CEO clarifications, Henrik): refined §8.5 budget to a **hierarchical, operator-tunable model** — `Project.contextBudget` default → `Agent.contextBudgetOverride` → **Run-level dynamic trim** (work-item size + memory-recall relevance), all **clamped by the resolved model `contextWindow`** (an override above the window is a fail-closed validation error). New CRD fields on `Project` (`contextBudget`, `goals`) + `Agent` (`contextBudgetOverride`), §5.1. Added **§8.6 Agent↔Work-Item Lifecycle (the core loop)** — confirmed Paperclip-style ergonomics (claim→contextualize→work→emit artifacts→transition status→complete) on **KSquad-native fenced Postgres coordination** (§6, not CRDs); the deltas are that every mutation is fenced (§6.3), at-most-once (§6.1/6.4), and status is never a self-declared P2P handoff. Noted the **agent-detail console page (ISI-2162)** as the §13 read-only surface. ADR-028 extended; traceability row. No new mechanism (§8.6 names what §6/§7/§8/§13 already implement); post-Gate-2, gate not reopened
   - r11 (2026-08-11, ISI-2134 / CEO+CTO comment, Henrik+Alfred): added **§8.5 Context Injection & Agent Handoff** — evaluated Alfred's proposed design (context envelope, token budgeting, structured handoff, goal propagation) and **adopted it with three load-bearing refinements**: (1) the envelope is **assembled by the control plane** (a Context Assembler in the Run reconciler at `Claiming→Running`), not the agent, and passed via the shim (§10); (2) it is **provenance-tiered** — authoritative (work item/goals) vs untrusted-recall (memory §7.3) vs untrusted-external (D8) — so injected memory/external text can't smuggle instructions (F16 applied to context = the correctness crux); (3) the **token budget is keyed to the resolved model `contextWindow`** (§10.1/§10.3, Claude ~200K vs BYO Ollama ~8K), priority-ordered, must-include never truncated, **fail-closed** on overflow. **Handoff is knowledge transfer, not custody** — the `{did,decisions,next,blockers}` artifact rides §6.5 + a provenanced memory write, but custody stays the fenced §6.2/6.3 release→re-dispatch→claim (no-P2P lock preserved a fifth time). Goals versioned via Project CRD revision; resolved envelope **snapshotted on the Run** for audit + re-entrant reuse (§6.4/6.5). ADR-028; traceability row; threads into ISI-2131 stories. No locked decision reopened; post-Gate-2 elaboration riding existing seams — **does not reopen the passed gate**
   - r10 (2026-08-11, ISI-2134 / CEO comment, Henrik): folded the CEO **Team organization diagram** console requirement (ISI-2161) into §13 — a squad org-chart view (`Team→Agent→Role` hierarchy, live per-Agent status idle/running/blocked/paused, runtime + role badges, click-through). Designed as a **pure read model, coordination-free**: hierarchy from the `Team`/`Agent`/`Role` CRDs (read-only) via BFF, live status derived from Run/claim state (§6/§8) over the **existing SSE bus**, **`Team`-scoped** (§12.1), no mutate/claim affordance (no-P2P applied to the console). No new CRD, no new data source; the mock is the 10th screen in ISI-2150 (UX). Post-Gate-2 addition that rides existing seams — **does not reopen the passed CEO Gate 2**. Touchpoints §13, traceability row. No locked decision reopened
   - r9 (2026-08-11, ISI-2134 / CEO comment, Henrik): folded the CEO **git-sourced skills** requirement (kagent-parity) in behind existing seams — new §5.3.6 `Skill.spec.source` = inline|git. A git-sourced skill fetches its body via the **existing `pkg/scm` provider seam (§5.4)** + init-container staging (§5.3.4), **pinned to a commit SHA** (reproducibility, ADR-017 discipline). Trust boundary is explicit: the fetched body is **untrusted (D8)** but the `permissions`/`mcpToolRefs` capability envelope stays **CRD/operator-authorized, never self-declared by the repo** (no privilege escalation); private repos via **BYO read-only Secret** (§11, ADR-010). Touchpoints §5.1 (`Skill` CRD adds `source`), §5.3.4, §5.4, §17.1; ADR-027 added; traceability row added. No locked decision reopened; no new subsystem (reuses Theme H `pkg/scm`)
@@ -237,11 +239,11 @@ no other component touches the DB directly.
 | CRD | Purpose | Key spec | Reconciled by |
 |-----|---------|----------|---------------|
 | `Team` | Squad = tenancy boundary | `projects[]`, `agents[]` (refs), `namespaceStrategy` | Team reconciler → ensures namespace, RBAC, NetworkPolicy, quota |
-| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model` | Agent reconciler → validates Secret + runtime, publishes Agent Card |
+| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model`, `contextBudgetOverride?` (§8.5) | Agent reconciler → validates Secret + runtime, publishes Agent Card |
 | `AgentRuntime` | Pluggable coding-agent flavor + CLI version policy | `type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}` | AgentRuntime reconciler + `ImageUpdater` (§5.3) |
 | `Role` | Reusable behavior profile | `promptRef`, `defaultSkills[]`, `runtimeClassHint` | (data only; validated) |
 | `Skill` | Granted tool/capability | `source{inline\|git}` (§5.3.6), `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}` | (data only; validated → drives §5.3.4 pod assembly; git-sourced body staged at claim) |
-| `Project` | Repo + workspace | `repo` (URL/ref/auth, `sync{provider,webhookSecretRef,mirror{},reflectOutbound}` §5.4), `workspacePVC` (size/class), `egressPolicyRef` | Project reconciler → PVC, repo-sync bootstrap, NetworkPolicy; **repo-sync reconciler** (§5.4) mirrors SCM |
+| `Project` | Repo + workspace | `repo` (URL/ref/auth, `sync{provider,webhookSecretRef,mirror{},reflectOutbound}` §5.4), `workspacePVC` (size/class), `egressPolicyRef`, `goals`, `contextBudget` (§8.5) | Project reconciler → PVC, repo-sync bootstrap, NetworkPolicy; **repo-sync reconciler** (§5.4) mirrors SCM |
 | `Run` | Unit of squad work | `teamRef`, `projectRef`, `workItemSelector`, `agents[]`, `retryPolicy` | **Run reconciler (the core state machine, §8)** |
 | `SandboxPool` (internal) | Warm-pool sizing | `runtimeClass`, `size`/`policy`, `template` | SandboxPool reconciler (§9) |
 
@@ -881,8 +883,21 @@ so `contextWindow` is **declared as a capability on the Agent Card (§10.1)** an
 **priority-ordered budget**: must-include (work item + acceptance criteria + goals) is placed first and
 **never truncated**; best-effort tiers (memory recall K, artifacts L) are summarized/truncated to fit,
 lowest-priority first. If must-include alone exceeds the window (a too-small local model), the Run
-**fails closed** with a clear condition — never silent truncation of the task itself. Budgets are
-per-runtime-defaulted, overridable per Agent.
+**fails closed** with a clear condition — never silent truncation of the task itself.
+
+The budget is **hierarchical and operator-tunable without code changes** (CEO clarification 2026-08-11),
+resolved by the Assembler in three layers so no agent hits a context-wall from a one-size-fits-all limit:
+- **Project-level default** — the **`Project` CRD gains a `contextBudget` block** (per-tier token
+  allocations: work-item / project-docs / memory-recall / artifacts). Complex projects with large
+  architecture docs raise the budget once, for every agent on the project.
+- **Agent-level override** — the **`Agent` CRD gains an optional `contextBudgetOverride`**, so a
+  Claude-backed agent takes a ~200K allocation while a BYO-Ollama agent takes ~8K on the same project.
+- **Run-level dynamic trim** — within the resolved allocation, the shim further trims by **actual
+  work-item size + memory-recall relevance scoring** (drop low-scoring recall before high).
+The resolution order is Project default → Agent override → Run dynamic, and the whole thing is **clamped
+by the resolved model `contextWindow`** (§10.1) — configuration can shrink the budget but never exceed
+the physical window; a `contextBudgetOverride` above the model window is a fail-closed validation error,
+not a silent overflow.
 
 **Handoff is knowledge transfer, NOT custody transfer (the no-P2P lock, preserved a fifth time).** Adopt
 the **structured handoff artifact** (`{did, decisions, next, blockers}`, standardized schema) — Agent A
@@ -907,7 +922,40 @@ context. Assembly is deterministic given `(work-item rev, goal rev, memory snaps
 *Satisfies:* the CEO/CTO context-injection + handoff requirement; FR-A (run lifecycle), FR-B1/B3/B4
 (coordination artifacts + audit), FR-E (memory recall). *Trade recorded:* ADR-028. *Touchpoints:* §5
 (Project/work-item CRDs + goals), §6.2/§6.3 (fenced custody), §6.4/§6.5 (snapshot/audit), §7.3 (trust
-tiers), §10.1/§10.3 (shim contract + model `contextWindow`). *Threads into:* stories (ISI-2131).
+tiers), §10.1/§10.3 (shim contract + model `contextWindow`), §5.1 (`Project.contextBudget`,
+`Agent.contextBudgetOverride`). *Threads into:* stories (ISI-2131).
+
+### 8.6 Agent ↔ Work-Item Lifecycle — the core loop (CEO confirmation 2026-08-11)
+
+**Confirmed: agents work and update tickets with Paperclip's ergonomics, on KSquad-native backing** (the
+coordination record is Postgres §6, *not* CRDs — CRDs stay desired-state per ADR-001/002). The loop, in
+terms of mechanisms already specified:
+1. **Claim** — the agent claims a work item through the coordination spine (§6.2: checkout/claim/lease +
+   fencing token; at-most-one-holder, §6.1).
+2. **Contextualize** — the Run reads its **context envelope** (§8.5), assembled by the control plane.
+3. **Work** — executes in the sandbox (§9), reads/writes the workspace and memory (§7), and **streams
+   progress** — progress comments + SSE (§6.5 audit, §8 `Running` → console FR-F2).
+4. **Emit artifacts** — code/diffs/docs/handoff summaries posted via the **A2A task-lifecycle artifact
+   channel** → coordination record (§6.5), upsert-keyed (§6.1, idempotent under re-entry §6.4).
+5. **Transition status** — the agent moves the work item across `in_progress → in_review / done /
+   blocked` at lifecycle points. Each transition is a **fenced, audited coord write** (§6.2/§6.5) and
+   emits a domain event (§6.6) — the same conditional-UPDATE discipline that makes it crash-safe.
+6. **Complete** — the item lands in review/done; the **memory service captures provenance** (§7.3
+   authorized, provenanced write) so the decision trail is recallable by future Runs (§8.5 recall).
+
+**What stays KSquad-specific (the deltas, not cosmetic):** every mutation above is **fenced** (§6.3 —
+a zombie agent cannot post artifacts or move status after lease loss), the writes are **at-most-once by
+construction** (§6.1/§6.4), and status is **never a self-declared P2P handoff** — it is a row transition
+in the fenced record, reconciled by the control plane. So the *ergonomics* match Paperclip while the
+*correctness properties* (F1–F4) are the reconcile-control-plane delta this architecture exists for.
+
+**Console surface (§13):** the **agent detail page (ISI-2162)** renders this per agent — work-item
+history, comments, artifacts, and Run logs — a read-only projection of the coord audit (§6.5) + SSE, no
+new data path. (Complements the org diagram, §13/ISI-2161.)
+
+*Satisfies:* FR-A (lifecycle), FR-B1…B4 (claim/handoff/artifacts/audit), FR-F (console history), the CEO
+"works-like-Paperclip" confirmation. *No new mechanism* — this section names the loop that §6/§7/§8/§13
+already implement. *Threads into:* stories (ISI-2131), agent-detail console (ISI-2162).
 
 ---
 
@@ -1463,7 +1511,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | 025 | Reclaim & dispatch safety (F1/F4, ISI-2132→ISI-2135) | **Fence-the-pod-before-claim-release reclaim protocol (§6.3) + deterministic `a2a_task_id = run_id` with shim-side dedup + artifact upsert keys + conditional status UPDATEs (§6.4)** | Release-on-lease-expiry alone (zombie writer keeps mutating PVC/memory/git — Kleppmann fencing violation); reconciler in-memory dispatch dedup (lost on crash); fresh execution id per attempt (double-dispatch on re-entry) |
 | 026 | BYO model-provider seam / Ollama (ISI-2157) | **`Agent` targets a BYO model endpoint (Ollama / OpenAI-compatible) via Secret-ref endpoint + per-`Agent` model, negotiated by a `byoModelEndpoint` capability; a model axis distinct from the agent-runtime seam; doubles as the credential-free CI/e2e + conformance lane (ISI-2114 Ollama lane)** | Treat Ollama as an `AgentRuntime.type` (category error — it's a model server, not a coding CLI); hardcode vendor model endpoints (kills BYO-local + the free CI lane); paid-API-only test lane (no credential-free e2e in CI) |
 | 027 | Git-sourced skills (CEO 2026-08-11, kagent-parity) | **`Skill.spec.source` = inline \| git; git-sourced body fetched via the existing `pkg/scm` seam (§5.4) + init-container staging (§5.3.4), pinned to a commit SHA; fetched body is untrusted (D8) but the `permissions`/`mcpToolRefs` capability envelope stays CRD/operator-authorized, never self-declared by the repo; private repos via BYO read-only Secret** | New skill-registry subsystem (reinvents `pkg/scm`); floating branch ref (non-reproducible, force-push alters in-flight Runs); let the fetched repo self-declare its own permissions (privilege escalation — a malicious repo grants itself tools); shared KSquad token for private skill repos (breaks per-user Secret-ref lock, ADR-010) |
-| 028 | Context injection & agent handoff (CEO/CTO 2026-08-11, §8.5) | **Control-plane Context Assembler builds a per-Run envelope at Claiming→Running, passed via the shim (§10); envelope is provenance-tiered (authoritative vs untrusted-recall vs untrusted-external, F16/§7.3); token budget keyed to the resolved model `contextWindow` (§10.1/§10.3) with priority order (must-include never truncated, fail-closed if it overflows); handoff artifact `{did,decisions,next,blockers}` is knowledge transfer only — custody stays the fenced §6.2/6.3 release→re-dispatch→claim; goals versioned via Project CRD revision; resolved envelope snapshotted on the Run for audit + re-entrant reuse (§6.4/6.5)** | Agent self-assembles its own context (no budget control, untrusted content sets its own framing); flat untiered prompt blob (prompt-injection — memory/external text read as commands); budget keyed to runtime CLI not model (misbudgets BYO Ollama's ~8K window); handoff artifact that authorizes/transfers custody (reintroduces the P2P coordination back-channel the no-P2P lock forbids); re-query context on resume (non-reproducible, resumed Run sees different context) |
+| 028 | Context injection & agent handoff (CEO/CTO 2026-08-11, §8.5/§8.6) | **Control-plane Context Assembler builds a per-Run envelope at Claiming→Running, passed via the shim (§10); envelope is provenance-tiered (authoritative vs untrusted-recall vs untrusted-external, F16/§7.3); token budget is HIERARCHICAL + operator-tunable — `Project.contextBudget` default → `Agent.contextBudgetOverride` → Run-level dynamic trim (work-item size + memory relevance), all clamped by the resolved model `contextWindow` (§10.1/§10.3), must-include never truncated, fail-closed on overflow; handoff artifact `{did,decisions,next,blockers}` is knowledge transfer only — custody stays the fenced §6.2/6.3 release→re-dispatch→claim; goals versioned via Project CRD revision; resolved envelope snapshotted on the Run for audit + re-entrant reuse (§6.4/6.5). Agent↔work-item loop (§8.6) = Paperclip ergonomics on fenced Postgres coord (§6), not CRDs** | Agent self-assembles its own context (no budget control, untrusted content sets its own framing); flat untiered prompt blob (prompt-injection); single global budget (one-size-fits-all context-wall — CEO rejected); budget keyed to runtime CLI not model (misbudgets BYO Ollama's ~8K); `contextBudgetOverride` above the model window (silent overflow — rejected as validation error); handoff artifact that authorizes/transfers custody (reintroduces P2P back-channel); self-declared/unfenced status transitions (zombie-writer + no-P2P violations); re-query context on resume (non-reproducible) |
 ---
 
 ## 19. Traceability (PRD → Architecture)
@@ -1509,6 +1557,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | Git-sourced skills (CEO 2026-08-11, kagent-parity; r9) | §5.3.6 `Skill.spec.source` inline\|git via `pkg/scm` seam, commit-pinned, untrusted body / operator-authorized envelope; §5.1 CRD; §5.4 provider; ADR-027 |
 | Team organization diagram (CEO 2026-08-11; ISI-2161, r10) | §13 console org-chart view — `Team→Agent→Role` read-only CRD read model + live status via existing SSE bus, `Team`-scoped (§12.1), coordination-free; no new CRD/data source; mock = 10th screen in ISI-2150 |
 | Context injection & agent handoff (CEO/CTO 2026-08-11; r11) | §8.5 control-plane Context Assembler (Claiming→Running) — provenance-tiered envelope (F16/§7.3), model-window token budget (§10.1/§10.3), handoff = knowledge not custody (fenced §6.2/6.3 unchanged), versioned goals, snapshot for audit/re-entry (§6.4/6.5); ADR-028; threads to ISI-2131 stories |
+| Hierarchical context budget + agent↔ticket loop (CEO 2026-08-11; r12) | §8.5 3-layer budget `Project.contextBudget`→`Agent.contextBudgetOverride`→Run dynamic trim, clamped by model `contextWindow`; §8.6 agent↔work-item lifecycle (Paperclip ergonomics, fenced Postgres coord §6); §5.1 CRD fields; §13 agent-detail (ISI-2162); ADR-028 extended |
 | ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
 
 ---
