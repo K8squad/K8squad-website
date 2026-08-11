@@ -130,7 +130,12 @@ kind-badged: **TASK** (work-item checkout), **TOOL** (tool calls + results), **L
 browser** §3.6), **ERROR** (assertion + stack trace), plus **NOTE** (coordination record) and **MEM**
 (knowledge-record write, violet — the two-records principle, §6 PRD). The final active-Run line carries
 a **live-pulsing head** — the SSE log tail — and the footer restates it: *"live SSE log tail — streaming
-while the Run is active."* Source: `gen-10-agent-runs.py` (token-mirrored dark/light generator).
+while the Run is active."* Per the Gate-2 Architect data-contract (arch r12 · §8 Run lifecycle · §6.5
+coordination audit · §12.1 scope), this page is a pure **read model**: **read-only, Team-scoped** (an
+identity-card chip and the header state it), and Run **status & kill stay in the existing Run controls —
+never on this page** (no mutate / claim / kill affordance). The work-item / claim / handoff / artifact /
+status trail is a read-only, upsert-keyed projection of the coordination audit (§6.5). Source:
+`gen-10-agent-runs.py` (token-mirrored dark/light generator).
 
 ---
 

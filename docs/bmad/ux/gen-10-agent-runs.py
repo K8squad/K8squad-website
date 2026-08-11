@@ -30,7 +30,8 @@ def identity(T):
     # chips row
     cx = x + 78
     for label, mono in [("Claude Code · sandboxed", False), ("ns: team-payments", True),
-                        ("role: Reviewer", False), ("role: Approver", False)]:
+                        ("role: Reviewer", False), ("role: Approver", False),
+                        ("read-only · Team-scoped", False)]:
         cw = 16 + len(label) * (6.6 if mono else 6.4)
         s.append(chip(cx, y + 48, cw, 20, label, T["panel"], T["border"], T["t2"], size=10.5, mono=mono))
         cx += cw + 8
@@ -185,13 +186,14 @@ def run_detail(T):
     s.append(rect(x + 24, y + h - 44, w - 48, 1, T["divider"]))
     s.append(dot(x + 34, y + h - 26, 3.6, T["g_dot"], pulse=True))
     s.append(text(x + 48, y + h - 22, "live SSE log tail — streaming while the Run is active", 10.5, T["t3"]))
-    s.append(text(x + w - 24, y + h - 22, "Download run log  ·  Kill Run", 10.5, T["accent2"], w=600, anchor="end"))
+    s.append(text(x + w - 24, y + h - 22, "Download run log  →", 10.5, T["accent2"], w=600, anchor="end"))
+    s.append(text(x + w - 190, y + h - 22, "status & kill live in Run controls  ·", 10, T["t4"], anchor="end"))
     return "".join(s)
 
 
 def build(T):
     return (build_rail(T, "agents") +
-            build_header(T, "Agent detail", "Agents / Reviewer · run history + logs · live SSE · OTel trace per Run") +
+            build_header(T, "Agent detail", "Agents / Reviewer · Run history + logs · read-only, Team-scoped — status & kill stay in Run controls") +
             identity(T) + run_history(T) + run_detail(T))
 
 
