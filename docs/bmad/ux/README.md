@@ -42,8 +42,26 @@ Two CEO changes are applied here:
    preserved with darker on-light hues (green `#059669`, amber `#B45309`, rose `#E11D48`, slate
    `#64748B`, violet `#7C3AED`) over light tints, always paired with dot + label (a11y unchanged).
 
-Delivered this revision: `00`–`05` in dark (logo-swapped) **and** light. **Pending** (tracked as a
-follow-up): three new screens — **build browser**, **discussion room**, **dashboard** — in both themes.
+Delivered this revision: `00`–`05` in dark (logo-swapped) **and** light.
+
+---
+
+## 0b. Revision v3 — three new screens (ISI-2160, CEO request)
+
+The three new CEO-requested screens now ship, each in **dark + light**, on the same locked system
+(dark canvas `#0B1220` + single azure accent `#3D7DFF`; reserved status hues; v2 8-Crest rail lockup;
+light mode mirrors token roles). Light siblings are generated from each dark SVG by the audited
+dark→light token map (accent `#3D7DFF` is theme-invariant; status hues darken for on-light contrast).
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 06 | Build browser | `images/06-build-browser.png` | Browse/inspect produced builds + artifacts, read-only |
+| 07 | Discussion room | `images/07-discussion-room.png` | Coordination record as a threaded room (not chat · I4) |
+| 08 | Fleet dashboard | `images/08-fleet-dashboard.png` | Fleet-level stat tiles + trends over squads/runs |
+
+**Rail evolution.** The left rail gains **Dashboard** (new fleet landing, top of rail), **Builds**, and
+**Discussion** (both under the Runs surface). These three appear on screens `06`–`08`; the earlier
+`00`–`05` keep their committed 5-item rail and pick up the new entries on their next re-render.
 
 ---
 
@@ -78,10 +96,13 @@ identity). Anti-center by construction — no hero, no wasted canvas.
 
 ```
 KSquad · operator console
+├─ Dashboard       fleet-level stat tiles + trends over squads/runs (ns: all)              ← new · screen 08
 ├─ Overview        squads at a glance — Teams × Projects × live Run status   ← FR-F1  (Priya lands here)
 ├─ Runs            live + historical Runs; open one → Run detail
 │   ├─ Live stream   SSE coordination timeline (checkout · comment · artifact · handoff)  ← FR-F2
 │   ├─ Artifacts     inspect handoff outputs, read-only (diffs, reports, comments, logs)   ← FR-F3
+│   ├─ Builds        browse produced builds + their artifacts, read-only                   ← new · screen 06
+│   ├─ Discussion    coordination record as a threaded room (not chat · I4)                ← new · screen 07
 │   └─ [Kill Run]    2-click cancel from the Run header                                    ← FR-F4 (S2)
 ├─ Projects        repos + workspaces (Project CRD)
 ├─ Agents          agents / runtimes / roles / skills registry
@@ -151,6 +172,30 @@ Expired/expiring rows are amber-tinted and sorted to attention. The footer resta
 *"KSquad never stores a shared master credential… expiry pauses the Run, never fails it opaquely
 (FR-G3 · S10)."* Exact refresh UX is **gated on ISI-2112 evidence** (OQ1) — this screen shows the
 *shape* of the signal, and is the surface that flexes when that evidence lands.
+
+### 3.6 Build browser — `images/06-build-browser.png`  · successor to Runs/Artifacts
+A master–detail successor to the Runs/Artifacts surface. Left: a **build history** list (build id,
+status pill, commit `sha` + branch, squad, duration, artifact count; the live build pulses). Main: the
+selected build's detail — a **stage strip** (Checkout → Review → Fix → Test → Publish, with per-stage
+durations and a live-pulsing current stage) over an **artifacts grid** (each card = kind badge, name in
+mono, producer, metric, size + produced-at, a download affordance). The footer holds the same R6 guard
+as §3.3: *"builds & artifacts are read-only; apply happens in the repo PR, not here (not an IDE)."*
+
+### 3.7 Discussion room — `images/07-discussion-room.png`  · two-records principle I4
+The coordination discussion surface — and deliberately **not a chat**. It renders the *coordination
+record* (comments · checkouts · handoffs · artifacts) as a **threaded room**: left = work-item threads;
+main = the selected thread's posts, each with actor · role, a kind tag (`CHECKOUT`/`COMMENT`/`HANDOFF`/
+`ARTIFACT`), timestamp (mono), and threaded replies. A **memory** write is tagged violet and a rail note
+states it was routed to the *knowledge record*, **not** this thread — the two-records split made visible
+(§6 PRD · I4). The composer is intentionally inert: *"no free-form chat input — posts are coordination
+events agents emit."* Right rail: participants + work-item meta.
+
+### 3.8 Fleet dashboard — `images/08-fleet-dashboard.png`  · fleet operator view
+The new fleet landing (`ns: all`). A row of **stat tiles** (Squads · Runs live · Success 24h · Failed
+24h · Avg run · Paused), then **trends**: a *runs-over-time* area line (12h, with failed runs ringed in
+rose) beside a *run-outcomes* bar breakdown; below, a **squad-activity** leaderboard (runs, success %,
+a per-squad sparkline, status pill) beside a **needs-attention** queue (paused/failed/expiring, sorted
+to the top). Motion is live-only (the Runs-live tile pulses); every status still pairs colour + label.
 
 ---
 
