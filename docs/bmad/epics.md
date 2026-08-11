@@ -240,8 +240,9 @@ and surfaces credential/auth state. Uses the BFF to proxy SSE and hide the Go AP
 
 **Arch:** §4.5 (frontend), §4.4 (SSE hub), §11.2 (`console/`). **UX:** the six screens in
 `docs/bmad/ux` (`01-squad-overview` … `05-credential-auth-state`) **plus the 2026-08-11 CEO-added
-screens: build browser, project dashboard, discussion room** (mocks in flight; theme toggle
-dark+light and the v2 logo are v1 requirements, story 8.9). **FR:** FR-F1–F6. **NFR:** NFR-USE2.
+screens: build browser, project dashboard, discussion room, and team-organization diagram (8.10)**
+(mocks in flight; theme toggle dark+light and the v2 logo are v1 requirements, story 8.9). **FR:** FR-F1–F6.
+**NFR:** NFR-USE2.
 **Deps:** apiserver (Epics 2/3) + SSE hub. Console is sequenced last (§4.7).
 
 | Story | Statement | Key acceptance criteria (GWT) | Notes |
@@ -254,7 +255,8 @@ dark+light and the v2 logo are v1 requirements, story 8.9). **FR:** FR-F1–F6. 
 | 8.6 | As an operator, I want to **surface credential/auth state**, including a clear paused-on-expiry signal. | **Given** an Agent whose Run is `Paused` on an expired token, **When** I view credential state, **Then** the console shows a clear paused-on-expiry signal (supports S10, Epic 7.4). | UX `05-credential-auth-state`. FR-F6. |
 | 8.7 | **[CEO 2026-08-11]** As an operator, I want a **per-Run build browser** so I can see WHAT an agent actually built, not just task status. | **Given** a Run that modified the Project workspace, **When** I open its build browser, **Then** I see the workspace **file tree** scoped to that Run's changes, a **per-file diff view**, and a **code viewer**, all linked to the producing Run (and to its PR/CI state once Epic 11 lands). **And** this extends artifact inspection (8.3) — blobs and handoffs stay reachable from the same surface. | Extends FR-F3. Paperclip gap closed. Diff base = Run's worktree branch vs `Project.repo` default ref (§9.4 worktree model). |
 | 8.8 | **[CEO 2026-08-11]** As an operator, I want a **per-Project dashboard layer** — health, work items, consumption — at a glance. | **Given** a Project, **When** I open its dashboard, **Then** I see: (a) **health** — active Runs, squad status, recent activity; (b) **work items** — open/claimed/blocked/done counts + throughput over time (from the Epic 2 coordination record); (c) **consumption** — token usage + cost per agent / per Run / per Project, and sandbox/runtime resource usage. **And** consumption metrics **ride the OTel pipeline** (§17.2 handoff) — no bespoke accounting path — and are **attributed per user/principal**, first-class under the BYO-subscription credential model (locked decision). | Consumption attribution joins §17.2 metrics with Epic 7 credential principal. PR/CI tiles arrive via Epic 11. |
-| 8.9 | **[CEO 2026-08-11]** As an operator, I want **dark AND light mode** and the **v2 logo** across the console. | **Given** any console screen, **When** I toggle theme, **Then** all screens render in light mode mirroring the same design tokens (ISI-2126 visual system) — the toggle is **v1, not polish**. **And** all screens + the visual-system header use the **v2 logo** from `assets/logo/` once ISI-2137 lands. **And** light-mode mocks exist for all screens (00 visual system, 01–05, build browser, discussion room, dashboard). | **Deps: ISI-2137** (v2 logo assets — Graphic Designer, pending) + mock revision task (child of ISI-2131). |
+| 8.9 | **[CEO 2026-08-11]** As an operator, I want **dark AND light mode** and the **v2 logo** across the console. | **Given** any console screen, **When** I toggle theme, **Then** all screens render in light mode mirroring the same design tokens (ISI-2126 visual system) — the toggle is **v1, not polish**. **And** all screens + the visual-system header use the **v2 logo** from `assets/logo/` once ISI-2137 lands. **And** light-mode mocks exist for all screens (00 visual system, 01–05, build browser, discussion room, dashboard, **team-org diagram (8.10)**). | **Deps: ISI-2137** (v2 logo assets — Graphic Designer, pending) + mock revision task (ISI-2150, 10-screen set). |
+| 8.10 | **[CEO 2026-08-11]** As an operator, I want a **team-organization diagram** — a live squad org chart (Team → Agent → Role) like Paperclip's — so I can see squad structure and who is doing what at a glance. | **Given** a Team, **When** I open its org diagram, **Then** I see the **Team → Agent → Role hierarchy** rendered from the `Team`/`Agent`/`Role` CRDs (**read-only**, §5.1), each Agent node showing **real-time status** (idle / running / blocked / paused), its **runtime type** (`AgentRuntime`, §5.3), and **role badges**; **And** status updates **live over SSE** (§4.4 hub, same BFF proxy as 8.2); **And** clicking an Agent node **deep-links to its detail** (its current/recent Runs, credential state 8.6). | UX `09-team-org-diagram` (10th screen, ISI-2150). Read/legibility surface — **not** a compose/edit view (that stays 8.5) and **not** a coordination path (R6 scope guard). Agent status derives from its current `Run.status.phase` (§5.2) + `Paused` condition (Epic 7.4); no new backend — reads existing CRDs + SSE. Build owned by the new CEO ticket; this is the architecture-context story. |
 
 ---
 
@@ -390,7 +392,8 @@ additionally **tested** in Epic X.
 → 8.7 (extends FR-F3) · dashboard layer → 8.8 · discussion rooms → Epic 10 · source-control sync →
 Epic 11 · theming/logo → 8.9 · plugin architecture (event seam + GRAIL memory plugin) → Epic 12 ·
 **Ollama model backend + $0 CI lane → 5.7 + 7.5 (extend FR-D/FR-G via the model/credential seam) +
-ISI-2114 Ollama conformance lane + ISI-2157 CI lane**. **No orphan FRs; no orphan stories.**
+ISI-2114 Ollama conformance lane + ISI-2157 CI lane** · **team-org diagram → 8.10 (extends FR-F, 10th
+console screen, ISI-2150)**. **No orphan FRs; no orphan stories.**
 
 ---
 
