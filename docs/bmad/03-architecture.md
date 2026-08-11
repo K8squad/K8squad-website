@@ -19,6 +19,7 @@ inputDocuments:
   - ISI-2142                        # GRAIL — the event-seam's first consumer: memory writes stream to GRAIL (OTLP/SmartScape/DQL); pgvector stays source-of-truth (own Phase 4 story) — folded into §7.6 (r5→r6)
   - ISI-2156                        # Plugin architecture (CEO via ISI-2131 c/1d8db3b3): transactional Postgres outbox event seam + out-of-process plugins + isolation; plugins = read-only observers, not coordination — folded into §17.4/§6.6 (r6)
   - ISI-2157                        # Ollama runtime adapter (CEO): Agent targets BYO Ollama endpoint (Secret-ref endpoint + per-Agent model); doubles as the free credential-less CI/e2e + conformance lane — folded into §10.3/§11 (r8)
+  - ISI-2134                        # CEO Gate 2 review comment (Henrik 2026-08-11): git-sourced skills (kagent-parity) — Skill.spec.source inline|git via pkg/scm — folded into §5.3.6 (r9)
   - MemPalace (org shared memory)   # First-hand Sympozium production intel (Ensemble/Agent/Model CRDs, memory sidecar, NATS, PR#45, OTel PRs #11/#18, ISI-1406)
 revisions:
   - r1 (2026-08-10, ISI-2119): initial architecture synthesis from CEO-approved PRD r2
@@ -28,6 +29,7 @@ revisions:
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
   - r7 (2026-08-11, ISI-2135): closed the ISI-2132 review's four blocking coordination-spine findings (F1–F4) ahead of the R10 epic — §6.1 cardinality pinned (exactly-one-active claim per work item, monotonic fence, artifact upsert key); §6.2 renewal guard (holder AND fence AND unexpired lease); §6.3 **reclaim protocol: fence the pod (terminate + egress-deny + confirm) BEFORE releasing the claim**, plus resource-layer fence checks (memory write validation, fence-guarded artifact registration, workspace-lease discipline) and the named external-git residual; §6.4 re-entrancy designed for external-effect steps (deterministic `a2a_task_id = run_id` + shim-side dedup + durable dispatch marker; artifact upsert; conditional status UPDATEs); §8 failure path now runs the reclaim protocol; §15 names the zombie-writer-vs-PVC (F1) and double-dispatch (F4) chaos cases as R10 acceptance gates; ADR-025 added. No locked decision reopened; ADR-001/003 intact
+  - r9 (2026-08-11, ISI-2134 / CEO comment, Henrik): folded the CEO **git-sourced skills** requirement (kagent-parity) in behind existing seams — new §5.3.6 `Skill.spec.source` = inline|git. A git-sourced skill fetches its body via the **existing `pkg/scm` provider seam (§5.4)** + init-container staging (§5.3.4), **pinned to a commit SHA** (reproducibility, ADR-017 discipline). Trust boundary is explicit: the fetched body is **untrusted (D8)** but the `permissions`/`mcpToolRefs` capability envelope stays **CRD/operator-authorized, never self-declared by the repo** (no privilege escalation); private repos via **BYO read-only Secret** (§11, ADR-010). Touchpoints §5.1 (`Skill` CRD adds `source`), §5.3.4, §5.4, §17.1; ADR-027 added; traceability row added. No locked decision reopened; no new subsystem (reuses Theme H `pkg/scm`)
   - r8 (2026-08-11, ISI-2151 / ISI-2157): added the **Ollama / BYO model-provider seam** — new §10.3. An `Agent` targets a BYO model endpoint (its own Ollama / any OpenAI-compatible server) via a **Secret-ref endpoint + per-Agent model**, negotiated by a `byoModelEndpoint` capability (§10.1). Kept the honest distinction: Ollama is a **model server, not a coding-agent runtime** (§5.3), so it lands on the model axis and **reinforces the BYO-credential lock** (§11 third story) rather than reopening it. Egress via the model-endpoint allowlist (§12.2). Doubles as the **credential-free CI/e2e + conformance lane** (§10.1, ISI-2114 Ollama lane) for squad smoke/e2e without paid API credits (ISI-2157). ADR-026; §11 heading Two→Three stories; §19/§21/§22 updated. No locked decision reopened
 workflowType: 'architecture'
 authoringMode: 'analyst-led autonomous synthesis; CEO Gate 2 is the human review checkpoint'
@@ -234,7 +236,7 @@ no other component touches the DB directly.
 | `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model` | Agent reconciler → validates Secret + runtime, publishes Agent Card |
 | `AgentRuntime` | Pluggable coding-agent flavor + CLI version policy | `type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}` | AgentRuntime reconciler + `ImageUpdater` (§5.3) |
 | `Role` | Reusable behavior profile | `promptRef`, `defaultSkills[]`, `runtimeClassHint` | (data only; validated) |
-| `Skill` | Granted tool/capability | `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}` | (data only; validated → drives §5.3.4 pod assembly) |
+| `Skill` | Granted tool/capability | `source{inline\|git}` (§5.3.6), `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}` | (data only; validated → drives §5.3.4 pod assembly; git-sourced body staged at claim) |
 | `Project` | Repo + workspace | `repo` (URL/ref/auth, `sync{provider,webhookSecretRef,mirror{},reflectOutbound}` §5.4), `workspacePVC` (size/class), `egressPolicyRef` | Project reconciler → PVC, repo-sync bootstrap, NetworkPolicy; **repo-sync reconciler** (§5.4) mirrors SCM |
 | `Run` | Unit of squad work | `teamRef`, `projectRef`, `workItemSelector`, `agents[]`, `retryPolicy` | **Run reconciler (the core state machine, §8)** |
 | `SandboxPool` (internal) | Warm-pool sizing | `runtimeClass`, `size`/`policy`, `template` | SandboxPool reconciler (§9) |
@@ -394,6 +396,56 @@ ISI-2144 amendment scope. *Trade recorded:* ADR-015 (AgentRuntime CRD + R-not-R�
 ADR-016 (lifecycle-split tooling: init-staged packs vs service sidecars), ADR-017 (hybrid image
 update via ImageUpdater + conformance canary). *Spike-gated:* Docker-in-sandbox mechanism per
 RuntimeClass (§9.1/ISI-2113); CLI-redistribution licensing (open question 2, owner Alfred).
+
+#### 5.3.6 Skill source seam — git-sourced skills (CEO 2026-08-11, kagent-parity)
+
+**Decision (Henrik, CEO 2026-08-11):** a `Skill` must be able to load its **definition + content from a
+GitHub repo** (kagent's model — skills as versioned files in Git), not only from an inline CRD body.
+This rides the **existing `pkg/scm` provider seam (§5.4)** and the init-container staging path
+(§5.3.2/§5.3.4) — no new subsystem, and it reuses the source-control provider abstraction already built
+for repo-sync.
+
+- **`Skill.spec.source` — inline | git.** Today's Skill is `source: inline` (body in the CRD). A
+  git-sourced skill sets `source.git` = `{repoRef, ref, path, credentialSecretRef?}` and the operator
+  **materializes the skill body at pod assembly** (an init container fetches via `pkg/scm`, stages onto
+  the shared skills volume alongside toolchain packs, §5.3.4 step 4). GitHub is the v1 provider;
+  GitLab/Gitea drop in behind the same interface (§5.4/ADR-018), so "GitHub skills" is not a hardcode.
+
+```yaml
+apiVersion: ksquad.io/v1alpha1
+kind: Skill
+spec:
+  source:
+    git:
+      repoRef: github.com/acme/squad-skills   # via pkg/scm provider (§5.4)
+      ref: 3f2a9c1                              # PINNED to a commit SHA (not a floating branch)
+      path: skills/pg-migrate
+      credentialSecretRef: acme-skills-ro       # optional; private repos → BYO read-only token (§11)
+  mcpToolRefs: [...]         # capability envelope stays CRD/operator-authorized (see trust note)
+  permissions: [...]        # NOT self-declared by the fetched repo body
+  requires: { toolchains: [...], sidecars: [...] }
+```
+
+- **Pinned to a commit SHA, never a floating branch** — same reproducibility discipline as
+  `AgentRuntime.cliVersion` (ADR-017) and the pinned adapter seam (ADR-009): a Run resolves a skill to
+  an immutable revision, so a repo force-push cannot silently alter in-flight behavior. A moving `ref`
+  is admitted only behind an explicit `experimental`/dev posture, resolved-and-recorded per Run.
+- **The fetched body is untrusted input (D8, §17.1) — the trust boundary is the whole point.** A skill
+  grants tools and permissions; if an external repo could self-declare its own capability envelope,
+  a malicious repo would be privilege escalation. So: **the `permissions`/`mcpToolRefs` capability
+  envelope stays authorized by the `Skill` CRD (the operator/admin who registers the source), not by
+  the repo content.** The repo supplies *behavior* (prompt/instructions/scripts) inside that envelope;
+  it never widens it. Fetched content is scanned/validated before staging, runs inside the same sandbox
+  isolation (§9.1) + egress policy (§12) as any Run, and private sources use a **BYO read-only Secret
+  ref** (§11) — never a shared KSquad token. This is the §7.3/§17.4 "untrusted external, authorized
+  envelope" argument applied a fourth time.
+- **Provenance + caching.** The resolved `(repoRef, commit, path)` is recorded on the Run (audit, §6.5)
+  and the fetched pack is content-addressed and node-cached like a toolchain pack (§5.3.2), so warm-pool
+  keying (§5.3.5) is unaffected — skills attach per-Run, not per-warm-pod.
+
+*Satisfies:* the CEO git-sourced-skills requirement (kagent-parity), FR-A1…A3 (CRD surface), reuses
+Theme H `pkg/scm` (§5.4). *Trade recorded:* ADR-027. *Touchpoints:* §5.1 (`Skill` CRD), §5.3.4
+(pod assembly), §5.4 (`pkg/scm`), §11 (BYO read-only Secret), §17.1 (untrusted-input threat model).
 
 ### 5.4 Source-Control Sync — repo-sync reconciler & provider seam (Theme H, FR-H1…H5; ISI-2145)
 
@@ -1338,6 +1390,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | 024 | Memory fan-out to GRAIL (ISI-2142 via ISI-2156) | **`pgvector` stays source-of-truth; GRAIL is the event seam's first consumer — memory writes stream via OTLP/SmartScape/DQL from the outbox (read-only fan-out), own Phase 4 story; trust enforced above storage/before fan-out** | Swap pgvector for a GRAIL backend (loses source-of-truth + §7.3 trust control, breaks air-gapped S1); synchronous dual-write to GRAIL from the memory service (non-atomic, couples writes to GRAIL availability); make GRAIL a v1 dependency |
 | 025 | Reclaim & dispatch safety (F1/F4, ISI-2132→ISI-2135) | **Fence-the-pod-before-claim-release reclaim protocol (§6.3) + deterministic `a2a_task_id = run_id` with shim-side dedup + artifact upsert keys + conditional status UPDATEs (§6.4)** | Release-on-lease-expiry alone (zombie writer keeps mutating PVC/memory/git — Kleppmann fencing violation); reconciler in-memory dispatch dedup (lost on crash); fresh execution id per attempt (double-dispatch on re-entry) |
 | 026 | BYO model-provider seam / Ollama (ISI-2157) | **`Agent` targets a BYO model endpoint (Ollama / OpenAI-compatible) via Secret-ref endpoint + per-`Agent` model, negotiated by a `byoModelEndpoint` capability; a model axis distinct from the agent-runtime seam; doubles as the credential-free CI/e2e + conformance lane (ISI-2114 Ollama lane)** | Treat Ollama as an `AgentRuntime.type` (category error — it's a model server, not a coding CLI); hardcode vendor model endpoints (kills BYO-local + the free CI lane); paid-API-only test lane (no credential-free e2e in CI) |
+| 027 | Git-sourced skills (CEO 2026-08-11, kagent-parity) | **`Skill.spec.source` = inline \| git; git-sourced body fetched via the existing `pkg/scm` seam (§5.4) + init-container staging (§5.3.4), pinned to a commit SHA; fetched body is untrusted (D8) but the `permissions`/`mcpToolRefs` capability envelope stays CRD/operator-authorized, never self-declared by the repo; private repos via BYO read-only Secret** | New skill-registry subsystem (reinvents `pkg/scm`); floating branch ref (non-reproducible, force-push alters in-flight Runs); let the fetched repo self-declare its own permissions (privilege escalation — a malicious repo grants itself tools); shared KSquad token for private skill repos (breaks per-user Secret-ref lock, ADR-010) |
 ---
 
 ## 19. Traceability (PRD → Architecture)
@@ -1380,6 +1433,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | ISI-2150 Console theming | §13 dark+light theme (v1, WCAG AA both modes) |
 | ISI-2156 Plugin architecture + event seam (r6) | §17.4 transactional Postgres outbox + async delivery (dead-letter/circuit-breaker) + out-of-process plugins, read-only (not coordination); §6.6 coord events; §17.3 `pkg/events`; ADR-023 |
 | ISI-2142 GRAIL memory fan-out (r6) | §7.6 GRAIL = event-seam first consumer (OTLP/SmartScape/DQL), pgvector source-of-truth; §7.1/§17.4; ADR-024 |
+| Git-sourced skills (CEO 2026-08-11, kagent-parity; r9) | §5.3.6 `Skill.spec.source` inline\|git via `pkg/scm` seam, commit-pinned, untrusted body / operator-authorized envelope; §5.1 CRD; §5.4 provider; ADR-027 |
 | ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
 
 ---
