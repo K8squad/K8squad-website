@@ -21,8 +21,17 @@
 > ISI-2137 assets land → **Epic 8.9**; (f) **plugin architecture** — the platform emits domain
 > events that plugins register to (observers, **not** a coordination path); the Dynatrace GRAIL
 > memory backend (ISI-2142) is reframed as a **memory SDK/plugin**, first consumer of the seam →
-> **Epic 12**. Items (a)–(d) and (f) are **new scope vs the PRD** — Gate 2 must
-> ratify them as a PRD addendum (see FR coverage check).
+> **Epic 12**; (g) **Ollama model backend + free CI lane** — Agents point at a **BYO Ollama
+> endpoint** (endpoint via Secret ref, model name per Agent) as a **third model-backend / credential
+> shape** beside Claude-OAuth and second-runtime API-key. **Architecturally this is the §10.3
+> model-endpoint seam — `Agent.spec.modelEndpointRef` → per-user Secret + per-Agent `Agent.spec.model`,
+> negotiated by a `byoModelEndpoint` capability (§10.1) — orthogonal to `AgentRuntime.type`, NOT a new
+> runtime flavor (ADR-026):** an existing runtime (OpenClaw/Hermes) rides the OpenAI-compatible wire to
+> the endpoint — **zero new image, zero core change**. The same lane doubles as the **$0 release-testing path** (Ollama service
+> container / self-hosted GPU runner) for smoke + e2e squad scenarios in CI (**ISI-2157**) — no paid API
+> credits. Threaded into **Epic 5** (model-backend seam + conformance Ollama lane, ISI-2114), **Epic 7**
+> (endpoint-ref credential shape, 7.5), and the **Epic X / CI free lane**. Items (a)–(d), (f) and (g)
+> are **new scope vs the PRD** — Gate 2 must ratify them as a PRD addendum (see FR coverage check).
 >
 > **Sources:** PRD `02-prd.md` (FR/NFR contract, §9/§10), Architecture `03-architecture.md`
 > (decisions AD-1..AD-10, §4–§11), UX `docs/bmad/ux` (console screens). Traceability: PRD → Arch in
@@ -152,7 +161,10 @@ tenancy), §9.2 (egress), §9.3 (workspace + concurrent Runs). **FR:** FR-C2, FR
 
 **Objective:** Invoke agents southbound over A2A; ship OpenClaw + Hermes shims that both run real Runs
 in one squad; express capability gaps as first-class Agent Card flags; pin protocol versions behind the
-seam; deliver a runnable conformance suite. **Zero core changes to add a runtime.**
+seam; deliver a runnable conformance suite. **Zero core changes to add a runtime.** The **model backend
+an Agent runs against is a separate seam** from the runtime flavor (§10.3, ADR-026): `Agent.spec.model`
++ `Agent.spec.modelEndpointRef` (→Secret) point an existing runtime at a **BYO Ollama / OpenAI-compatible
+endpoint** (story 5.7) — model-endpoint config, **not** a new `AgentRuntime.type` and not a new shim.
 
 **Arch:** §7.1 (shim contract), §7.2 (Agent Card + capability + credential metadata), §7.3 (credential
 injection), §7.4 (version isolation), §7.5 (launch runtimes + conformance). **FR:** FR-D1–D5. **NFR:**
@@ -166,7 +178,8 @@ shim spec + reference shim + conformance assertions `[GATE-BLOCKING: conformance
 | 5.3 | As the system, I want **protocol version pinning behind the seam** so upstream A2A/MCP churn never touches core. | **Given** `internal/protocol/versions.go`, **When** an external-spec touchpoint is added, **Then** it sits behind the shim/adapter seam; **And** a version bump changes an adapter, never core. | Arch §7.4, OQ12, R11. `protocol/versions.go`. |
 | 5.4 | As a runtime integrator, I want the **credential injection contract** so a shim maps a generic Secret into runtime-native form without logging it. | **Given** a per-user Secret ref on `Agent`, **When** the sandbox is claimed, **Then** the shim receives creds as env/volume and maps them to the runtime's expected form (e.g. `CLAUDE_CODE_OAUTH_TOKEN` vs an API-key env); **And** the shim **never persists or logs** the credential. | Arch §7.3, AD-9. FR-G1, NFR-SEC3. Coupled with Epic 7. |
 | 5.5 | As an ecosystem, I want the **OpenClaw and Hermes shims** to ship and both run real Runs in one squad. | **Given** a squad with an OpenClaw agent and a Hermes agent, **When** a Run executes, **Then** both runtimes run real Runs in the **same squad** (S6). | Arch §7.5, §11.2 (`shims/openclaw`, `shims/hermes`). FR-D3. Claude Code / OpenCode are Phase 2. |
-| 5.6 | **[GATE-BLOCKING]** As a vendor, I want a **runnable conformance suite** I can execute independently. | **Given** a shim, **When** the conformance suite runs, **Then** it checks Agent Card validity, task-lifecycle conformance, SSE progress, artifact emission, capability-flag honesty, and credential-metadata correctness; **And** passing = "works in any squad, zero core changes." | Arch §7.5, §11.2 (`shims/conformance`). FR-D5. **Deps: ISI-2114** — the suite + reference shim are produced there; §7 is the architecture-altitude input ISI-2114 formalizes. |
+| 5.6 | **[GATE-BLOCKING]** As a vendor, I want a **runnable conformance suite** I can execute independently. | **Given** a shim, **When** the conformance suite runs, **Then** it checks Agent Card validity, task-lifecycle conformance, SSE progress, artifact emission, capability-flag honesty, and credential-metadata correctness; **And** passing = "works in any squad, zero core changes." **And** the suite exposes an **Ollama lane** — the same assertions run with the runtime's model resolved to a BYO Ollama endpoint (story 5.7), giving vendors a $0 way to prove conformance. | Arch §7.5, §11.2 (`shims/conformance`). FR-D5. **Deps: ISI-2114** — the suite + reference shim are produced there (Ollama lane included); §7 is the architecture-altitude input ISI-2114 formalizes. |
+| 5.7 | **[CEO 2026-08-11]** As an operator, I want to point an `Agent` at my **own Ollama endpoint** (BYO local model) so a squad runs on a self-hosted model with **no paid API credits**. | **Given** an `Agent` with `Agent.spec.modelEndpointRef` → a per-user Secret (BYO Ollama / OpenAI-compatible endpoint) and `Agent.spec.model` set, **When** a Run dispatches, **Then** the resolved runtime (OpenClaw/Hermes) rides the **OpenAI-compatible wire** to that endpoint through the **existing shim seam — no new `AgentRuntime.type`, no new image, zero core change** — and the Agent Card advertises the `byoModelEndpoint` capability + honest capability flags. **And** the **conformance Ollama lane** (5.6/ISI-2114) proves an Ollama-backed runtime passes task-in → run → artifacts-out. | **Ollama is a model backend (§10.3 model-endpoint seam, ADR-026), not an `AgentRuntime.type`.** Requires the resolved runtime to speak an OpenAI-compatible / Ollama-native wire — the **`byoModelEndpoint` capability (§10.1)**, gated by conformance; a runtime lacking it advertises the gap honestly (weak local models must not fail silently mid-Run). Credential shape = Epic 7.5. Free CI lane = ISI-2157. **Gap flagged:** arch §5.1 now adds `modelEndpointRef` to the `Agent` CRD — **Epic 1 story 1.2 must add that field** (and reconcile the `AgentRuntime` CRD, §5.3/ISI-2144, still absent from 1.2) at Gate 2 before 5.7 builds. |
 
 ---
 
@@ -194,8 +207,8 @@ scoping). No spike-gate dependency.
 ## Epic 7 — Credential plumbing & graceful pause/resume (AD-9)
 
 **Objective:** Two concrete, distinct credential stories (Claude-family OAuth + second-runtime API
-key), per-user Secret refs, never a shared master credential, with graceful pause/resume on
-expiry/rotation. **Not Claude-shaped.**
+key), **plus the Ollama BYO-endpoint shape (7.5)**, per-user Secret refs, never a shared master
+credential, with graceful pause/resume on expiry/rotation. **Not Claude-shaped.**
 
 **Arch:** §10 (both credential stories + pause/resume), §7.2 (credential metadata), §7.3 (injection).
 **FR:** FR-G1, FR-G2, FR-G3. **NFR:** NFR-SEC3. **Deps:** Epic 5 (shim cred injection + card metadata),
@@ -207,7 +220,8 @@ Epic 3 (Run `Paused` condition). **Spike gate:** **ISI-2112** for OAuth refresh 
 | 7.1 | As an enterprise, I want each `Agent` to reference credentials via **per-user k8s Secret refs** (BYO), never a shared master. | **Given** an `Agent`, **When** it is composed, **Then** it references a per-user Secret; **And** KSquad stores **no** shared master credential; **And** creds are per-namespace, never cross-squad. | Arch §10, §9.1, AD-9. FR-G1, NFR-SEC3. |
 | 7.2 | **[Claude-family credential story]** As an operator, I want the Claude Code OAuth-subscription flow: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` as a per-user Secret. | **Given** a Claude-family `Agent`, **When** the token is provisioned, **Then** it is held as a per-user Secret ref and injected by the shim (Epic 5.4); **And** the OAuth-subscription lifecycle (refresh/concurrency headless) follows ISI-2112. | Arch §10, FR-G2. **Deps: ISI-2112 `[GATE-BLOCKING]`** — if the spike shows subscription-token lifecycle is unworkable at scale, the BYO-subscription decision triggers a **CEO-gate conversation** (watch item, §10). |
 | 7.3 | **[Second-runtime credential story]** As an operator, I want the non-Claude runtime's concrete credential path: long-lived API key / provider token as a per-user Secret (no interactive OAuth). | **Given** an OpenClaw/Hermes `Agent`, **When** the key is provisioned, **Then** it is a per-user Secret; rotation = Secret update; **And** the exact token type/refresh is **pinned per that runtime in this story** (OQ11) so the credential model is vendor-neutral, not Claude-shaped. | Arch §10, FR-G2, Challenger F15/OQ11. **Deps:** pin the second-runtime token model (Epic decision, resolves OQ11). |
-| 7.4 | As the system, I want **graceful pause/resume** on credential expiry/rotation mid-Run, for both models. | **Given** a Running Run whose credential expires/rotates, **When** the controller detects it, **Then** the Run moves to a **`Paused`** condition, emits a clear operator signal (Epic 8 / FR-F6), and **resumes on refresh** — never fails opaquely. **And** this holds for both the OAuth-refresh and static-key models (shim surfaces `credentialLifecycle`). | Arch §10, §7.2. FR-G3, S10. |
+| 7.4 | As the system, I want **graceful pause/resume** on credential expiry/rotation mid-Run, for both models. | **Given** a Running Run whose credential expires/rotates, **When** the controller detects it, **Then** the Run moves to a **`Paused`** condition, emits a clear operator signal (Epic 8 / FR-F6), and **resumes on refresh** — never fails opaquely. **And** this holds for the OAuth-refresh, static-key, **and Ollama-endpoint (7.5)** models (shim surfaces `credentialLifecycle`; an unreachable endpoint is a legible `Paused`, not an opaque failure). | Arch §10, §7.2. FR-G3, S10. |
+| 7.5 | **[CEO 2026-08-11]** As an operator, I want the **Ollama / BYO-endpoint credential shape** — an endpoint URL (+ optional token) as a per-user Secret ref, model name per Agent, **no paid provider token**. | **Given** an Ollama-backed `Agent` (Epic 5.7), **When** it is composed, **Then** the endpoint is a **per-user Secret ref** (never a shared platform endpoint), the model name is Agent-level config, and the shim injects the endpoint into the runtime's model config; **And** rotation = Secret update; **And** an unreachable endpoint surfaces via pause/resume (7.4), not an opaque failure. | Third credential story (§11 now reads **Two→Three stories**, ADR-026, §10.3) beside Claude-OAuth (7.2) and second-runtime API-key (7.3). Self-hosted endpoint = **also the $0 CI lane** (ISI-2157). **No spike gate** (no OAuth); vendor-neutral by construction (FR-G1/G2), reinforces — never reopens — the per-user Secret-ref lock (ADR-010). |
 
 ---
 
@@ -332,6 +346,11 @@ that are first-class CI artifacts owned here, not asserted claims. **Isolation i
 NFR-SEC5, NFR-SEC6, S4. **Deps:** Epic 4 (isolation), Epic 6 (memory). **Spike gate:** ISI-2113 informs
 the RuntimeClass under test.
 
+**CI free-testing lane (CEO 2026-08-11, ISI-2157):** these adversarial tests and the conformance suite
+(5.6) run in CI against an **Ollama-backed squad** (Ollama service container / self-hosted GPU runner,
+model resolved per Epic 5.7 / 7.5) so smoke + e2e squad scenarios execute with **no paid API credits**.
+ISI-2157 owns the CI wiring; this epic and Epic 5 own the scenarios it runs.
+
 | Story | Statement | Key acceptance criteria (GWT) | Notes |
 |-------|-----------|-------------------------------|-------|
 | X.1 | As a security owner, I want a **hostile-Run blast-radius test**. | **Given** a Run executing arbitrary code, **When** it tries to reach another squad's workspace/network/secrets, **Then** it is **contained** (attempt fails); the test is a required CI artifact. | Arch §4.3, S4, NFR-SEC1. Hard gate on the ISI-2113 RuntimeClass pick (Epic 4.2). |
@@ -346,7 +365,8 @@ the RuntimeClass under test.
 |-------|--------|---------------------------|-----------------|
 | **ISI-2112** (OAuth refresh cadence / subscription-token lifecycle headless) | backlog | 7.2 (Claude-family cred), 7.4 (pause/resume OAuth path) | **GATE-BLOCKING** on the Claude-family refresh path; failure → CEO-gate conversation on BYO-subscription (watch item, Arch §10/§14) |
 | **ISI-2113** (RuntimeClass isolation + warm-pool sizing benchmark) | backlog | 3.5 (pool-sizing tuning), 4.2 (RuntimeClass pick), 4.5 (reset-vs-replace), X.1 (hostile-Run) | **GATE-BLOCKING** on the RuntimeClass pick (hostile-Run containment = hard gate; isolation > latency per §1 tiebreaker); tuning-blocking on sizing curve |
-| **ISI-2114** (shim spec + reference shim + conformance assertions) | backlog | 5.6 (conformance suite), and shapes 5.1–5.5 | **GATE-BLOCKING** on the conformance suite; §7 is the architecture-altitude input ISI-2114 formalizes |
+| **ISI-2114** (shim spec + reference shim + conformance assertions, **incl. Ollama lane**) | backlog | 5.6 (conformance suite + Ollama lane), 5.7 (Ollama model backend), and shapes 5.1–5.5 | **GATE-BLOCKING** on the conformance suite; §7 is the architecture-altitude input ISI-2114 formalizes |
+| **ISI-2157** (CI free-testing lane: Ollama service container / self-hosted GPU runner) | backlog (high) | 5.7, 7.5, Epic X CI lane | **Not a spike** — a CI enabler; not release-blocking, but unblocks $0 smoke + e2e squad testing. Owned by CI/DevEx, not architecture. |
 
 **Parallelization:** Epics 1–2 (CRD foundation + coordination spine) depend on **no** spike and start
 immediately, in parallel with ISI-2112/2113/2114. The spikes' results tune AD-3/AD-9/AD-4 **before**
@@ -360,8 +380,9 @@ Epics 1.4, 9**. NFR-SEC/REL/PERF/SCALE/OBS threaded into the owning epics; the s
 additionally **tested** in Epic X.
 **CEO 2026-08-11 additions (no PRD FR yet — Gate 2 must ratify as a PRD addendum):** build browser
 → 8.7 (extends FR-F3) · dashboard layer → 8.8 · discussion rooms → Epic 10 · source-control sync →
-Epic 11 · theming/logo → 8.9 · plugin architecture (event seam + GRAIL memory plugin) → Epic 12.
-**No orphan FRs; no orphan stories.**
+Epic 11 · theming/logo → 8.9 · plugin architecture (event seam + GRAIL memory plugin) → Epic 12 ·
+**Ollama model backend + $0 CI lane → 5.7 + 7.5 (extend FR-D/FR-G via the model/credential seam) +
+ISI-2114 Ollama conformance lane + ISI-2157 CI lane**. **No orphan FRs; no orphan stories.**
 
 ---
 
