@@ -421,6 +421,57 @@ no OAuth. ISI-2157 owns the CI wiring; this epic and Epic 5 own the scenarios it
 
 ---
 
+## Epic 13 — Observability & metering (OTel spine) — **CTO checklist #12 (ISI-2133/2157)**
+
+**Objective:** Make the platform legible and metered on one OpenTelemetry spine: the **Run trace** as the
+unit of correlation, bounded-cardinality metrics that project the coordination audit spine, **token/cost
+consumption metering**, the **tasks-blocked-by error-code** signal (the Paperclip "blocked-by" analogue),
+and **per-ticket trace activity** — with cardinality discipline **tested in CI, not hoped for**. Consumption
+metering is the data source behind the dashboard (8.8); nothing here re-implements accounting.
+
+**Arch:** §17.2; observability plan `04-observability-plan.md` §3–§11. **FR/NFR:** NFR-OBS1, D4 (audit
+projection), consumption attribution under the BYO-subscription lock. **Deps:** Epic 2 (audit spine), Epic 3
+(Run states), Epic 4 (warm-pool SLIs), Epic 5 (shim token counts), Epic 12 (event-seam observability).
+**No spike gate**; ISI-2157 provides the CI lane that runs the cardinality check.
+
+| Story | Statement | Key acceptance criteria (GWT) | Notes |
+|-------|-----------|-------------------------------|-------|
+| 13.1 | As an operator, I want **every Run to be one distributed trace** so I can follow it across operator → apiserver → shim → memory. | **Given** a Run, **When** it executes, **Then** a single trace correlates all spans (reconcile phases, A2A dispatch, memory ops) with context propagated across services; **And** `slog`+`otelslog` (Go) / `pino` (BFF) auto-carry `trace_id`/`span_id`/`ksquad.run.id`/`service.name` on every log line. | Obs-plan §3, §6. Run trace = unit of correlation. |
+| 13.2 | As an SRE, I want **coordination metrics that project the audit spine** — claim/lease/reclaim/fence — so the §6.2 consistency model is provably holding in prod. | **Given** the spine (Epic 2), **When** claims/leases run, **Then** `ksquad.coord.claim.{total,duration}`, `lease.renew.total{result=ok\|stale_holder}`, `lease.reclaim.total{trigger}`, and `fence.epoch.increments` are emitted; **And** `stale_holder` + `reclaim` are wired to the concurrency alert (§9) — they are correctness signals, not nice-to-haves. | Obs-plan §5.1. Metrics observe; they do not implement enforcement. |
+| 13.3 | **[CTO checklist — tasks-blocked-by]** As an operator, I want a **tasks-currently-blocked gauge labeled by a curated error-code enum** so I can see what is blocked and why. | **Given** work items in a blocked state, **When** metrics scrape, **Then** `ksquad.coord.workitem.blocked` is an up/down gauge labeled by `error_code` drawn from a **bounded, curated enum** (not free text); **And** the enum is the allowlisted label set enforced by the cardinality check (13.6). | Obs-plan §5.1/§5.6, §15. Paperclip blocked-by analogue. |
+| 13.4 | **[CTO checklist — consumption/token metering]** As a finance/ops owner, I want **token + cost consumption per agent / Run / Project, attributed per principal**, feeding the dashboard. | **Given** running agents, **When** shims report usage, **Then** `ksquad.agent.tokens{runtime,direction}` accumulates and **per-ticket rollups aggregate on `work_item.id` via exemplars/traces — never as a metric label** (cardinality); **And** consumption is attributed **per user/principal** (first-class under BYO-subscription) and surfaced by dashboard 8.8 with **no bespoke accounting path**. | Obs-plan §5.5, §15; feeds 8.8. Token counts are best-effort/runtime-reported (OQ14) — legibility, not the billing authority. |
+| 13.5 | As an operator, I want **per-Run / per-ticket trace activity** drillable from the console. | **Given** a Run, **When** I open its detail (8.11), **Then** each Run **links to its OTel trace** (phase-duration spans §5.2) and per-ticket activity is reconstructable by `work_item.id` correlation; **And** an active Run shows live span/log activity. | Obs-plan §3, §5.2; pairs with console 8.11. |
+| 13.6 | As the team, I want the **cardinality budget enforced by a CI check** so label discipline can't silently rot. | **Given** the instrumentation, **When** CI runs (14.7), **Then** a check greps metric label keys against the §5.6 allowlist and **fails the build** on any out-of-allowlist label (e.g. `run.id`/`work_item.id`/`principal.id` used as a metric label); **And** high-cardinality dims ride as resource attributes/exemplars only. | Obs-plan §5.6. Cardinality is tested, not hoped for. |
+| 13.7 | As an SRE, I want the **collector pipeline with mandatory PII/secret redaction + core SLO alerts**. | **Given** the collector, **When** signals flow, **Then** a `transform`/`redaction` processor strips PII/secrets (NFR-SEC3, R9) before export; **And** SLO alerts exist for the fencing signals (13.2), warm-pool exhaustion (`pool_hit=cold`), pause-on-auth (`run.paused.active`), and outbox/JetStream lag (Epic 12). | Obs-plan §8–§10. Redaction is mandatory, not optional. |
+
+---
+
+## Epic 14 — Testing, CI & supply chain — **CTO checklist #13 (ISI-2135/2157/2158)**
+
+**Objective:** Correctness is **tested, not asserted.** This epic is the umbrella for the five test layers,
+the supply-chain artifacts, and the GitHub Actions pipeline. It **absorbs and promotes** the concurrency
+harness (2.7), the isolation suite (Epic X), and the shim conformance suite (5.6) into one owned CI surface,
+and adds L3 performance, L4 security scanning, L5 code-quality gates, SBOM/CVE/signing, and the $0 Ollama
+E2E lane. The four architecture-review findings **F1–F4 (ISI-2135)** become **named, executable gates**.
+
+**Arch:** testing strategy `05-testing-strategy.md` §3–§11; §14/§15 (evidence gates). **FR/NFR:** the
+"tested" NFRs (NFR-REL/SEC/PERF), S4. **Deps:** Epic 2 (spine → L2), Epic 4 (isolation → L4), Epic 5
+(conformance → 14.1/ISI-2114), all epics (L1). **Spike/enabler gates:** ISI-2135 (F1–F4), ISI-2114
+(conformance assertions), ISI-2113 (perf baselines), **ISI-2157** (CI wiring), **ISI-2158** (Ollama lane).
+
+| Story | Statement | Key acceptance criteria (GWT) | Notes |
+|-------|-----------|-------------------------------|-------|
+| 14.1 | As the team, I want **L1 feature/functional tests per component** so each deployable is correct in isolation. | **Given** operator/apiserver/memory/shims (Go) + console (Node), **When** L1 runs, **Then** Go uses `testing`+`testify` and controller **envtest**; console uses **Vitest**; **And** each epic maps to L1 cases (§3.3); **And** unlanded components pass via **skip-with-reason**, never silent omission. | Test §3, §8. |
+| 14.2 | **[R10 gate; absorbs 2.7 + F1–F4/ISI-2135]** As the team, I want the **L2 concurrency/chaos suite** proving the spine's guarantees against a real engine. | **Given** a **kind** cluster + real **CNPG Postgres**, **When** L2 runs, **Then** named gates **C1 parallel-claimers**, **C2 work-pull fan-out**, **C3 crash-mid-claim reclaim**, **C4 stale-holder fencing (F2/F3)**, **C5 zombie-writer-vs-PVC (F1)**, **C6 double-dispatch (F4)**, **C7 idempotent re-entry** all pass with `-race`; **And** the suite is a **required status check** — Epic 2 cannot close until C1–C7 are green; **And** it **fails fast** if the fence-token column / unique-active-claim constraint is absent (the F2 trap). | Test §4. This is 2.7 promoted; C5/C6 are the two explicit R10 acceptance gates. |
+| 14.3 | As the team, I want **L3 performance regression gates** on the headline SLIs. | **Given** pinned baselines, **When** the perf lane runs (nightly+release), **Then** **P1 claim latency** (S9/NFR-PERF1), **P2 warm-pool ready-count**, **P3 SSE throughput** (zero dropped events at target concurrency), and **P4 outbox delivery lag** (write-path latency **independent** of plugin health) assert **relative** thresholds vs `main`; **And** absolute numeric curves land after ISI-2113. | Test §5. Relative gates, not brittle absolutes. |
+| 14.4 | As a security owner, I want the **L4 security suite** — dependency/CVE/SAST/secrets + blast-radius + poisoning. | **Given** the security workflow, **When** it runs, **Then** `govulncheck` (Go) + `npm audit` (console) gate on exploitable vulns, **Trivy** (+**Grype** on release) fails on CRITICAL/HIGH-with-fix, **CodeQL** (Go+JS) and **gitleaks** run on PR+schedule; **And** the **S4 blast-radius suite** (default-deny egress, cross-namespace isolation, reuse-residue, memory-poisoning/covert-channel) runs in kind against a hostile-Run fixture. | Test §6; **absorbs Epic X.1/X.2/X.3** and the 10.4/12.4 covert-channel guards. |
+| 14.5 | As the team, I want **L5 code-quality & coverage gates** that the correctness-critical spine cannot dodge. | **Given** CI, **When** L5 runs, **Then** `golangci-lint` (gosec/staticcheck/…) and ESLint+Prettier report **zero** findings; **And** coverage is **per-package** — ≥80% per package, **≥90% `pkg/coord`**, ≥70% console; **And** `-race` is **required** on the spine + concurrency lanes. | Test §7. Per-package so the spine can't hide behind trivial packages. |
+| 14.6 | As a security owner, I want **supply-chain provenance** on every image. | **Given** `build-images.yml`, **When** an image builds, **Then** a **Syft SBOM** is produced as an artifact/attestation and **Trivy** CVE-scans it; **And** release images are **cosign** keyless (OIDC) **sign+attest** with the SBOM attached; **And** the only CVE escape hatch is a curated `.trivyignore` with expiry+justification, reviewed like code. | Test §6.6, §11.3. |
+| 14.7 | As DevOps, I want the **GitHub Actions component-matrix pipeline** with ratified required checks. | **Given** `.github/workflows/`, **When** wired, **Then** `ci.yml` (matrix over operator/apiserver/memory/console + shim matrix), `spine-chaos.yml`, `build-images.yml`, `security.yml`, `e2e.yml` exist with **Node 24-compatible action pins**; **And** branch protection requires the §10.4 check-run names per component; **And** skeleton legs **skip-with-reason** until each component lands so protection wires now without wedging merges. | Test §10–§11. Repo `K8squad/K8squad` stays ISI-free. |
+| 14.8 | **[ISI-2158]** As the team, I want the **$0 Ollama E2E free-testing lane** so full-squad E2E runs with no paid API credits. | **Given** `e2e.yml`, **When** the lane runs (nightly+release+dispatch), **Then** an **Ollama service container / self-hosted GPU runner** with a **small model pinned by digest** drives a smoke squad through the full path (claim → dispatch → shim → agent → artifact → complete) with **zero API keys**, plus Playwright console E2E; **And** until the `opencode` shim (5.8) + ISI-2114 conformance land, the lane is **scaffolded and skipped-with-reason** — never silently dropped. | Test §9; driven by opencode (5.8) + Ollama model backend (5.7/7.5). |
+
+---
+
 ## Spike-gate dependency summary (explicit, per the issue mandate)
 
 | Spike | Status | Stories that depend on it | Blocking nature |
@@ -452,5 +503,75 @@ epics**. **No orphan FRs; no orphan stories.**
 
 ---
 
-*Prep artifact — awaiting CEO Gate 2. Once Gate 2 passes, per-story files are expanded via
-`bmad-create-story` in `docs/bmad/stories/` and executed by the Developer agent in the Epic order above.*
+## Traceability & coverage (requirement → epic → story)
+
+Per the CTO Phase-4 Definition of Done: every checklist item maps to ≥1 epic + stories. Three views —
+(A) the CTO definitive 13-item checklist, (B) the PRD FR/NFR contract (the *FR coverage check* above),
+(C) architecture-review + CEO/spike tickets — plus (D) explicit flags. **No orphan requirements; no orphan
+stories.**
+
+### A. CTO definitive 13-item checklist → epics/stories
+
+| # | CTO checklist item | Epic(s) | Story IDs |
+|---|--------------------|---------|-----------|
+| 1 | **Coordination spine** (claim/lease/fencing, F1–F4, chaos suite) | E2, E14 | 2.1–2.8; 14.2 (C1–C7) |
+| 2 | **Helm chart & install** (Gateway+HTTPRoute, StorageClass, CNPG+NATS deps, images) | E9 | 9.1–9.4 (+1.4 skeleton) |
+| 3 | **Source-control sync** (GitHub issues/PR/CI/artifacts, reconciler, provider seam) | E11 | 11.1–11.6 |
+| 4 | **Build browser** (per-Run file tree, diffs, code viewer) | E8 | 8.7 (+11.4 CI-artifact links) |
+| 5 | **Discussion room** (per-Project, Postgres, threaded, provenance, memory-queryable) | E10 | 10.1–10.4 |
+| 6 | **Dashboard** (health/throughput/consumption, live SSE mapping) | E8, E13 | 8.8 (+13.4 metering) |
+| 7 | **Plugin architecture** (NATS event bus, subject taxonomy, JetStream, GRAIL 1st plugin) | E12, E9, E13 | 12.1–12.4; 9.4 (NATS dep); 13.7 (seam SLOs) |
+| 8 | **Ollama runtime adapter** (ISI-2158; BYO endpoint, capability negotiation, CI lane) | E5, E7, E14 | 5.7 + 5.8 (opencode) + 5.6 (conformance Ollama lane); 7.5 (cred); 14.8 (CI lane) |
+| 9 | **Console screens** (11 screens, dark+light, v2 logo) | E8 | 8.1–8.11 (theming 8.9, org diagram 8.10, agent detail 8.11) |
+| 10 | **Context injection & handoff** (envelope, hierarchical budget, A2A handoff artifacts, goal propagation) | E2, E3, E5, E6 | 2.8 + 3.6 + 5.9 + 6.6 |
+| 11 | **Agent-ticket lifecycle** (claim, work, comment, status, artifacts, complete) | E2, E3, E8 | 2.2–2.6; 3.1–3.3; 8.3/8.7/8.11 |
+| 12 | **Observability** (OTel traces/metrics/logs, token consumption, blocked-by codes, per-ticket trace) | E13 | 13.1–13.7 |
+| 13 | **Testing & CI** (feature/concurrency/perf/security/quality, SBOM, CVE, Actions, Node 24) | E14 | 14.1–14.8 (+Epic X absorbed) |
+
+### B. PRD FR/NFR contract
+
+See **FR coverage check** above: FR-A→E1/E3 · FR-B→E2 · FR-C→E3/E4 · FR-D→E5 · FR-E→E6 · FR-F→E8 ·
+FR-G→E7 · S1/NFR-USE1→E1.4/E9. Security/reliability/perf NFRs are threaded into owning epics **and tested**
+in E14 (L2–L5). The CEO-added scope items (build browser, dashboard, rooms, SCM sync, plugins/NATS, Ollama,
+theming) are **no longer "PRD-addendum-pending"** — they are **ratified in the revised PRD (ISI-2152, r4/r5)**
+and revised architecture (ISI-2151, r13), so their FR status is now first-class, not provisional.
+
+### C. Architecture-review & CEO/spike tickets → stories
+
+| Ticket | Requirement | Story IDs |
+|--------|-------------|-----------|
+| **ISI-2135** | F1–F4 fencing/re-entrancy design fixes | 2.4/2.8 (fence-before-release, stale-fence reject); 14.2 C4 (F2/F3), C5 (F1), C6 (F4) |
+| **ISI-2133** | Observability plan (tokens, blocked-by codes, per-ticket trace) | 13.1–13.7 |
+| **ISI-2157** | CI free-testing lane / cardinality CI check | 13.6; 14.7; 14.8 |
+| **ISI-2158** | Ollama runtime adapter + $0 E2E lane | 5.7/5.8/7.5; 14.8 |
+| **ISI-2142** | GRAIL memory backend (as memory plugin) | 12.3 |
+| **ISI-2145** | Source-control sync (GitHub) | 11.1–11.6 |
+| **ISI-2146** | Dashboard | 8.8; 13.4 |
+| **ISI-2147** | Per-Project discussion room | 10.1–10.4 |
+| **ISI-2148** | Build browser | 8.7 |
+| **ISI-2149** | Helm Gateway API + StorageClass (+NATS) | 9.1–9.4 |
+| **ISI-2150/2160/2161/2162** | Console screens (11), theming/logo, org diagram, agent detail | 8.9/8.10/8.11 |
+| **ISI-2155** | Plugin architecture / NATS event bus | 12.1–12.4 |
+| **ISI-2137** | v2 8-Crest logo assets (Graphic Designer) | 8.9 (visual polish; theme toggle does not block on it) |
+| **ISI-2112/2113/2114** | Spikes (OAuth refresh / RuntimeClass+pool / shim conformance) | see Spike-gate summary; 7.2/7.4 · 3.5/4.2/4.5/14.4 · 5.6/5.7 |
+
+### D. Flags (per "flag rather than drop")
+
+- **Cross-epic requirements are split into per-epic stories, never duplicated:** coordination spine (E2 + tested in E14.2), context injection (2.8/3.6/5.9/6.6), agent-ticket lifecycle (E2/E3/E8), Ollama (E5/E7/E14), dashboard (E8 UI + E13 metering), plugin seam (E12 + E9 NATS dep + E13 obs). Each cross-reference is intentional and the owning story is bolded in its epic.
+- **Epic X (isolation suite) is retained in place but rolls up under E14 (L4 §6.5)** — its three stories (X.1 hostile-Run, X.2 residue, X.3 poisoning) are the L4 blast-radius cases; no story lost in the promotion.
+- **Spike-gated stories can START against provisional defaults but cannot CLOSE** until ISI-2112/2113/2114 land (marked `[GATE-BLOCKING]`). This is sequencing, not a dropped requirement.
+- **No requirement in the CTO checklist or PRD FR/NFR set is unplaceable.** If implementation surfaces a homeless requirement, it is added to Section A/C here rather than silently absorbed.
+
+---
+
+## Sequencing for implementation-issue spawning (Alfred)
+
+Spawn in **epic order** with these gates: **E1 → E2 (+E14.2 concurrency gate) FIRST** (foundational, no spike
+dep, parallel with ISI-2112/13/14). Then Wave 1 in parallel: **E3, E4, E5, E6, E7, E13** (E13 instruments as
+they land). Wave 2: **E9 (install), E11 (SCM sync), E12 (plugins/NATS), E14.3–14.8 (perf/security/CI/supply-chain)**.
+Wave 3 (last, consumes the rest): **E8 (console, 11 screens), E10 (rooms)**. E2's L2 chaos gate (14.2 C1–C7,
+incl. F1–F4) **blocks every downstream epic** — nothing builds on an unproven spine.
+
+*Phase-4 formal deliverable — CEO Gate 2 passed (ISI-2134). Per-story files are expanded via
+`bmad-create-story` into `docs/bmad/stories/` and executed by the Developer agent in the epic order above.
+Gate: Alfred review → CEO sign-off (ISI-2120 → ISI-2116).*
