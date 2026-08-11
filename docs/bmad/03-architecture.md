@@ -18,8 +18,6 @@ inputDocuments:
   - ISI-2154                        # PM coordination handoff (ISI-2152→2151): PRD r3 FR→arch map + OQ13…OQ17 + new security bar (D8, NFR-SEC7/SEC8/OBS3) — consumed into r4 (this revision)
   - ISI-2142                        # GRAIL — the event-seam's first consumer: memory writes stream to GRAIL (OTLP/SmartScape/DQL); pgvector stays source-of-truth (own Phase 4 story) — folded into §7.6 (r5→r6)
   - ISI-2156                        # Plugin architecture (CEO via ISI-2131 c/1d8db3b3): transactional Postgres outbox event seam + out-of-process plugins + isolation; plugins = read-only observers, not coordination — folded into §17.4/§6.6 (r6)
-  - ISI-2134                        # CEO Gate 2 review: BYO-Ollama model-endpoint requirement (Henrik 2026-08-11) — folded into §10.3 (r8)
-  - ISI-2157                        # Free CI release-testing lane: in-cluster Ollama / self-hosted GPU runner for zero-credit conformance + smoke/e2e — realized in §10.3 (r8), matrix row in ISI-2114
   - ISI-2157                        # Ollama runtime adapter (CEO): Agent targets BYO Ollama endpoint (Secret-ref endpoint + per-Agent model); doubles as the free credential-less CI/e2e + conformance lane — folded into §10.3/§11 (r8)
   - MemPalace (org shared memory)   # First-hand Sympozium production intel (Ensemble/Agent/Model CRDs, memory sidecar, NATS, PR#45, OTel PRs #11/#18, ISI-1406)
 revisions:
@@ -29,7 +27,6 @@ revisions:
   - r4 (2026-08-11, ISI-2154): lockstep with PRD r3. Adopted the PRD's formal numbering (Themes H/I/J/K/L, FR-F7) across §5.4/§7.5/§9.4/§11/§13/§16, and RESOLVED the five Architecture-owned mechanism questions the PRD routed here — OQ13 sync conflict/loop model (§5.4, field-ownership split + origin-tagged echo suppression), OQ14 metering provenance (§11/§17.2, anchored to Run lifecycle + kubelet, not forgeable self-report), OQ15 room storage/distinctness (§7.5), OQ16 Gateway-less fallback (§16.1, degrade to Service/Ingress so ≤4h install holds), OQ17 build-browser source + per-principal scoping (§9.4). Reflected the new security bar: D8 (external integrations untrusted+authenticated), NFR-SEC7 (room scope), NFR-SEC8 (sync auth), NFR-OBS3 (metering provenance). ADR-018/020/022 extended; §19/§22 updated. No locked decision reopened; content unchanged, numbering + two mechanism gaps (OQ13 loop model, OQ16 fallback) filled
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
-  - r8 (2026-08-11, ISI-2134 / CEO Gate 2, Henrik): folded the CEO BYO-Ollama requirement in behind existing seams — §10.3 model-endpoint seam (`Agent.spec.modelEndpointRef` → Secret, orthogonal to `AgentRuntime.type` so no R×T regression; Ollama rides the OpenAI-compatible wire on existing runtimes with zero new image; local-model gaps declared via §10.1 capability negotiation; in-cluster Ollama = zero-credit CI conformance + smoke/e2e lane for ISI-2157/ISI-2114). Touchpoints §5.1 (`Agent` CRD adds `modelEndpointRef`), §5.3.1, §10.1, §12 egress, §11 credential discipline reused; ADR-026 added; traceability rows added. No locked decision reopened; per-user Secret-ref lock (ADR-010) + R×T-elimination (ADR-015) intact
   - r7 (2026-08-11, ISI-2135): closed the ISI-2132 review's four blocking coordination-spine findings (F1–F4) ahead of the R10 epic — §6.1 cardinality pinned (exactly-one-active claim per work item, monotonic fence, artifact upsert key); §6.2 renewal guard (holder AND fence AND unexpired lease); §6.3 **reclaim protocol: fence the pod (terminate + egress-deny + confirm) BEFORE releasing the claim**, plus resource-layer fence checks (memory write validation, fence-guarded artifact registration, workspace-lease discipline) and the named external-git residual; §6.4 re-entrancy designed for external-effect steps (deterministic `a2a_task_id = run_id` + shim-side dedup + durable dispatch marker; artifact upsert; conditional status UPDATEs); §8 failure path now runs the reclaim protocol; §15 names the zombie-writer-vs-PVC (F1) and double-dispatch (F4) chaos cases as R10 acceptance gates; ADR-025 added. No locked decision reopened; ADR-001/003 intact
   - r8 (2026-08-11, ISI-2151 / ISI-2157): added the **Ollama / BYO model-provider seam** — new §10.3. An `Agent` targets a BYO model endpoint (its own Ollama / any OpenAI-compatible server) via a **Secret-ref endpoint + per-Agent model**, negotiated by a `byoModelEndpoint` capability (§10.1). Kept the honest distinction: Ollama is a **model server, not a coding-agent runtime** (§5.3), so it lands on the model axis and **reinforces the BYO-credential lock** (§11 third story) rather than reopening it. Egress via the model-endpoint allowlist (§12.2). Doubles as the **credential-free CI/e2e + conformance lane** (§10.1, ISI-2114 Ollama lane) for squad smoke/e2e without paid API credits (ISI-2157). ADR-026; §11 heading Two→Three stories; §19/§21/§22 updated. No locked decision reopened
 workflowType: 'architecture'
@@ -234,7 +231,7 @@ no other component touches the DB directly.
 | CRD | Purpose | Key spec | Reconciled by |
 |-----|---------|----------|---------------|
 | `Team` | Squad = tenancy boundary | `projects[]`, `agents[]` (refs), `namespaceStrategy` | Team reconciler → ensures namespace, RBAC, NetworkPolicy, quota |
-| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model`, `modelEndpointRef` (→Secret, BYO model endpoint — §10.3) | Agent reconciler → validates Secret + runtime, publishes Agent Card |
+| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model` | Agent reconciler → validates Secret + runtime, publishes Agent Card |
 | `AgentRuntime` | Pluggable coding-agent flavor + CLI version policy | `type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}` | AgentRuntime reconciler + `ImageUpdater` (§5.3) |
 | `Role` | Reusable behavior profile | `promptRef`, `defaultSkills[]`, `runtimeClassHint` | (data only; validated) |
 | `Skill` | Granted tool/capability | `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}` | (data only; validated → drives §5.3.4 pod assembly) |
@@ -951,59 +948,20 @@ Runs or principals.**
 the Ollama lane), pinned A2A/MCP rev. *Trade recorded:* ADR-008 (sidecar shim), ADR-009 (pinned adapter
 seam), ADR-026 (BYO model-provider seam / Ollama, §10.3).
 
-### 10.3 Model-endpoint seam & BYO Ollama adapter (CEO Gate 2, Henrik 2026-08-11)
-
-**A model endpoint is not a runtime.** The coding-agent flavor (`AgentRuntime.type`, §5.3.1) is *which
-CLI runs the work*; the **model endpoint** is *which inference server that CLI talks to*. They are
-orthogonal seams — conflating them would re-introduce the R×T matrix ADR-015 just killed, one image
-per (flavor × provider). So the endpoint stays **per-Agent configuration**, never baked into the image:
-
-- **`Agent.spec.modelEndpointRef` → Secret** carries the base URL + auth for a BYO inference server;
-  `Agent.spec.model` names the model to request. Absent the ref, the runtime uses its built-in
-  provider default (Anthropic for `claude-code`, etc.). This is the same per-user Secret-ref discipline
-  as credentials (§11, ADR-010) — KSquad holds no shared endpoint, and the Secret is mounted to the
-  runtime container only, never logged, never on the Agent Card.
-- **Ollama = one instance of the seam, not a special case.** A user points an Agent at their own Ollama
-  server (`modelEndpointRef` → `{OLLAMA_HOST, model}`). Ollama's **OpenAI-compatible API** is what makes
-  this boring: any runtime whose CLI speaks the OpenAI wire (`opencode`, `codex`) points at it by config
-  alone — **zero new image, zero core change** (the S5 promise, applied to the model axis). A runtime
-  hardwired to one vendor (`claude-code` → Anthropic) simply does not advertise `modelEndpointRef`
-  support; that gap is a **declared capability** (§10.1), not a hack.
-- **Local-model capability negotiation is first-class (§10.1, R3).** Local models routinely lack native
-  tool-calling / structured-output / long context. The shim negotiates these on the **Agent Card** exactly
-  as it does for runtime gaps — the core treats a missing capability as declared and routes around it,
-  never assumes parity. This keeps "BYO weak local model" honest instead of silently failing mid-Run.
-- **Egress (§12/ADR-012).** An **in-cluster** Ollama (the free-CI shape) is reached by a scoped
-  `NetworkPolicy` allow to its Service — no internet egress opened. An **external** Ollama rides the same
-  default-deny + allowlist/proxy path as any other endpoint (D8: external endpoint is untrusted transport,
-  auth from the Secret). No new egress primitive.
-- **Free release-testing lane (ISI-2157 CI, ISI-2114 Ollama conformance lane).** The shim conformance
-  suite (§10.1) and the smoke + e2e squad scenarios need a model to run against; on paid APIs that costs
-  credits per CI run. An **Ollama service container** (CPU, tiny model — conformance is wire-shape, not
-  answer-quality) or a **self-hosted GPU runner** (heavier e2e squads) gives CI a **zero-credit model
-  backend**. This makes conformance (the S5/S6 gate) actually runnable on every PR — the seam that was
-  "designed but unexecutable without spend" becomes continuously verified. The Ollama lane is an
-  **added row in the runtime/conformance matrix (ISI-2114)**, keyed on an OpenAI-compatible runtime +
-  `modelEndpointRef` pointing at the CI Ollama.
-
-*Satisfies:* FR-D3/D4 (runtime + capability negotiation, extended to the model axis), FR-G1 (per-user
-Secret-ref, no shared endpoint), the CEO BYO-Ollama requirement. *Trade recorded:* ADR-026.
-*Spike-gated:* which small model the CI lane pins + whether e2e needs the GPU runner (ISI-2157/ISI-2114,
-tuning behind the seam, not structural). *Touchpoints:* §5.1 `Agent` CRD, §5.3.1, §10.1, §12, §11.
-
 ---
 
-## 11. Credential Model — Two Concrete Stories (OQ11 / F15, FR-G)
+## 11. Credential Model — Three Concrete Stories (OQ11 / F15, FR-G)
 
 **Vendor-neutral by construction — not Claude-shaped.** Per-user **Kubernetes Secret refs on the
 `Agent` CRD** (FR-G1, LOCKED); KSquad never holds a shared master credential. Credential **type +
 lifecycle are capability metadata** on the shim/Agent Card (FR-G2), so the core hardcodes no vendor's
-auth flow. Two distinct stories ship at v1 (S6):
+auth flow. Three distinct stories ship at v1 (S6):
 
 | Runtime family | Acquisition | Lifecycle | Secret shape |
 |----------------|-------------|-----------|--------------|
 | **Claude-family** | `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` | subscription-OAuth; refresh + graceful pause | per-user Secret ref (OAuth token) |
 | **Second runtime (OpenClaw/Hermes — non-Claude)** | long-lived **API key / provider token** supplied directly | static (no interactive OAuth step); refresh only if the provider rotates | per-user Secret ref (API key) |
+| **BYO model endpoint (Ollama / OpenAI-compatible)** (§10.3, ISI-2157) | user supplies an **endpoint URL** (their Ollama / local server) + optional token; model is `Agent.spec.model` | static; no vendor OAuth — a BYO local model, no paid credits | per-user Secret ref (endpoint URL [+ token]) |
 
 **Graceful pause/resume (FR-G3/S10, both models).** The shim detects an auth-failure signal from the
 runtime and reports it over A2A; the Run reconciler transitions to `Paused` with an operator-legible
@@ -1379,8 +1337,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | 023 | Plugin architecture & event seam (ISI-2156, CEO 2026-08-11) | **Transactional Postgres `outbox` (events append-only in the state-change txn → at-least-once); async delivery workers with dead-letter + per-plugin circuit breaker so a failing plugin never blocks reconcile/coordination; out-of-process plugins per Project/squad, BYO-Secret outbound creds; versioned event catalog (§10.2 discipline); read-only consumption — plugins cannot claim/handoff/mutate (observers, not a coordination path)** | External broker (Kafka/NATS — breaks single-stateful-dependency §4/§16); in-process plugins (couple plugin failure to the reconcile path); synchronous delivery inside the write txn (a slow/failing plugin blocks claims/writes); any plugin write-back/coordination affordance (breaks no-P2P lock) |
 | 024 | Memory fan-out to GRAIL (ISI-2142 via ISI-2156) | **`pgvector` stays source-of-truth; GRAIL is the event seam's first consumer — memory writes stream via OTLP/SmartScape/DQL from the outbox (read-only fan-out), own Phase 4 story; trust enforced above storage/before fan-out** | Swap pgvector for a GRAIL backend (loses source-of-truth + §7.3 trust control, breaks air-gapped S1); synchronous dual-write to GRAIL from the memory service (non-atomic, couples writes to GRAIL availability); make GRAIL a v1 dependency |
 | 025 | Reclaim & dispatch safety (F1/F4, ISI-2132→ISI-2135) | **Fence-the-pod-before-claim-release reclaim protocol (§6.3) + deterministic `a2a_task_id = run_id` with shim-side dedup + artifact upsert keys + conditional status UPDATEs (§6.4)** | Release-on-lease-expiry alone (zombie writer keeps mutating PVC/memory/git — Kleppmann fencing violation); reconciler in-memory dispatch dedup (lost on crash); fresh execution id per attempt (double-dispatch on re-entry) |
-| 026 | Model endpoint & BYO Ollama (CEO Gate 2, Henrik 2026-08-11) | **Model endpoint is a per-Agent Secret ref (`Agent.spec.modelEndpointRef`) orthogonal to `AgentRuntime.type` — Ollama rides the OpenAI-compatible wire on existing runtimes (zero new image); local-model gaps declared via §10.1 capability negotiation; in-cluster Ollama doubles as the zero-credit CI conformance + e2e lane (ISI-2157/ISI-2114)** | Bake the provider into each runtime image (re-creates the R×T matrix ADR-015 killed, one image per flavor×provider); a dedicated `OllamaRuntime` CRD (endpoint is config, not a flavor); KSquad-held shared endpoint (breaks the per-user Secret-ref lock, ADR-010); assume model parity instead of negotiating (weak local model fails silently mid-Run); paid-API-only CI (conformance gate unrunnable per-PR without spend) |
-
+| 026 | BYO model-provider seam / Ollama (ISI-2157) | **`Agent` targets a BYO model endpoint (Ollama / OpenAI-compatible) via Secret-ref endpoint + per-`Agent` model, negotiated by a `byoModelEndpoint` capability; a model axis distinct from the agent-runtime seam; doubles as the credential-free CI/e2e + conformance lane (ISI-2114 Ollama lane)** | Treat Ollama as an `AgentRuntime.type` (category error — it's a model server, not a coding CLI); hardcode vendor model endpoints (kills BYO-local + the free CI lane); paid-API-only test lane (no credential-free e2e in CI) |
 ---
 
 ## 19. Traceability (PRD → Architecture)
@@ -1423,8 +1380,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | ISI-2150 Console theming | §13 dark+light theme (v1, WCAG AA both modes) |
 | ISI-2156 Plugin architecture + event seam (r6) | §17.4 transactional Postgres outbox + async delivery (dead-letter/circuit-breaker) + out-of-process plugins, read-only (not coordination); §6.6 coord events; §17.3 `pkg/events`; ADR-023 |
 | ISI-2142 GRAIL memory fan-out (r6) | §7.6 GRAIL = event-seam first consumer (OTLP/SmartScape/DQL), pgvector source-of-truth; §7.1/§17.4; ADR-024 |
-| BYO Ollama model endpoint (CEO Gate 2, Henrik; r8) | §10.3 `Agent.spec.modelEndpointRef` seam (orthogonal to `AgentRuntime.type`), OpenAI-compat runtimes, capability-negotiated; §5.1 CRD; §12 egress; ADR-026 |
-| ISI-2157 free CI / ISI-2114 Ollama conformance lane (r8) | §10.3 in-cluster Ollama service container / self-hosted GPU runner = zero-credit conformance + smoke/e2e lane; added row in the ISI-2114 runtime/conformance matrix |
+| ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
 
 ---
 
@@ -1470,6 +1426,7 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 | Warm-pool sizing/autoscale numbers + warm/cold routing | §9.2 policy defaults | **ISI-2113** | ⚠ backlog — not started |
 | OAuth token longevity, refresh cadence, concurrency-on-one-subscription | §11 Claude-family lifecycle | **ISI-2112** | ⚠ backlog — not started |
 | Reference shim + conformance assertions | §10.1 S5/S6 claimable | **ISI-2114** | ⚠ backlog — not started |
+| Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
 | Docker-in-sandbox mechanism (rootless dockerd vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 (RuntimeClass) | ⚠ backlog — not started |
 | CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | **owner: Alfred/CEO** (legal, not a spike) | ⚠ open — escalated |
@@ -1547,3 +1504,14 @@ a surprise.
       - [x] "One Postgres" (ADR-001) + S1 self-contained install preserved: the `outbox` is one more
             **table** in the same Postgres (not a datastore, not a broker); pgvector source-of-truth keeps
             the single stateful dependency.
+- [x] r8 Ollama / BYO model endpoint folded in (CEO 2026-08-11 / ISI-2157) — behind an existing seam,
+      BYO-credential lock reinforced not reopened:
+      - [x] §10.3 model-provider seam: Ollama is an **OpenAI-compatible model server, NOT a coding
+            runtime** (kept the honest distinction, ADR-026 category-error trade); `Agent` targets a BYO
+            endpoint via **Secret-ref endpoint + per-`Agent` model**, negotiated by a `byoModelEndpoint`
+            capability (§10.1).
+      - [x] §11 third credential story (BYO endpoint URL [+ token] Secret ref); §12.2 egress allowlist for
+            the endpoint; default-deny holds.
+      - [x] Free **credential-less CI/e2e + conformance lane** (§10.1, ISI-2114 Ollama lane; §21) — squad
+            smoke/e2e without paid API credits (ISI-2157); honest that local models are a plumbing bar,
+            not a production quality claim. ADR-026.
