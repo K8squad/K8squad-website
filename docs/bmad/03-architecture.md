@@ -26,6 +26,7 @@ revisions:
   - r4 (2026-08-11, ISI-2154): lockstep with PRD r3. Adopted the PRD's formal numbering (Themes H/I/J/K/L, FR-F7) across §5.4/§7.5/§9.4/§11/§13/§16, and RESOLVED the five Architecture-owned mechanism questions the PRD routed here — OQ13 sync conflict/loop model (§5.4, field-ownership split + origin-tagged echo suppression), OQ14 metering provenance (§11/§17.2, anchored to Run lifecycle + kubelet, not forgeable self-report), OQ15 room storage/distinctness (§7.5), OQ16 Gateway-less fallback (§16.1, degrade to Service/Ingress so ≤4h install holds), OQ17 build-browser source + per-principal scoping (§9.4). Reflected the new security bar: D8 (external integrations untrusted+authenticated), NFR-SEC7 (room scope), NFR-SEC8 (sync auth), NFR-OBS3 (metering provenance). ADR-018/020/022 extended; §19/§22 updated. No locked decision reopened; content unchanged, numbering + two mechanism gaps (OQ13 loop model, OQ16 fallback) filled
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
+  - r7 (2026-08-11, ISI-2135): closed the ISI-2132 review's four blocking coordination-spine findings (F1–F4) ahead of the R10 epic — §6.1 cardinality pinned (exactly-one-active claim per work item, monotonic fence, artifact upsert key); §6.2 renewal guard (holder AND fence AND unexpired lease); §6.3 **reclaim protocol: fence the pod (terminate + egress-deny + confirm) BEFORE releasing the claim**, plus resource-layer fence checks (memory write validation, fence-guarded artifact registration, workspace-lease discipline) and the named external-git residual; §6.4 re-entrancy designed for external-effect steps (deterministic `a2a_task_id = run_id` + shim-side dedup + durable dispatch marker; artifact upsert; conditional status UPDATEs); §8 failure path now runs the reclaim protocol; §15 names the zombie-writer-vs-PVC (F1) and double-dispatch (F4) chaos cases as R10 acceptance gates; ADR-025 added. No locked decision reopened; ADR-001/003 intact
 workflowType: 'architecture'
 authoringMode: 'analyst-led autonomous synthesis; CEO Gate 2 is the human review checkpoint'
 project_name: 'KSquad'
@@ -468,8 +469,14 @@ sequence it first.
 
 `work_item(id, project_id, team_id, title, state, created_by, created_at, …)` ·
 `comment(id, work_item_id, author_principal, body, created_at)` ·
-`artifact(id, work_item_id, run_id, kind, uri, sha256, created_at)` ·
+`artifact(id, work_item_id, run_id, kind, uri, sha256, created_at, UNIQUE(work_item_id, run_id, kind))` ·
 `claim(work_item_id PK, holder_principal, run_id, fence_token, lease_expires_at, acquired_at, renewed_at)`.
+
+**Cardinality (F3, pinned):** exactly **one active claim row per work item** — `work_item_id` is the
+PK, the row is rewritten in place on every reclaim, and `fence_token` is **monotonically increasing
+across the item's lifetime** (never reset, never reused). There is no append-only claim history in
+the custody path (history lives in the audit/outbox, §6.5/§6.6), so two live leases on one item are
+structurally impossible.
 
 All coordination — progress, handoff, artifacts — is rows here (FR-B1/B3). **No agent-to-agent
 channel exists in the schema**; there is no `message` table and no lateral transport (I4, structural
@@ -493,6 +500,21 @@ RETURNING fence_token;
 - Work-pull uses `SELECT … FOR UPDATE SKIP LOCKED` so N agents dequeue distinct items without
   blocking each other.
 
+```sql
+-- renew: guarded by holder AND fence AND unexpired lease — a zombie's renewal is a no-op (F3)
+UPDATE claim
+   SET lease_expires_at = now() + :lease, renewed_at = now()
+ WHERE work_item_id = :wi
+   AND holder_principal = :me
+   AND fence_token      = :myFence
+   AND lease_expires_at > now();
+```
+
+- A holder can renew **only its own live claim with its own current fence**. A paused holder whose
+  lease lapsed cannot resurrect it: the `lease_expires_at > now()` term fails, and once the row is
+  reclaimed the `holder`/`fence_token` terms fail. Renewal is therefore authority-unambiguous — the
+  F3 ambiguity (stale-row renewal succeeding under a newer claim) cannot occur.
+
 ### 6.3 Lease, liveness, fencing (crash-reclaim, FR-B2/NFR-REL1)
 
 - A claim carries a **bounded lease** (`lease_expires_at`). The holding agent (via the apiserver)
@@ -506,11 +528,61 @@ RETURNING fence_token;
   design would ship as a silent double-execution.
 - Lease TTL is a tunable (default 60s renew / 180s expiry) — a knob, not a structural choice.
 
-### 6.4 Reconcile-safe integration
+**Reclaim protocol — fence the holder BEFORE the claim is released (F1).** Lease expiry means
+"renewal stopped," **not** "holder is dead": a GC-paused or partitioned Run is alive at the
+resource layer and keeps mutating the per-Project workspace PVC (§9.4), memory (§7), and git. The
+reconciler never treats `lease_expires_at < now()` alone as reclaim permission. Reclaim is an
+ordered, crash-safe sequence:
 
-The Run reconciler treats the claim service as the source of truth for "who is doing what." Reconcile
-is idempotent: re-entry re-reads claim + fence and never re-drives an item it does not hold with a
-current fence. This is why coordination lives in Postgres transactions, not controller memory.
+1. **Fence the holder.** Cordon + terminate the holder's sandbox pod (SIGTERM → SIGKILL after a
+   short grace) and flip its egress `NetworkPolicy` to deny-all. Pod death revokes the PVC mount
+   (workspace writes stop) and egress (git push / model calls stop). A durable `reclaim_fenced_at`
+   marker is recorded on the Run before proceeding, so a reconciler crash mid-reclaim re-enters at
+   the right step.
+2. **Confirm fencing.** Wait for pod deletion (bounded timeout). On timeout, escalate (node
+   cordon + operator alert) — never release an unconfirmed-unfenced claim.
+3. **Release the claim.** Only now is the row acquirable via the §6.2 conditional UPDATE, which
+   bumps `fence_token` — so even a holder that somehow survived step 1 is fenced at the
+   coordination layer.
+
+**Resource-layer fence checks (defense in depth).** The pod-kill ordering is the primary fence;
+the state-mutating services additionally reject stale tokens, so a fencing failure degrades to
+**rejected writes, never silent corruption**:
+
+- **Memory service (§7):** every write carries the caller's `(work_item_id, fence_token)`; the
+  service validates it against `coord.claim` inside the write transaction and rejects stale tokens.
+- **Artifact / object store:** artifact registration is a fence-guarded `coord.artifact` row; the
+  object URI is durable only once that row commits, so a zombie's orphaned blob is unreferenced and
+  garbage-collectable.
+- **Workspace lease (§9.4):** exclusive-write operations (dependency install, index rebuild) take
+  the Project workspace lease under the same fence discipline.
+- **Residual (named, not hidden):** a zombie that survives fencing with valid git credentials could
+  still push to the *external* remote — outside the fence perimeter. Mitigation: git credentials
+  are per-Run scoped and revoked at sandbox teardown (§11); the R10 epic records this residual in
+  its threat model explicitly.
+
+### 6.4 Reconcile-safe integration (re-entrancy for external-effect steps, F4)
+
+The Run reconciler treats the claim service as the source of truth for "who is doing what."
+Re-entry re-reads claim + fence and never re-drives an item it does not hold with a current fence.
+For steps with **external side effects**, idempotency is designed, not assumed:
+
+- **A2A dispatch (Claiming → Running).** The shim task id is **deterministic** — `a2a_task_id =
+  run_id` — and the shim **dedups on task id**: a second submit with an existing id reattaches to
+  the in-flight task instead of starting a second agent execution. Before submitting, the
+  reconciler writes a durable dispatch marker (`run.dispatched_task_id`, `run.dispatched_at`) in
+  the same transaction as the state transition. Both crash windows are then safe: crash **after**
+  submit but **before** the marker → re-entry re-submits the same deterministic id and the shim
+  dedups; crash **before** submit → re-entry finds no marker and submits once. **No crash window
+  produces two agent executions.** Shim-side dedup on the deterministic id is a conformance
+  requirement (§10.1, ISI-2114).
+- **Collecting / artifact emission.** `coord.artifact` enforces `UNIQUE(work_item_id, run_id,
+  kind)` with content `sha256` (§6.1); registration is an upsert, so a re-entered Collecting phase
+  republishes the same content-addressed row — never a duplicate artifact.
+- **Status transitions** are conditional UPDATEs (`… WHERE status = :expected`), so a stale
+  reconcile pass cannot resurrect or double-advance a Run.
+
+This is why coordination lives in Postgres transactions, not controller memory.
 
 ### 6.5 Audit (FR-B4/D4/NFR-OBS1)
 
@@ -528,8 +600,10 @@ state-change transaction, so neither can diverge from what actually committed. *
 and read-only downstream — it grants no custody and exposes no claim/lease/fence surface** (the §17.4
 guard); coordination custody remains solely in the fenced `claim` table (§6.2/6.3).
 
-*Satisfies:* FR-B1…B4, NFR-REL1/REL2, NFR-OBS1, D4. *Risk owned:* R10. *Trade recorded:* ADR-003
-(Postgres row-lock + fencing vs bespoke lease service / etcd lease / Redis lock), ADR-023 (outbox, §17.4).
+*Satisfies:* FR-B1…B4, NFR-REL1/REL2, NFR-OBS1, D4. *Risk owned:* R10. *Closes review findings
+F1–F4 (ISI-2132 review → ISI-2135 design fix).* *Trade recorded:* ADR-003
+(Postgres row-lock + fencing vs bespoke lease service / etcd lease / Redis lock), ADR-023 (outbox, §17.4),
+ADR-025 (fence-before-release reclaim + deterministic dispatch id, §18).
 
 ---
 
@@ -706,8 +780,9 @@ heartbeat orchestration (F1–F4, R4).
 - **Running:** shim invoked over A2A (§10); agent works the item(s) through the coordination record
   (§6) and memory (§7); SSE progress streamed to apiserver → console (FR-F2/NFR-PERF2).
 - **Failure/resume (FR-A5, NFR-REL1/REL2):** a dead sandbox/agent is detected (lease non-renewal +
-  pod status); the reconciler releases the claim (lease expiry + fencing, §6.3) and retries with
-  backoff. **No coordination state is lost** because it is in Postgres, not the pod.
+  pod status); the reconciler runs the §6.3 **reclaim protocol — fence the pod first, release the
+  claim second** — and retries with backoff. **No coordination state is lost** because it is in
+  Postgres, not the pod.
 - **Kill (FR-A6/F4):** operator cancels → reconciler tears down the sandbox pod (SIGTERM→SIGKILL),
   releases claims, marks `Cancelled`. Sandbox teardown is prompt because the pod is disposable (§9.3).
 - **Pause (§11):** an auth-failure signal from the shim transitions the Run to `Paused` with a clear
@@ -1030,7 +1105,16 @@ Restated for Epics so it is staffed, not assumed:
   fencing, idempotent reconcile), and v1 estimates must weight it accordingly.
 - **Test obligation:** a dedicated concurrency/chaos test suite — parallel double-claim attempts,
   crash-mid-claim reclaim, GC-pause zombie-writer rejection, idempotent-reconcile re-entry — is a v1
-  gate, not a nice-to-have (S8).
+  gate, not a nice-to-have (S8). Two cases are named acceptance gates for the R10 epic (F1/F4,
+  ISI-2135):
+  - **Zombie-writer-vs-PVC (F1):** freeze a claim holder's sandbox pod past lease expiry (simulated
+    GC pause), let the reconciler reclaim to a new Run, then unfreeze the old holder. Assert: the old
+    pod was terminated *before* the claim was released (§6.3 ordering), its stale-fence memory and
+    artifact writes are rejected, and the shared Project workspace shows no cross-Run interleave.
+  - **Double-dispatch (F4):** kill the reconciler between A2A submit and the dispatch-marker write,
+    then restart. Assert: exactly one shim task exists for the Run (deterministic `a2a_task_id =
+    run_id`, shim dedup) and exactly one agent execution occurred; same for a re-entered Collecting
+    phase (artifact upsert, no duplicate rows).
 
 ---
 
@@ -1217,6 +1301,7 @@ external broker; out-of-process isolated plugins; read-only consumer contract). 
 | 022 | Exposure model (Theme L, FR-L*; ISI-2149) | **Chart creates `Gateway`+`HTTPRoute`; `gatewayClassName` required values input; `values.exposure.mode` = gateway\|ingress\|clusterip with pre-flight so a Gateway-less cluster still installs in ≤4h (OQ16); explicit `storageClassName` for every PVC** | Legacy `Ingress`-only (SSE buffering, weaker timeout control); Gateway-mode as a hard dependency (breaks S1 on Gateway-less clusters); hardcode or cluster-default gatewayClass/storageClass (non-portable, silent misconfig) |
 | 023 | Plugin architecture & event seam (ISI-2156, CEO 2026-08-11) | **Transactional Postgres `outbox` (events append-only in the state-change txn → at-least-once); async delivery workers with dead-letter + per-plugin circuit breaker so a failing plugin never blocks reconcile/coordination; out-of-process plugins per Project/squad, BYO-Secret outbound creds; versioned event catalog (§10.2 discipline); read-only consumption — plugins cannot claim/handoff/mutate (observers, not a coordination path)** | External broker (Kafka/NATS — breaks single-stateful-dependency §4/§16); in-process plugins (couple plugin failure to the reconcile path); synchronous delivery inside the write txn (a slow/failing plugin blocks claims/writes); any plugin write-back/coordination affordance (breaks no-P2P lock) |
 | 024 | Memory fan-out to GRAIL (ISI-2142 via ISI-2156) | **`pgvector` stays source-of-truth; GRAIL is the event seam's first consumer — memory writes stream via OTLP/SmartScape/DQL from the outbox (read-only fan-out), own Phase 4 story; trust enforced above storage/before fan-out** | Swap pgvector for a GRAIL backend (loses source-of-truth + §7.3 trust control, breaks air-gapped S1); synchronous dual-write to GRAIL from the memory service (non-atomic, couples writes to GRAIL availability); make GRAIL a v1 dependency |
+| 025 | Reclaim & dispatch safety (F1/F4, ISI-2132→ISI-2135) | **Fence-the-pod-before-claim-release reclaim protocol (§6.3) + deterministic `a2a_task_id = run_id` with shim-side dedup + artifact upsert keys + conditional status UPDATEs (§6.4)** | Release-on-lease-expiry alone (zombie writer keeps mutating PVC/memory/git — Kleppmann fencing violation); reconciler in-memory dispatch dedup (lost on crash); fresh execution id per attempt (double-dispatch on re-entry) |
 
 ---
 
