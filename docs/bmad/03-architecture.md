@@ -28,6 +28,7 @@ revisions:
   - r1 (2026-08-10, ISI-2119): initial architecture synthesis from CEO-approved PRD r2
   - r2 (2026-08-11, ISI-2144): added §5.3 AgentRuntime CRD + lifecycle-split tooling model (init-staged toolchain packs, Skill.requires, service sidecars, ImageUpdater) per Henrik+Alfred decided direction; ADR-015/016/017; touchpoints §5.1/5.2/8/9.2/10.1/19/21
   - r3 (2026-08-11, ISI-2151): folded six CEO-review requirements (ISI-2145…2150) in behind existing seams — §5.4 source-control sync (repo-sync reconciler + pkg/scm provider seam, GitHub mirror; ADR-018); §7.5 per-Project discussion room (Postgres discussion schema, memory-projected, coordination-free; ADR-019); §11/§13/§17.2 dashboards + consumption attribution (OTel-borne; ADR-020); §9.4/§13 per-Run build browser (git-worktree read model; ADR-021); §16.1/§16.2 Gateway-API + explicit StorageClass exposure (ADR-022); §13 dark+light console theming. No locked decision reopened; touchpoints §1/§5.1/§17.3/§19/§22
+  - r14 (2026-08-11, ISI-2145): elaborated §5.4 for the two ISI-2145 bullets the r3 fold named but did not spell out — **PR `review_state`** (approved/changes-requested/review-required/pending) on `scm_pr_mirror`, and **Run/branch correlation** (`scm_pr_mirror.head_sha → run.commit_sha`, nullable `run_id`, a read-model join not a custody edge); plus the **CI-failure → discussion-room auto-post** (a failed `check_run` emits an origin-marked, provenance-external `discussion_message` §7.5 **and** a `ksquad.scm.{project}.{squad}.check_run.failed` event on the r13/ADR-023 NATS bus for plugins). Both ride existing seams (`scm` schema, §7.5 discussion, event bus) — no new mechanism, no locked decision reopened; §6 fenced-claim/no-P2P untouched. Touchpoints §5.4/§7.5/§9.4/§13/§19; ADR-018 note extended
   - r4 (2026-08-11, ISI-2154): lockstep with PRD r3. Adopted the PRD's formal numbering (Themes H/I/J/K/L, FR-F7) across §5.4/§7.5/§9.4/§11/§13/§16, and RESOLVED the five Architecture-owned mechanism questions the PRD routed here — OQ13 sync conflict/loop model (§5.4, field-ownership split + origin-tagged echo suppression), OQ14 metering provenance (§11/§17.2, anchored to Run lifecycle + kubelet, not forgeable self-report), OQ15 room storage/distinctness (§7.5), OQ16 Gateway-less fallback (§16.1, degrade to Service/Ingress so ≤4h install holds), OQ17 build-browser source + per-principal scoping (§9.4). Reflected the new security bar: D8 (external integrations untrusted+authenticated), NFR-SEC7 (room scope), NFR-SEC8 (sync auth), NFR-OBS3 (metering provenance). ADR-018/020/022 extended; §19/§22 updated. No locked decision reopened; content unchanged, numbering + two mechanism gaps (OQ13 loop model, OQ16 fallback) filled
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
@@ -492,6 +493,29 @@ Postgres **`scm` schema** — `scm_repo`, `scm_issue_mirror`, `scm_pr_mirror`, `
 (FR-H1 issues⇄work items; FR-H2 PR/CI/artifact status). This is **one more schema in the same one
 Postgres (ADR-001)**, not a new datastore.
 
+**PR state, review state & Run/branch correlation (FR-H2).** `scm_pr_mirror` carries the full PR
+lifecycle — `state` (open/merged/closed) **and `review_state`** (approved / changes-requested /
+review-required / pending, folded from the provider's review + required-check summary) — so the console
+and dashboards (§13) reflect mergeability, not just open/closed. Each PR row is **correlated to the Run
+that produced it** by `head_branch` + `head_sha`: a Run pins a commit SHA and works in its own
+git-worktree (§5.2/§9.4), so the mirror joins `scm_pr_mirror.head_sha → run.commit_sha` (with
+`head_branch` as the human key) to link PR + CI status back to the originating Run/branch. The join is a
+**read-model correlation** (a nullable `run_id` upserted when a match exists), never a custody or
+coordination edge — the no-P2P/fenced-claim locks (§6) are untouched; an unmatched PR simply carries a
+null `run_id`.
+
+**CI-failure context auto-post to the discussion room (FR-H2, §7.5).** When the reconciler mirrors a
+`check_run` (or PR check summary) that transitions to **failed**, it emits a single **auto-post** into
+the Project's discussion room (§7.5): a `discussion_message` authored by a system/bot principal,
+carrying the failing check name, PR/branch, the Run correlation (above), and a link to the CI logs /
+build browser (§9.4). Like all mirror output it is **origin-marked** (echo-suppression, below) and
+**provenance-tagged external** (§7.3.2) — cited context for the squad, never trusted control input.
+Because the same transition also flows on the **event bus** (r13/ADR-023, subject
+`ksquad.scm.{project}.{squad}.check_run.failed`), plugins can react (notify, re-run, open a triage work
+item) without ever touching coordination. The auto-post is a **projection of mirror state into the
+discussion schema** — coordination-free by the same §7.5 construction (no claim/lease/fence column), so
+it reuses seams and adds no new mechanism.
+
 **Webhook ingress.** The apiserver exposes an **HMAC-verified** webhook endpoint; the HMAC secret is a
 per-`Project` Secret ref (`repo.sync.webhookSecretRef`, same per-user-Secret discipline as §11). It
 subscribes to `push` / `pull_request` / `issues` / `check_run` / `release` (FR-H3 webhook + poll
@@ -533,8 +557,10 @@ Sync-connector credentials are **never logged, echoed, or exposed to an agent Ru
 
 *Satisfies:* Theme H (FR-H1…H5), D8, NFR-SEC8, OQ13 (resolved); reinforces FR-B4 audit (SCM artifacts
 join the coord trail). *Trade recorded:* ADR-018 (repo-sync provider seam + mirror-not-authority +
-field-ownership/echo-suppression). *Touchpoints:* §5.1 (`Project`), §17.3 (layout, `pkg/scm`), §13
-(dashboard project-health source), §19/§22.
+field-ownership/echo-suppression; PR `review_state` + Run/branch correlation; CI-failure auto-post).
+*Touchpoints:* §5.1 (`Project`), §7.5 (CI-failure auto-post), §9.4 (Run/branch build-browser link),
+§17.3 (layout, `pkg/scm`), §17.4/ADR-023 (`check_run.failed` event), §13 (dashboard project-health
+source), §19/§22.
 
 ---
 
@@ -1055,6 +1081,10 @@ Runs or principals.**
   requesting principal's own Run/worktree — a shared Project workspace never leaks one user's source or
   build residue to another. Strictly read-only, tenancy-scoped to the Run's Team namespace, never a
   write path. Surfaced in the console (§13) as *legibility, not an editor* (scope guard R6).
+  **Build-ready component design:** the read API surface, live-vs-completed read paths, the
+  `build-snapshot` artifact shape, layered per-principal scoping, and Epic 8.7 acceptance/story-slicing
+  are pinned in `design/build-browser-component-design.md` (ISI-2148) — implementation reference for
+  Story Writer + Code Reviewer; no new architectural decision, elaborates this section + ADR-021.
 
 *Satisfies:* FR-C1…C6, NFR-SEC2/SEC5, NFR-PERF1, NFR-SCALE2; Theme K (FR-K1/K2), OQ17 (resolved).
 *Spike-gated:* RuntimeClass default, pool sizing (ISI-2113). *Trade recorded:* ADR-006
@@ -1573,7 +1603,7 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | FR-D1…D5 | §10 shim seam + A2A + conformance; §5.3 `AgentRuntime` CRD + tooling model (ISI-2144) |
 | FR-F1…F6 | §13 console |
 | FR-F7 (dark/light, r3) | §13 dark+light theme (v1, WCAG AA both modes) |
-| FR-H1…H5 (SCM sync, r3) | §5.4 repo-sync + `pkg/scm` seam; OQ13 conflict/loop model |
+| FR-H1…H5 (SCM sync, r3/r14) | §5.4 repo-sync + `pkg/scm` seam; OQ13 conflict/loop model; PR `review_state` + Run/branch correlation; CI-failure auto-post → discussion §7.5 (r14) |
 | FR-I1…I3 (dashboard/metering, r3) | §13 dashboards; §11 attribution; §17.2 OTel metering (non-forgeable) |
 | FR-J1…J4 (discussion room, r3) | §7.5 Postgres `discussion`, coordination-free; §13 surface |
 | FR-K1…K2 (build browser, r3) | §9.4 git-worktree read model, per-principal scoped; §13 surface |
@@ -1594,7 +1624,7 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | OQ13/14/15/16/17 (r3, Architecture-owned) | §5.4 conflict+loop / §11+§17.2 metering source / §7.5 room storage+distinctness / §16.1 Gateway-less fallback / §9.4 build-browser source+scoping — **all resolved** |
 | §8 three deltas, F5 | §14 teardown (deltas realized in §10/§8/§6) |
 | Challenger F6/F7/F8/F9/F16/F18/F20 | §9.3-4 / §7.3 / §6+§15 / §10.2 / §7.3 / §17.1 / (safety-wins, §12 tiebreaker applied) |
-| ISI-2145 Source-control sync | §5.4 repo-sync + `pkg/scm` provider seam; §17.3 layout; ADR-018 |
+| ISI-2145 Source-control sync | §5.4 repo-sync + `pkg/scm` provider seam (issues⇄work items, PR `state`+`review_state`, CI `check_run`, artifacts); Run/branch correlation (`head_sha→run.commit_sha`) §9.4; **CI-failure auto-post → discussion §7.5** + `check_run.failed` event (r13/ADR-023); §17.3 layout; ADR-018 |
 | ISI-2146 Dashboards + consumption | §13 dashboards; §11 attribution; §17.2 metrics; ADR-020 |
 | ISI-2147 Discussion room | §7.5 (Postgres `discussion`, memory-projected, coordination-free); §13 surface; ADR-019 |
 | ISI-2148 Build browser | §9.4 read model; §13 surface; ADR-021 |
