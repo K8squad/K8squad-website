@@ -27,6 +27,26 @@ Primary personas (PRD §5): **Priya — Platform Engineer** (operator; needs leg
 
 ---
 
+## 0. Revision v2 — logo + light mode (ISI-2150, CEO feedback 2026-08-11)
+
+Two CEO changes are applied here:
+
+1. **v2 logo embedded.** The header/rail brand glyph is now the **selected K8squad 8-Crest v2**
+   mark (two stacked rounded-square squad-containers + coordinator waist node — the approved mark
+   published to `assets/logo/` · `branding/` on the `assets/k8squad-logo` branch, Henrik-approved
+   ISI-2138). The small-size header lockup uses the *simplified* crest geometry (rings + coordinator
+   + lead nodes) proven legible at favicon scale. Swapped into all six screens, both themes.
+2. **Light-mode variants shipped.** Every screen now has a `*-light.svg/png` sibling. Light mode
+   **mirrors the same token roles** (not new hues) — see the two visual-system sheets:
+   `00-visual-system.png` (dark) and `00-visual-system-light.png` (light). Status semantics are
+   preserved with darker on-light hues (green `#059669`, amber `#B45309`, rose `#E11D48`, slate
+   `#64748B`, violet `#7C3AED`) over light tints, always paired with dot + label (a11y unchanged).
+
+Delivered this revision: `00`–`05` in dark (logo-swapped) **and** light. **Pending** (tracked as a
+follow-up): three new screens — **build browser**, **discussion room**, **dashboard** — in both themes.
+
+---
+
 ## 1. Design principles
 
 The console is an **operator surface**, not a marketing site or a playground. Five rules, applied to
