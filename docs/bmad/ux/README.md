@@ -68,6 +68,26 @@ Builds · Discussion · Projects · Agents · Credentials). This revision re-ren
 
 ---
 
+## 0c. Revision v4 — team organization diagram (ISI-2150, CEO request 2026-08-11)
+
+A 10th screen ships in **dark + light** on the same locked system — the **team/squad org chart**
+(Paperclip-style). It is rendered as the destination for the existing **Agents** rail entry (no new
+rail item — the locked 8-entry rail is preserved, and "Agents" finally gets a real surface).
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 09 | Team organization | `images/09-team-organization.png` | **Team → Agent → Role** lineage tree; live status; click-through to agent detail |
+
+**What it shows.** A three-column lineage tree — **Teams** → **Agents** → **Roles** — with the
+selected parent connected to its children by accent elbow connectors, plus a click-through **agent
+detail** panel on the right. Every node carries real-time status (**idle / running / blocked /
+paused**) as a **dot + label** (a11y unchanged), the agent's **runtime type** badge (OpenClaw /
+Hermes), and **role** badges. Detail panel surfaces runtime, namespace, bound roles, skills,
+credential ref, current run, and the data provenance: **Team / Agent / Role CRDs (read-only)** with
+**live status via SSE**. Source: `gen-09-team-org.py` (token-mirrored dark/light generator).
+
+---
+
 ## 1. Design principles
 
 The console is an **operator surface**, not a marketing site or a playground. Five rules, applied to
