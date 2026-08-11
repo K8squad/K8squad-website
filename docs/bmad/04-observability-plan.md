@@ -126,6 +126,15 @@ The CR-annotation hop is what makes the trace **survive a controller restart** �
 idempotent and level-triggered (§12 arch), so the trace context must be **durable state**, not in-memory
 continuity. This is the KSquad translation of Sympozium's "traceparent annotation on the AgentRun CR."
 
+**Per-ticket activity view (Paperclip-style).** A work item (ticket) can span multiple Runs — retries,
+crash-reclaims, resume-after-pause — so the per-ticket perspective is a **query pattern**, not a new
+signal: every span, log line, and metric exemplar emitted by a Run carries `ksquad.work_item.id`
+alongside `ksquad.run.id`, and the `run_events` audit rows are work-item-scoped. The console/backend
+renders a **Paperclip-style per-ticket activity timeline** by joining traces + correlated logs +
+`run_events` on `work_item.id`: claims, Runs, phase transitions, SSE progress, artifact appends,
+terminal reasons, in causal order. This costs nothing at the metrics layer — `work_item.id` stays
+forbidden as a metric label (§1.2/§5.6) and lives exactly where unbounded IDs belong.
+
 ---
 
 ## 4. Tracing strategy
@@ -181,6 +190,7 @@ rows are for forensic query. Do not duplicate the audit *content* into metric la
 | `ksquad.coord.lease.reclaim.total` | counter | `trigger` (expiry\|sweeper) | **crash-reclaim rate** — the NFR-REL correctness signal (§6.2) |
 | `ksquad.coord.fence.epoch.increments` | counter | — | fence-token (`lease_epoch`) increments; a spike = churn/thrash |
 | `ksquad.coord.workitem.state` | up/down gauge | `state` (open\|claimed\|done\|failed) | backlog depth by state (bounded enum) |
+| `ksquad.coord.workitem.blocked` | up/down gauge | `error_code` (curated bounded enum, §5.6) | **tasks currently blocked, labeled with the blocking error code** — the Paperclip "blocked-by" analogue (§15) |
 | `ksquad.coord.append.total` | counter | `kind` (comment\|artifact) | audit append rate |
 | `ksquad.coord.claim.contention.depth` | gauge | — | concurrent claimers losing the SKIP-LOCKED race |
 
@@ -252,7 +262,7 @@ implement it.
 | `ksquad.a2a.sse.stream.active` | gauge | — | live SSE streams (drives the console "live" pulse) |
 | `ksquad.shim.capability.negotiated` | counter | `runtime`, `capability` (streaming\|tool_calls\|interactive), `supported` (bool) | **capability negotiation** honesty (FR-D4, §7.2) |
 | `ksquad.shim.conformance.result` | gauge | `runtime`, `check` | **conformance-suite** pass/fail per check (§7.5) — CI-emitted |
-| `ksquad.agent.tokens` | counter | `runtime`, `direction` (input\|output) | token accounting (Sympozium `agent.context.input_tokens`), best-effort per shim |
+| `ksquad.agent.tokens` | counter | `runtime`, `direction` (input\|output) | token accounting (Sympozium `agent.context.input_tokens`), best-effort per shim; **per-ticket rollups** aggregate on `work_item.id` via exemplars/traces (§15), never as a label |
 
 `capability` and `check` are bounded by the conformance suite's fixed check list (§7.5 arch) — a vendor
 adding a runtime cannot inflate cardinality because the check set is fixed by the suite, not the runtime.
@@ -262,8 +272,8 @@ adding a runtime cannot inflate cardinality because the check set is fixed by th
 **Bounded label domains (allowed as metric labels):** `outcome`, `terminal_reason` (curated enum),
 `phase`, `from`/`to` (phase enum), `runtime` (openclaw\|hermes\|…, finite), `runtime_class`
 (kata\|gvisor), `operation`, `result`, `state`, `kind`, `trigger`, `reason` (curated enums),
-`decision`, `surface`, `capability`, `check`, `direction`, `pool_hit`, `cause`, `provenance_class`,
-`signal`. Total series per instrument stays in the low hundreds.
+`decision`, `surface`, `capability`, `check`, `direction`, `pool_hit`, `cause`, `error_code`,
+`provenance_class`, `signal`. Total series per instrument stays in the low hundreds.
 
 **Forbidden as metric labels (trace/log/exemplar only):** `run.id`, `work_item.id`, `principal.id`,
 `sandbox.pod`, `trace_id`, `team`/`project` names (these ride as **resource attributes** for scoping,
@@ -309,6 +319,7 @@ the schema and telemetry is validated against it in CI.
 | Attribute | Type | Domain / example | Notes |
 |-----------|------|------------------|-------|
 | `ksquad.run.id` | string | UUID | root correlation key; span/log/exemplar only |
+| `ksquad.work_item.id` | string | UUID | per-ticket correlation (Paperclip-style activity view, §3); span/log/exemplar only — never a metric label |
 | `ksquad.team` | string | squad namespace | resource attr (scope), not metric label |
 | `ksquad.project` | string | project name | resource attr |
 | `ksquad.runtime` | string | `openclaw`\|`hermes` | finite enum → allowed metric label |
@@ -509,6 +520,22 @@ parallel with (not after) the foundational epic, exactly as §14 arch schedules 
 | Arch §9.2 egress | §10 collector egress-allowlist (tenancy input) |
 | Arch §4.6/§13.5 (OTel tracing = fast-follow) | §4.1 P0/P1 phasing (honored, not overridden) |
 | Sympozium ISI-1406 / PR #11/#18; MemOS ISI-1918 | §2 reuse map + §7 semconv |
+
+---
+
+## 15. Review addendum — CEO requirements (2026-08-11)
+
+During review, two observability requirements were added on the ticket by the CEO. Verification of this
+plan against them:
+
+| CEO requirement | Verdict | Where / action taken |
+|-----------------|---------|----------------------|
+| **Token consumption** | ✅ already covered | `ksquad.agent.tokens{runtime, direction}` (§5.5), aligned to OTel `gen_ai.usage.*` (§7). Clarified: **per-ticket token rollups** are derived in the backend by aggregating on `work_item.id` via exemplars/traces — deliberately *not* a metric label (cardinality law §1.2). A cost/pricing rollup would be a backend computation over this signal; flag if a cost model is wanted. |
+| **Tasks blocked by (error code)** | ✅ spec added | New `ksquad.coord.workitem.blocked{error_code}` gauge (§5.1); `error_code` added to the §5.6 bounded-label allowlist as a curated enum. **Architecture follow-up (rides ISI-2151):** the work-item lifecycle enum (open\|claimed\|done\|failed, arch §6) has no `blocked` state and no error-code taxonomy — the signal is specced here; the state + taxonomy must land in the architecture revision for the instrumentation to be truthful. |
+| **Per-ticket activity on the trace perspective (Paperclip-style)** | ✅ spec added | §3 per-ticket activity view: `ksquad.work_item.id` (now registered in §7) on every span/log/exemplar + work-item-scoped `run_events` → the console joins traces + logs + audit rows on `work_item.id` for a Paperclip-style ticket timeline. P0 supports it via `run.id`/`work_item.id` log+audit correlation; P1 stitching (§4.1) upgrades it to one connected cross-boundary trace. |
+
+No new architectural decisions introduced. The single architecture touch (work-item `blocked` state +
+error-code taxonomy) is explicitly deferred to the architecture revision (ISI-2151).
 
 ---
 
