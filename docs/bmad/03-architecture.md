@@ -405,21 +405,22 @@ controller.**
   skill-specific toolchains attach per-Run without a warm pod per skill combination. An `ImageUpdater`
   bump drains and re-warms the affected key.
 
-**Open questions escalated to Alfred/CEO (issue §Open questions — not architect-owned):**
-1. **Registry:** `ghcr.io/ksquad/*` — are runtime/toolchain images public for the OSS project?
-2. **CLI license / redistribution:** which agent CLIs permit redistribution *inside* an image
-   (**Claude Code ToS is the live risk**) vs. must be init-time downloaded from the vendor at pod
-   start? This can force option (b) *for specific runtimes only* — the CRD's per-runtime `image` +
-   `cliVersion` seam already accommodates a mixed model. **Flagged, not silently assumed.**
-3. **Air-gapped / corporate installs:** mirror support for CLI + toolchain-pack pulls (offline
-   registry). The pinned-version + node-prepull model is mirror-friendly; needs an explicit design
-   pass in Epics.
+**Open questions — DISPOSED by CTO (Alfred, 2026-08-11); none require CEO escalation, none block Gate 2:**
+1. **Registry — RESOLVED:** `ghcr.io/ksquad/*` is **PUBLIC** for the OSS project. **Locked.**
+2. **CLI license / redistribution — RESOLVED (spike-gated to Phase 4):** the per-runtime `image` +
+   `cliVersion` CRD seam **already supports a mixed model** — vendor-download at pod start for
+   restricted CLIs (**Claude Code ToS** the live case), pre-bundled in the image for permissive ones.
+   Confirmed by CTO to **not block architecture or PRD sign-off**; the licensing spike lands in Phase 4.
+3. **Air-gapped / corporate installs — RESOLVED (Epics design pass):** **mirror-friendly by design**
+   (pinned versions + node-prepull); the full offline-registry design pass is a Phase 4 (Epics) item.
+   Confirmed by CTO to **not block**.
 
 *Satisfies:* FR-D3/D4 (runtime pluggability, capability negotiation), FR-A1…A3 (CRD surface), the
 ISI-2144 amendment scope. *Trade recorded:* ADR-015 (AgentRuntime CRD + R-not-R×T image model),
 ADR-016 (lifecycle-split tooling: init-staged packs vs service sidecars), ADR-017 (hybrid image
 update via ImageUpdater + conformance canary). *Spike-gated:* Docker-in-sandbox mechanism per
-RuntimeClass (§9.1/ISI-2113); CLI-redistribution licensing (open question 2, owner Alfred).
+RuntimeClass (§9.1/ISI-2113); CLI-redistribution licensing (open Q2 — **disposed by CTO 2026-08-11**:
+mixed model via the seam, spike lands Phase 4, not a blocker).
 
 #### 5.3.6 Skill source seam — git-sourced skills (CEO 2026-08-11, kagent-parity)
 
@@ -1458,12 +1459,19 @@ decision 2026-08-11, ADR-023, §4).
 **Event seam — transactional outbox (at-least-once).** Domain events are written **append-only to a
 Postgres `outbox` table in the SAME transaction as the state change** that produced them. Because the
 outbox row and the state row commit atomically, an event is captured **iff** its state change committed
-— no lost events, no phantom events. Covered:
+— no lost events, no phantom events. Covered (the ISI-2155 taxonomy, mapped 1:1 onto existing state):
 - **Run lifecycle** (§8): Pending/Claiming/Running/Succeeded/Failed/Cancelled/Paused.
 - **Work-item transitions** (§6 coord, §6.6): created / claimed / handoff / completed — written in the
   claim/comment transaction.
+- **Build outputs** (§6.1 artifacts, §9.4 worktree): artifact-registration events — a produced build /
+  diff / blob is the artifact upsert row (`work_item_id, run_id, kind`), emitted in that transaction; it
+  is a *first-class* taxonomy entry, not a sub-case of the generic work-item bullet.
 - **Memory writes** (§7.3): provenanced memory + discussion writes.
 - **Sync / CI results** (§5.4 scm): issue / PR / check-run / artifact mirror updates.
+- **Credential-refresh needs** (§7.4, Epic 7.4): the `Run→Paused`-on-credential-expiry transition (a
+  distinguished Run-lifecycle event above) surfaces "this Agent needs a token refresh" on the seam, so a
+  credential-manager plugin can react — **observe-only**: the plugin signals/notifies, it never injects
+  the credential or resumes the Run (that stays the fenced control-plane path, §7.4/§6).
 
 This keeps ADR-001 intact for **durability**: every event is first a row in the **same Postgres** in the
 state-change transaction (source of truth, no lost/phantom events). **Transport** is where the CEO
@@ -1648,7 +1656,7 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 | Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
 | Docker-in-sandbox mechanism (rootless dockerd vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 (RuntimeClass) | ⚠ backlog — not started |
-| CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | **owner: Alfred/CEO** (legal, not a spike) | ⚠ open — escalated |
+| CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | CTO Alfred (legal) | ✅ **disposed 2026-08-11** — mixed model via the `image`+`cliVersion` seam; spike lands Phase 4; **not a blocker** |
 
 **Architect recommendation to Alfred/CEO:** schedule and staff ISI-2112/2113/2114 **in parallel with
 Phase 4 Epics**. They gate v1 *defaults and the S5/S6 conformance claims*, not the architecture — so
