@@ -18,7 +18,9 @@ revisions:
   - r1 (2026-08-11, ISI-2157): initial testing methodology + CI/CD design; DevOps-owned sections (§11) flagged for co-sign
   - r2 (2026-08-12, ISI-2305): added §6.7 **Authentication & Authorization (RBAC) test matrix** — auth session lifecycle, admin/user access matrix per endpoint, per-project isolation, agent-identity + scoped-credential enforcement, privilege-escalation prevention, console adaptive-nav (non-admin UI), and the auth+middleware+agent integration case. §6 intro bumped six→seven mechanisms; traceability (§12) + epic map (§3.3) extended; **open item: human console authN mechanism (OIDC/IdP vs local cred) is unpinned — needs an ADR (§13)**, so the auth-session cases are written mechanism-aware and the IdP-delegated variant is the design-consistent default
   - r4 (2026-08-12, ISI-2322 / Architect Winston): added **sub-ticket parent/child tree** console tests (§3.2) for the CEO-validated expandable-tree UI (FR-B5, Arch §6.1 `work_item.parent_id` / §13, ADR-036, r24) — **parent expand/collapse** (caret + child-count badge + lazy-load-on-first-expand assertion), **deep nesting** (recursive caret + indent-cap "continue in child"), **orphan child handling** (dangling `parent_id` renders as root, never hidden), and a **read-only-tree guard** (no coord mutation on expand/collapse; the only Tickets write is the 8.14 status-transition). §3.3 Epic 8 L1 row extended. Vitest units + Playwright deep-nesting E2E; no new mechanism, rides the existing console lane
+  - r5 (2026-08-12, ISI-2326 / Architect Winston): added **dual-view Tickets (Kanban + List)** console tests (§3.2) — sibling to r4's sub-ticket tree — for the CEO-validated two-view screen (8.14; FR-B5/FR-F1, Arch §13 board-derivation, r25). Cases: **board-state derivation** (`state`→column is a pure projection, no separate column field), **Blocked-as-condition** (badge in workflow lane, never a 6th column), **DnD status accuracy** (one `PATCH …/state {to,expectedFrom}`, **stale drag 409→re-sync** no lost-update, **viewer DnD-disabled**, human transition takes **no** fence/lease §6.2), **List sort** (all 7 columns incl. Updated), **view-toggle persistence** (localStorage + `?view=` deep-link restores view; filters survive the toggle), and **search + filters** (server-side query params, tenancy-scoped, both views). §3.3 Epic 8 L1 row + §12 traceability extended. Vitest units + Playwright DnD/409/toggle E2E; no new mechanism, rides the existing console lane
   - r3 (2026-08-12, ISI-2308 / Architect Winston): **resolved the §6.7 open authN-mechanism decision** — pinned to **ADR-033** (already landed via ISI-2301/2303, CEO Henrik 2026-08-12): **local username/password store (argon2id, Postgres `auth` schema §12.3) is the v1 default; OIDC/SSO is an opt-in fast-follow behind the `AuthProvider` seam** because the ≤4h air-gapped S1 install cannot hard-depend on an external IdP. This **inverts the r2 IdP-first default**: §6.7.1 **A5 is now the local-cred primary case** (single-use time-boxed reset token, sessions invalidated on reset, no user-enumeration, argon2id, NFR-SEC3) and **A5-oidc is the skipped-with-reason opt-in-seam variant**. §6.7.1 **`skip` dropped**; §6.7.0, A1, framework note, §13 open-items, and the §12 traceability row updated. Local-cred A5 test-body implementation handed to Amelia
+  - r6 (2026-08-12, ISI-2332 / ISI-2327 responsive-console): added the **responsive viewport test matrix** as a v1 gate — new **§3.5** (nav-shell per breakpoint + per-screen reflow table + **360px no-horizontal-overflow** hard bar + **touch parity**: ≥44px targets / no hover-only affordance / pull-to-refresh / pinch-zoom) across **widths 360/768/1024/1440px × iOS Safari / Android Chrome / desktop Chrome+Firefox**, and new **§6.7.8 RBAC × breakpoint (NW1–NW4)** composing the §6.7.6 adaptive-nav N1–N4 cases with the width axis (the collapse must hide the **same** admin surface for non-admins at every width — no responsive-specific authz path, Arch §13.1/ADR-038). §3.3 Epic 8 L1 row + §12 traceability (2 rows) extended. Playwright viewport/device matrix on the existing `e2e.yml` console lane; Vitest for breakpoint-token units; **no new mechanism, no new data path** (identical BFF payloads, same §12.3 RBAC wall, same one SSE bus). Asserts against the Graphic Designer shared breakpoint tokens (PRD §11.4), not hard-coded pixels
 ---
 
 # KSquad Testing Strategy & CI/CD Methodology
@@ -143,10 +145,121 @@ own image, SBOM, CVE scan, and test lane.
 | 5 Shims & A2A | shims | Agent Card generation, capability negotiation, **deterministic `a2a_task_id` dedup** |
 | 6 Memory service | memory | MCP tool surface, pgvector search, provenance surfacing on read |
 | 7 Credentials & pause/resume | operator, shims | credential injection (never logged), Paused→resume |
-| 8 Console | console | UI/BFF units + E2E; **BFF authZ choke point + adaptive-nav (§6.7.2/6.7.6)**; **sub-ticket tree expand/collapse + deep-nesting + orphan-as-root (§3.2, 8.14/8.17, FR-B5)** |
+| 8 Console | console + apiserver `pkg/search` | UI/BFF units + E2E; **BFF authZ choke point + adaptive-nav (§6.7.2/6.7.6)**; **sub-ticket tree expand/collapse + deep-nesting + orphan-as-root (§3.2, 8.14/8.17, FR-B5)**; **dual-view board-derivation + DnD status accuracy/409-resync + view-toggle persistence + filters (§3.2, 8.14, FR-B5/FR-F1)**; **global search — relevance / RBAC-filter / empty / special-chars (§3.4, 8.18/8.19, FR-SEARCH1–5); RBAC-scope existence-hiding tied into §6.7**; **responsive viewport matrix — nav-shell + per-screen reflow + 360px no-overflow + touch parity (§3.5, 360/768/1024/1440 × iOS Safari/Android Chrome/desktop Chrome+Firefox), RBAC×breakpoint (§6.7.8), NFR-UI/Arch §13.1/ADR-038** |
 | 10 Discussion rooms | apiserver, memory | discussion schema, memory-projection, **not-a-coordination-channel** guard |
 | 11 Source-control sync | operator, apiserver | repo-sync reconciler, webhook ingress, mirror mapping |
 | 12 Plugin architecture | apiserver `pkg/events` | outbox transactional append, delivery worker retry/dead-letter/circuit-breaker, **read-only observer guard** |
+
+### 3.4 Global cross-entity search (Theme P, FR-SEARCH1–5; Epic 8.18/8.19 — ISI-2323)
+
+> **What this proves.** The top-bar search is **useful** (relevant results across all entity types),
+> **safe** (an out-of-scope entity is *never* returned — the RBAC scope is applied *in the query*, not
+> post-filtered), and **robust** (empty/no-match/special-character inputs are graceful, never an error or
+> an injection). Search is a **derived read-model** (Arch §17.5) — it must not become a side door around
+> the §12.3 RBAC wall. The four ticket-named dimensions — **relevance, RBAC filtering, empty states,
+> special characters** — are the required cases; each ships with a **positive control** (matches §6.5/§6.7.0:
+> a deny/empty case is meaningless without the paired allow case).
+
+**Backend — apiserver `pkg/search` (Go L1, `testing`+`testify`, Postgres container; §3.1 idiom):**
+- **Relevance & grouping.** Given a seeded corpus across work items/comments/artifacts/Runs + CRD-cache
+  agents/teams/projects, a query returns the expected entities **grouped by type** and **ranked** so a
+  title/name match outranks an incidental body match; a **prefix/partial name** (`pg_trgm`) matches an
+  agent/project. Assert the shape (`{type, id, label, deepLink}`) and that ordering is stable/deterministic
+  for a fixed corpus (relevance *tuning* is OQ21, not asserted numerically — assert the ordering
+  *invariants*, not brittle scores).
+- **RBAC filtering (the security dimension — mirrors §6.7).** With caller **A** a member of Project P1 only
+  and caller **B** a member of P2 only, an identical query that matches entities in **both** projects returns
+  **only P1 entities to A** and **only P2 to B**; a P2-matching entity is **absent from A's results,
+  previews, and `count`** (existence-hiding — A cannot infer P2's entity exists, tied to §6.7/NFR-SEC10/S4).
+  **Positive control:** A **does** get its own P1 matches (not a blanket-empty bug). **`admin`** gets the
+  fleet-wide match (bypass). **Determinism guard (matches §4.1/§6.7.0):** the suite **fails fast** if the
+  scope predicate is absent — a red-team test that removes the `project_id = ANY(...)` filter and leaks a
+  cross-project row **must fail the build** (proves scope is *in the query*, not app-layer post-filtering).
+- **Empty & no-match states.** An **empty `q`** returns a neutral/recent state (no error, no full-table
+  scan); a **no-match `q`** returns **empty groups with `200`**, never a `500`/error/spinner-forever.
+- **Special / reserved characters.** Inputs containing `:`, `*`, quotes, path separators, FTS operators,
+  and **injection-shaped strings** (`'; DROP …`, `%`, `_`, `") OR 1=1 --`) are treated as **literal search
+  terms** — they return sensible/empty results, **never error**, and (the load-bearing assertion) **never
+  execute as SQL/FTS syntax**: a query that would delete/leak rows if interpolated **must** return a benign
+  empty/no-match and leave the corpus intact (`websearch_to_tsquery` + parameterized binds, Arch §17.5).
+
+**Frontend — console (Vitest unit + Playwright E2E; §3.2 idiom):**
+- **Unit (Vitest):** debounce coalesces rapid keystrokes into the trailing call; results render **grouped by
+  type**; the **empty state** renders on no-match (distinct from the neutral pre-query state and the loading
+  state); the UI renders **only** API-returned results (no client-side widening).
+- **E2E (Playwright, semantic locators):** the search bar is **present on every screen** (app-shell top bar);
+  **keyboard-only** flow works (shortcut focuses → arrow through results → Enter opens → Esc dismisses);
+  **contextual scope** on a Project screen narrows results and the **widen-to-all** affordance restores them;
+  entity-type filters narrow correctly. Runs in both **light and dark** themes (8.9).
+
+**Gate:** the RBAC-filtering cross-project leak case is a **required security assertion** (S4/NFR-SEC10
+family) — Epic 8 search stories cannot close until it and its determinism guard are green.
+
+### 3.5 Console responsive viewport matrix (v1 gate) — Theme F, NFR-UI/NFR-USE2; Arch §13.1 / ADR-038 (ISI-2327)
+
+> **What this proves.** The console is **one responsive SSR tree** (ADR-038: CSS-first, Tailwind
+> breakpoints + container queries, **no** UA-sniffing, **no** separate mobile build, **no** device-class
+> server route). Responsive = **reflow + touch parity of the *same* screens at every breakpoint** — not a
+> "mobile-lite" subset and not a native app (Arch §13.1 scope guard, R6). So the matrix asserts **every
+> screen is fully functional at every width**, never that a mobile variant renders. The data/authz path is
+> untouched (identical BFF payloads, same §12.3 RBAC wall, same one SSE bus) — the RBAC×breakpoint
+> composition lives in **§6.7.8**; this section owns nav-shell, per-screen reflow, no-overflow, and touch.
+
+**Framework:** **Playwright** (semantic locators, §8) driving `page.setViewportSize()` for the width axis
+and the built-in device descriptors for the browser/device axis; **Vitest** for pure breakpoint-token
+units (which nav shell a given width selects) where a full browser is not needed. Touch/gesture assertions
+use Playwright's `hasTouch`/`page.tap()`/touchscreen + emulated pinch. This **rides the existing console
+E2E lane** (`e2e.yml`, §10.1) — no new mechanism, no new data path.
+
+**Width axis (breakpoint boundaries + one below/above each, Arch §13.1 tokens):**
+
+| Width | Class | Expected nav shell |
+|-------|-------|--------------------|
+| **360px** | mobile (portrait floor) | top bar + **5-item bottom nav** + slide-in drawer for overflow; **no horizontal overflow/clipping** |
+| **768px** | tablet lower boundary | **collapsible icon rail** (tap-expand overlay); **no** bottom nav |
+| **1024px** | tablet upper boundary | icon rail at `≤1024`, **full labeled left rail** at `>1024` — asserts the boundary resolves to exactly one shell (no double nav, no gap) |
+| **1440px** | desktop | **full labeled left rail**; no bottom nav |
+
+**Browser/device axis (Playwright projects):** **iOS Safari** (WebKit, `iPhone` descriptor — the touch +
+Safari-viewport truth), **Android Chrome** (`Pixel` descriptor — touch + Chromium mobile), **desktop
+Chrome**, **desktop Firefox**. The two mobile projects carry `hasTouch:true` and drive the touch
+assertions below; the two desktop projects assert the `>1024` rail + pointer affordances. iOS Safari is the
+one that catches `100vh`/safe-area and momentum-scroll regressions the others miss.
+
+**Per-screen reflow (assert the reflow named in Arch §13.1, at each width — same screen, never a reduced set):**
+
+| Screen (Epic 8) | Reflow assertion (mobile) | Assertion (tablet/desktop) |
+|-----------------|---------------------------|-----------------------------|
+| **Tickets — Kanban** | columns collapse to **swipeable tabs** + h-scroll; sub-ticket tree (§3.2) still **expands inline** | side-by-side columns; icon rail (768–1024) / full rail (>1024) |
+| **Tickets — List** | **3 columns** (ID + Title + Status); a row **expands** for the rest; sort/filter params unchanged (server-side, §13) | full column set; sort on all 7 columns (§3.2) |
+| **Project Dashboard** | tiles **stack vertically**; activity feed moves **below**; each tile still degrades independently (ADR-020) | grid of tiles + side feed |
+| **File / build browser** | file tree **collapses to a dropdown**; code/diff goes **full-width**; read-only (R6) | tree + code side-by-side |
+| **Agents org views** (team org / role swimlanes / leadership tree) | **role swimlanes stack**; tree gets **pinch-zoom + h-scroll**; no mutate affordance (§13) | full swimlanes / tree; read model |
+| **Global search (§3.4)** | **full-width** search | **icon-triggered** (tablet) / inline (desktop) |
+| **Login** | centered card, works at **360px** | centered card |
+| **Settings** | **flattens to an accordion** | tree |
+
+- **No-overflow gate (the 360px hard bar).** On every screen at **360px portrait**, assert **no horizontal
+  scrollbar and no clipped content**: `document.scrollingElement.scrollWidth ≤ clientWidth` (± the
+  scrollbar allowance) and every interactive element's bounding box sits **within** the viewport. A screen
+  that overflows at 360px **fails** — this is the concrete expression of "works to 360px portrait" (§13.1).
+
+**Touch parity (v1 acceptance bar, Arch §13.1 — asserted on the two `hasTouch` projects):**
+
+| Touch assertion | Check |
+|-----------------|-------|
+| **≥44px targets** | every interactive control's rendered box is **≥44×44px** (WCAG 2.5.5 / HIG) — enumerate `button`/`a`/`[role=button]`/menu items and assert `boundingBox()` meets the floor at each breakpoint |
+| **No hover-only affordance** | every hover-revealed control (org-diagram tooltips, kanban card actions, table-row menus) is **reachable by tap and by keyboard focus** — assert the action is invocable **without** a `mouseover` (tab-to-focus + `tap()` reaches it); a hover-only reveal is a **defect**, not a degradation |
+| **Pull-to-refresh** | list/feed views (Tickets List, Project activity feed) refresh on a **pull gesture** (touch drag past threshold → refetch fires); assert the BFF re-request, not a full navigation |
+| **Pinch-to-zoom on diagrams** | org charts + build diffs accept a **pinch gesture** and scale (assert transform/scale change), with h-scroll to pan — the read-only diagram is zoomable, not frozen |
+
+**Gate.** The responsive matrix is a **v1 gate**: an Epic 8 console screen story cannot close until its
+row is green at all four widths on all four projects, the 360px no-overflow assertion passes, the touch
+bar passes on both mobile projects, and the **§6.7.8 RBAC×breakpoint** cases pass. Skipped viewport/device
+combinations are **logged with reason** (`::notice::`), never silently dropped (matches §4.1/§6.7.0
+determinism discipline). Depends on the Graphic Designer breakpoint/spacing tokens (Arch §13.1; PRD §11.4)
+being the **single shared source** the CSS *and* the test read — the matrix asserts against those tokens,
+not hard-coded pixel guesses.
 
 ---
 
@@ -350,6 +463,7 @@ ticket names.
 | **I1 · cross-Project read** | user with access to Project A requests a Run/artifact/build/memory record scoped to **Project B** (same or different Team) | **`404`** — Project scope is enforced at the BFF *and* by the Team-namespace RBAC/NetworkPolicy underneath; no listing endpoint leaks B's IDs into A's response |
 | **I2 · cross-Project write** | A-scoped principal attempts a mutate/claim/memory-write targeting a Project-B object | rejected at the apiserver (**`403/404`**), never reaches the DB row; provenance would have mis-attributed → blocked by construction (§7.3.1) |
 | **I3 · enumeration** | A-scoped principal pages/filters list endpoints trying to surface B's Projects/Runs | zero B-scoped rows in any response; counts/aggregates (consumption, org chart) exclude B — no side-channel via totals |
+| **I4 · global search scope** (FR-SEARCH3, Epic 8.18; Arch §17.5) | A-scoped principal queries `GET /api/v1/search?q=` for a term that matches entities in **both** Project A and Project B (tickets/files/agents/Runs/projects) | **only A-scoped results** returned; a B entity is **absent from results, previews, and the group `count`** (existence-hiding, same rule as I1/8.7d) — the scope predicate is applied **in the query** (`project_id = ANY(allowed)`), verified by a **determinism guard**: removing the predicate to leak a B row **fails the build**. **Positive control:** A gets its own A matches (not blanket-empty); **`admin`** gets the fleet-wide match. Cross-ref §3.4 (relevance/empty/special-char cases). |
 
 #### 6.7.4 Agent identity & scoped-credential enforcement
 
@@ -397,6 +511,31 @@ One end-to-end identity-propagation test (kind + Postgres + OIDC stub, joins the
   client header; agent runs under a shared/ambient identity; provenance mis-attributes) fails this test.
 - Runs on the **`e2e.yml`** lane (nightly + release), reusing the OIDC stub; the API-layer matrix
   (§6.7.2/6.7.5) runs on **`security.yml`** every PR (fast, no cluster).
+
+#### 6.7.8 RBAC × breakpoint — the adaptive-nav collapse hides the same admin surfaces at every width (ISI-2327)
+
+> **What this proves.** The responsive collapse (§3.5) and RBAC filtering (§6.7.6) **compose** — Arch §13.1:
+> *there is no responsive-specific authz path*. A non-admin must **never** gain an admin surface merely
+> because the nav reflowed into a bottom-nav budget + overflow drawer at a narrow width. This is the
+> §6.7.6 adaptive-nav model (N1–N4) crossed with the §3.5 width axis: **same role filtering at 360 / 768 /
+> 1024 / 1440px**. The nav is still cosmetic (N4) — the BFF is the real gate — so every width also inherits
+> the §6.7.2 API-layer deny.
+
+Semantic-locator E2E (§8), the §6.7.6 role fixtures (viewer / operator / platform-admin) run at **each of
+the four §3.5 widths** on the two touch + two desktop projects. `NW*` = the N-case × width composition.
+
+| Case | Role × width | Assertion |
+|------|--------------|-----------|
+| **NW1 · non-admin, admin surface stays hidden in the drawer** | viewer/operator, **360px** | the mobile **overflow drawer** (where nav items spill past the 5-item bottom-nav budget) contains **no** admin/registration entry — the role-filtered set is identical to the N1/N2 desktop set; the collapse changes *placement*, never *membership* (assert by role/label absence in the drawer DOM, not CSS `hidden`) |
+| **NW2 · icon-rail overlay preserves filtering** | viewer/operator, **768/1024px** | tap-expanding the tablet **icon rail overlay** reveals the **same** role-filtered items as the desktop rail — no admin pane leaks into the expanded overlay |
+| **NW3 · admin sees admin at every width** | platform-admin, **360/768/1024/1440** | admin registration surfaces are present and reachable at **every** breakpoint (positive control — responsive must not *hide from admins* either; parity is bidirectional) |
+| **NW4 · collapse ≠ authZ (the real gate, every width)** | viewer, via devtools/direct fetch at **360px** | invoking a hidden mutate/admin endpoint directly still returns **`403`** at the mobile viewport — proves the breakpoint collapse is cosmetic and the §12.3 BFF wall is width-independent (defeats "narrow viewport hid it ≈ secure"); reuses the §6.7.6 N4 request |
+
+**Gate.** NW1–NW4 are **required security assertions** on the responsive v1 gate (§3.5): an Epic 8 console
+screen with any admin-gated affordance cannot close until the role-filtered surface is proven identical at
+every breakpoint. **Determinism guard (matches §6.7.0):** the suite **fails fast** if a role fixture yields
+a *different admin-surface membership* across widths for the same principal — a width-varying authz set is
+the exact defect this case exists to catch.
 
 | Check | Tool | Gate |
 |-------|------|------|
@@ -580,6 +719,10 @@ CI-provisioned secret needed for v1 is the built-in `GITHUB_TOKEN`. No registry 
 | L3 P1 (claim latency) | §9.2 | 3 | S9 / NFR-PERF1 |
 | L3 P2 (warm-pool ready) | §9.2 | 3 | FR-C1/C4 |
 | L3 P3 (SSE throughput) | §3.1, §17.2 | 8 | NFR-USE / progress bus |
+| L1 §3.2 sub-ticket tree | §6.1 `parent_id`, §13, ADR-036 | 8 (8.14/8.17) | FR-B5; read-only tree |
+| L1 §3.2 dual-view + DnD | §13 board-derivation, §6.4/§6.5, ADR-036 | 8 (8.14) | FR-B5/FR-F1; status-transition + 409-resync + toggle persistence |
+| **L1 §3.5 responsive viewport matrix** | §13.1, ADR-038 | 8 | **NFR-UI**/NFR-USE2; nav-shell + per-screen reflow + 360px no-overflow + touch parity (≥44px / no-hover-only / pull-to-refresh / pinch-zoom); 360/768/1024/1440 × iOS Safari/Android Chrome/desktop Chrome+Firefox (ISI-2327) |
+| **L4 §6.7.8 RBAC × breakpoint (NW1–NW4)** | §13.1 (no responsive authz path), §12.3, ADR-038 | 8 | NFR-SEC1/NFR-UI; adaptive-nav collapse hides same admin surface at every width (ISI-2327) |
 | L3 P4 (outbox lag) | §17.4 | 12 | plugin isolation |
 | L4 blast-radius (S4) | §12.2, §17.1 | 4 / X | NFR-SEC1/4/5, F6/F7/F11 |
 | L4 provenance/poisoning | §7.3 | 6 | NFR-SEC6, F5/F6 |
