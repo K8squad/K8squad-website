@@ -29,6 +29,8 @@ revisions:
   - r2 (2026-08-11, ISI-2144): added §5.3 AgentRuntime CRD + lifecycle-split tooling model (init-staged toolchain packs, Skill.requires, service sidecars, ImageUpdater) per Henrik+Alfred decided direction; ADR-015/016/017; touchpoints §5.1/5.2/8/9.2/10.1/19/21
   - r3 (2026-08-11, ISI-2151): folded six CEO-review requirements (ISI-2145…2150) in behind existing seams — §5.4 source-control sync (repo-sync reconciler + pkg/scm provider seam, GitHub mirror; ADR-018); §7.5 per-Project discussion room (Postgres discussion schema, memory-projected, coordination-free; ADR-019); §11/§13/§17.2 dashboards + consumption attribution (OTel-borne; ADR-020); §9.4/§13 per-Run build browser (git-worktree read model; ADR-021); §16.1/§16.2 Gateway-API + explicit StorageClass exposure (ADR-022); §13 dark+light console theming. No locked decision reopened; touchpoints §1/§5.1/§17.3/§19/§22
   - r14 (2026-08-11, ISI-2145): elaborated §5.4 for the two ISI-2145 bullets the r3 fold named but did not spell out — **PR `review_state`** (approved/changes-requested/review-required/pending) on `scm_pr_mirror`, and **Run/branch correlation** (`scm_pr_mirror.head_sha → run.commit_sha`, nullable `run_id`, a read-model join not a custody edge); plus the **CI-failure → discussion-room auto-post** (a failed `check_run` emits an origin-marked, provenance-external `discussion_message` §7.5 **and** a `ksquad.scm.{project}.{squad}.check_run.failed` event on the r13/ADR-023 NATS bus for plugins). Both ride existing seams (`scm` schema, §7.5 discussion, event bus) — no new mechanism, no locked decision reopened; §6 fenced-claim/no-P2P untouched. Touchpoints §5.4/§7.5/§9.4/§13/§19; ADR-018 note extended
+  - r15 (2026-08-11, ISI-2166): **pinned the build-browser visibility model as per-principal (not Team-legible)** — resolves ISI-2164 review B1 / the ISI-2132 F7 resurfacing. §9.4 build-browser bullet tightened: read authZ is gated by **owning-principal identity** (`Run.owningPrincipal == caller.principal`, Team scope as outer bound), NOT the cache partition (which is residue-only defense-in-depth and does not cover the git read path). Same-Team principals cannot read each other's Run build view (→404) because the browser surfaces raw worktree content bearing BYO-per-principal secrets — Team-legibility would be the exfil path around the locked §9.4/§11/§12/D7 per-principal Secret isolation. **Applies** the locked decision to the read API; does not reopen it. Lockstep: `design/build-browser-component-design.md` r2 (§5 Decision + Layer 1, AC3, §8.7 authZ check, 8.7d hint) and `05-testing-strategy.md` §6.5 (new cross-principal-same-Team read-authZ S4 case, NFR-SEC5). Unblocks Story Writer on 8.7d. No projection-core / locked decision reopened
+  - r16 (2026-08-12, ISI-2151 / CEO Henrik): added the **`OTelConfig` CRD** (§5.1/§5.2/§17.2) + **console Settings page (screen 12)** (§13) for user-configurable, **opt-in** OTLP export. Every component emits OTel; the CRD reconciler routes it **per signal** (traces/metrics/logs each own endpoint + protocol grpc|http + `authSecretRef` + resource-attrs + sampling — e.g. traces→Dynatrace, metrics→Prometheus, logs→Loki); exporter creds are **Secret refs, never inline** (§11); **default = no exporter** (no telemetry egress by default, D8). Settings page is a form over the CRD via the apiserver BFF (no direct kube). ADR-029; §19/§22 updated. Feeds Epic 13 (obs reads OTelConfig) + Epic 8 (screen 12). No locked decision reopened
   - r4 (2026-08-11, ISI-2154): lockstep with PRD r3. Adopted the PRD's formal numbering (Themes H/I/J/K/L, FR-F7) across §5.4/§7.5/§9.4/§11/§13/§16, and RESOLVED the five Architecture-owned mechanism questions the PRD routed here — OQ13 sync conflict/loop model (§5.4, field-ownership split + origin-tagged echo suppression), OQ14 metering provenance (§11/§17.2, anchored to Run lifecycle + kubelet, not forgeable self-report), OQ15 room storage/distinctness (§7.5), OQ16 Gateway-less fallback (§16.1, degrade to Service/Ingress so ≤4h install holds), OQ17 build-browser source + per-principal scoping (§9.4). Reflected the new security bar: D8 (external integrations untrusted+authenticated), NFR-SEC7 (room scope), NFR-SEC8 (sync auth), NFR-OBS3 (metering provenance). ADR-018/020/022 extended; §19/§22 updated. No locked decision reopened; content unchanged, numbering + two mechanism gaps (OQ13 loop model, OQ16 fallback) filled
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
@@ -265,6 +267,7 @@ bus as dependency #2, event-flow only).
 | `Project` | Repo + workspace | `repo` (URL/ref/auth, `sync{provider,webhookSecretRef,mirror{},reflectOutbound}` §5.4), `workspacePVC` (size/class), `egressPolicyRef`, `goals`, `contextBudget` (§8.5) | Project reconciler → PVC, repo-sync bootstrap, NetworkPolicy; **repo-sync reconciler** (§5.4) mirrors SCM |
 | `Run` | Unit of squad work | `teamRef`, `projectRef`, `workItemSelector`, `agents[]`, `retryPolicy` | **Run reconciler (the core state machine, §8)** |
 | `SandboxPool` (internal) | Warm-pool sizing | `runtimeClass`, `size`/`policy`, `template` | SandboxPool reconciler (§9) |
+| `OTelConfig` | OTLP export config (opt-in, ISI 2026-08-12) | per-signal `exporters{traces,metrics,logs}` (`endpoint`, `protocol` grpc\|http, `authSecretRef`, `resourceAttributes`, `sampling`); default = none | OTelConfig reconciler → configures every component's OTLP exporter (§17.2) |
 
 > Work items, comments, claims, artifacts, and memory records are **not CRDs** — they are Postgres
 > rows behind the apiserver/memory APIs (§4). The `Run` CRD *references* work items via
@@ -274,7 +277,8 @@ bus as dependency #2, event-flow only).
 
 - **controller-runtime / Kubebuilder**, one manager, one reconciler per CRD, leader-elected. The
   `AgentRuntime` reconciler validates the runtime + owns the `ImageUpdater` control loop (§5.3.5); the
-  Run reconciler runs the pod-assembly algorithm (§5.3.4) at `Claiming`.
+  Run reconciler runs the pod-assembly algorithm (§5.3.4) at `Claiming`; the **`OTelConfig` reconciler**
+  reads OTLP export config → configures every component's OTLP exporter (§17.2, opt-in, ADR-029).
 - Reconcilers are **idempotent and level-triggered**; each writes `status.observedGeneration` and
   conditions. Run reconciler additionally coordinates with the apiserver's claim service via fencing
   tokens (§6.3, §8) so a controller restart never double-drives a Run.
@@ -1075,12 +1079,18 @@ Runs or principals.**
   read through the shim (its pod has the workspace mounted — a read-only query over A2A); a **completed**
   Run — whose pod is torn down (§9.3) — is read by snapshotting the worktree diff as a `coord`
   **artifact** at completion (§6.1) and/or an **on-demand read-only workspace-reader** pod that mounts
-  the Project PVC `RO` at the Run's commit. **Per-principal read scoping (FR-K1, FR-C6, NFR-SEC5):**
-  access is gated at the BFF (§13) by the same principal/Team-scope filter as the rest of the console,
-  and because the build cache is **partitioned per principal** (above), the browser can only surface the
-  requesting principal's own Run/worktree — a shared Project workspace never leaks one user's source or
-  build residue to another. Strictly read-only, tenancy-scoped to the Run's Team namespace, never a
-  write path. Surfaced in the console (§13) as *legibility, not an editor* (scope guard R6).
+  the Project PVC `RO` at the Run's commit. **Per-principal read scoping (FR-K1, FR-C6, NFR-SEC5;
+  mechanism pinned ISI-2166):** access is gated at the BFF (§13) by **owning-principal identity** — a
+  read is authorized only when the Run is in the caller's Team scope **and** `Run.owningPrincipal ==
+  caller.principal` (the same BYO-credential / metering principal, §11). **Even same-Team principals
+  cannot read each other's Run build view** (→ `404`, existence-hiding): the model is **per-principal,
+  not Team-legible**, because the browser surfaces raw worktree content that may bear a Run's BYO
+  secrets. The per-principal **cache partition** (above) is defense-in-depth against residue/poisoning —
+  it is **not** the read-path gate (it does not cover the git tree/diff/file path); the owning-principal
+  check is. So the browser can only surface the requesting principal's own Run/worktree — a shared
+  Project workspace never leaks one user's source or build residue to another. Verified by the S4
+  cross-principal-same-Team read-authZ case (§17.1, testing §6.5, NFR-SEC5). Strictly read-only,
+  tenancy-scoped to the Run's Team namespace, never a write path. Surfaced in the console (§13) as *legibility, not an editor* (scope guard R6).
   **Build-ready component design:** the read API surface, live-vs-completed read paths, the
   `build-snapshot` artifact shape, layered per-principal scoping, and Epic 8.7 acceptance/story-slicing
   are pinned in `design/build-browser-component-design.md` (ISI-2148) — implementation reference for
@@ -1116,6 +1126,10 @@ Runs or principals.**
   runtime drops into any squad with **zero core changes** (S5/NFR-EXT1). **ISI-2114 has not been
   executed** (§21) — the shim *contract* is designed here; the *reference shim + conformance
   assertions* are the spike's deliverable and must land before S5/S6 can be claimed.
+  - **Build-ready contract:** the six MUST-verbs, the SSE event schema, the Agent Card JSON schema +
+    CRD→card mapping, the credential-injection contract, and the conformance suite (C1–C10) are pinned
+    in `design/agent-shim-interface-spec.md` (ISI-2114), with a reference **OpenClaw** shim skeleton.
+    That doc elaborates this section into an implementable contract; it makes no new decision.
 
 ### 10.2 Spec-drift isolation (OQ12 / F9 / R11)
 
@@ -1290,6 +1304,12 @@ approach the kickoff required.
   over the **existing SSE progress bus** (no new transport). **`Team`-scoped** per the tenancy model
   (§12.1) — a viewer sees only their Teams' agents; the diagram **never** exposes a mutate/claim/handoff
   affordance (the §7.3/§7.5 no-P2P argument, applied to the console). No new data source, no new CRD.
+- **Settings page (console screen 12; CEO 2026-08-12):** a general settings surface whose first pane is
+  **OTLP export configuration** — the user sets where logs/metrics/traces go (endpoint URL, protocol,
+  per-signal routing). It is a **form over the `OTelConfig` CRD (§5.1/§17.2)**: the console writes it
+  through the **apiserver BFF → operator reconciles** (no direct kube, §13 BFF rule); exporter
+  credentials are entered as **Secret refs, never inline** (§11) and never echoed back. Default remains
+  **no exporter (opt-in)**. Additional install/general settings live here as they arise.
 - **Dark + light theme is a v1 requirement (FR-F7, NFR-USE2; ISI-2150, mocks revision).** The console ships **both**
   themes at v1, implemented on the design-token system (Tailwind + CSS variables / `next-themes`),
   honoring `prefers-color-scheme` with a user toggle and meeting **WCAG AA contrast in both modes**
@@ -1458,6 +1478,18 @@ metrics (ISI-2146)** — per-Run token counts, run-minutes, sandbox resource, an
 feed the console consumption dashboard (§13) through the pluggable metrics-backend query seam; they add
 no datastore.
 
+**OTLP export is CRD-configured and opt-in (`OTelConfig` CRD, CEO 2026-08-12).** All KSquad components
+(operator, apiserver, memory, console, shims) emit OTel via the SDK; **where that telemetry goes is a
+dedicated `OTelConfig` CRD (§5.1), not hardcoded.** It supports **per-signal routing** — e.g.
+traces→Dynatrace, metrics→Prometheus, logs→Loki (fan-out) — each signal carrying its own `endpoint`,
+`protocol` (grpc|http), **`authSecretRef`** (exporter credential is a Secret ref, never inline —
+consistent with the BYO-Secret discipline §11, and never logged), `resourceAttributes`, and `sampling`.
+The **default is no exporter (opt-in)**: absent an `OTelConfig`, telemetry stays in-cluster and nothing
+is shipped to an external endpoint — a privacy/security-safe default (D8: don't egress telemetry by
+default). The **OTelConfig reconciler** (§5.2) reads the CRD and configures each component's OTLP
+exporter (env/collector-sidecar config); a change re-reconciles live. Users edit it from the **console
+Settings page (screen 12, §13)** via the apiserver BFF — no direct kube. *Trade recorded:* ADR-029.
+
 ### 17.3 Go backend service layout
 
 `ksquad-operator` (controllers, incl. the **repo-sync reconciler** §5.4 and `ImageUpdater` §5.3.5) ·
@@ -1590,6 +1622,7 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | 026 | BYO model-provider seam / Ollama (ISI-2157) | **`Agent` targets a BYO model endpoint (Ollama / OpenAI-compatible) via Secret-ref endpoint + per-`Agent` model, negotiated by a `byoModelEndpoint` capability; a model axis distinct from the agent-runtime seam; doubles as the credential-free CI/e2e + conformance lane (ISI-2114 Ollama lane)** | Treat Ollama as an `AgentRuntime.type` (category error — it's a model server, not a coding CLI); hardcode vendor model endpoints (kills BYO-local + the free CI lane); paid-API-only test lane (no credential-free e2e in CI) |
 | 027 | Git-sourced skills (CEO 2026-08-11, kagent-parity) | **`Skill.spec.source` = inline \| git; git-sourced body fetched via the existing `pkg/scm` seam (§5.4) + init-container staging (§5.3.4), pinned to a commit SHA; fetched body is untrusted (D8) but the `permissions`/`mcpToolRefs` capability envelope stays CRD/operator-authorized, never self-declared by the repo; private repos via BYO read-only Secret** | New skill-registry subsystem (reinvents `pkg/scm`); floating branch ref (non-reproducible, force-push alters in-flight Runs); let the fetched repo self-declare its own permissions (privilege escalation — a malicious repo grants itself tools); shared KSquad token for private skill repos (breaks per-user Secret-ref lock, ADR-010) |
 | 028 | Context injection & agent handoff (CEO/CTO 2026-08-11, §8.5/§8.6) | **Control-plane Context Assembler builds a per-Run envelope at Claiming→Running, passed via the shim (§10); envelope is provenance-tiered (authoritative vs untrusted-recall vs untrusted-external, F16/§7.3); token budget is HIERARCHICAL + operator-tunable — `Project.contextBudget` default → `Agent.contextBudgetOverride` → Run-level dynamic trim (work-item size + memory relevance), all clamped by the resolved model `contextWindow` (§10.1/§10.3), must-include never truncated, fail-closed on overflow; handoff artifact `{did,decisions,next,blockers}` is knowledge transfer only — custody stays the fenced §6.2/6.3 release→re-dispatch→claim; goals versioned via Project CRD revision; resolved envelope snapshotted on the Run for audit + re-entrant reuse (§6.4/6.5). Agent↔work-item loop (§8.6) = Paperclip ergonomics on fenced Postgres coord (§6), not CRDs** | Agent self-assembles its own context (no budget control, untrusted content sets its own framing); flat untiered prompt blob (prompt-injection); single global budget (one-size-fits-all context-wall — CEO rejected); budget keyed to runtime CLI not model (misbudgets BYO Ollama's ~8K); `contextBudgetOverride` above the model window (silent overflow — rejected as validation error); handoff artifact that authorizes/transfers custody (reintroduces P2P back-channel); self-declared/unfenced status transitions (zombie-writer + no-P2P violations); re-query context on resume (non-reproducible) |
+| 029 | OTLP export config (`OTelConfig` CRD; CEO 2026-08-12) | **Dedicated `OTelConfig` CRD, operator-reconciled → configures every component's OTLP exporter; per-signal routing (traces/metrics/logs each own endpoint + protocol + `authSecretRef` + resource-attrs + sampling); exporter creds are Secret refs (never inline/logged, §11); default = no exporter (opt-in, no telemetry egress by default, D8); edited from the console Settings page (screen 12) via the apiserver BFF** | Hardcode OTLP endpoints in component config (not user-configurable, no per-signal routing); env-var-only config (no live re-reconcile, no console surface); default-on export to a fixed endpoint (privacy/egress surprise); inline exporter tokens (secret sprawl) |
 ---
 
 ## 19. Traceability (PRD → Architecture)
@@ -1638,6 +1671,7 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | Hierarchical context budget + agent↔ticket loop (CEO 2026-08-11; r12) | §8.5 3-layer budget `Project.contextBudget`→`Agent.contextBudgetOverride`→Run dynamic trim, clamped by model `contextWindow`; §8.6 agent↔work-item lifecycle (Paperclip ergonomics, fenced Postgres coord §6); §5.1 CRD fields; §13 agent-detail (ISI-2162); ADR-028 extended |
 | NATS event bus for plugins (CEO 2026-08-11, supersedes ADR-023 r6; r13) | §17.4 Postgres outbox (durability) → relay → **NATS/JetStream** subjects, plugins `nats_sub` read-only; §4/§16 **NATS = stateful dep #2** (event-flow-only, §4 relaxed for plugin seam); §6.6 event journal→NATS; §7.6 GRAIL via NATS; ADR-023 rewritten, ADR-024 touched; no-P2P preserved (one-way outbox→NATS) |
 | ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
+| OTLP export config + Settings page (CEO 2026-08-12; r16) | §5.1/§5.2 `OTelConfig` CRD + reconciler; §17.2 per-signal OTLP routing (Secret-ref auth, opt-in default); §13 Settings page (screen 12) via BFF; ADR-029; feeds Epic 13 (obs) + Epic 8 (screen 12) |
 
 ---
 
@@ -1772,3 +1806,8 @@ a surprise.
       - [x] Free **credential-less CI/e2e + conformance lane** (§10.1, ISI-2114 Ollama lane; §21) — squad
             smoke/e2e without paid API credits (ISI-2157); honest that local models are a plumbing bar,
             not a production quality claim. ADR-026.
+- [x] r16 OTLP export config folded in (CEO 2026-08-12) — new **`OTelConfig` CRD** (§5.1) + reconciler
+      (§5.2) + per-signal routing detail (§17.2) + **console Settings page, screen 12** (§13); exporter
+      creds are **Secret refs, never inline** (§11); **default = no exporter (opt-in)**, no telemetry
+      egress by default (D8); console writes it via the apiserver BFF (no direct kube). ADR-029; feeds
+      Epic 13 (observability) + Epic 8 (screen 12). No locked decision reopened.
