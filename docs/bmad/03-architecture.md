@@ -398,11 +398,18 @@ rootless `dockerd` (the `docker` capability), headless browsers, ephemeral local
 processes, not files — a sidecar is the correct primitive and the resource cost is justified by a
 real running service.
 
-- **Docker capability (issue §3, OQ2 interaction):** on **gVisor** (default, §9.1) the `docker`
-  capability is served by a **rootless `dockerd` / kaniko / buildah** sidecar (no host Docker socket,
-  no privileged container). Real nested Docker requires a **Kata** RuntimeClass; the operator refuses
-  `docker: true` on a runtime pinned to gVisor-only unless the rootless path is selected. The flag is
-  the gate; the RuntimeClass decides which mechanism backs it — spike-tunable (§9.1), not structural.
+- **Docker capability (issue §3, OQ2 interaction):** on **gVisor** (default, §9.1) `docker: true` splits
+  by *what the Run actually needs* (decided ISI-2300, spike `isi-2300-rootless-dockerd-gvisor-decision.md`):
+  - **Build an image** (the common case) → a **daemonless rootless builder — kaniko / buildah / BuildKit-rootless**
+    (no host Docker socket, no privileged container, **no per-container network namespace**). This is the
+    **primary** build backing because it never issues the per-container `setns(CLONE_NEWNET)` that failed under
+    gVisor in ISI-2295 (`create default sandbox: … operation not permitted`), and it avoids gVisor's syscall-heavy
+    cost center (ISI-2295 §6).
+  - **Drive a live Docker daemon at runtime** (nested `docker run`, compose, testcontainers) → **rootless `dockerd`**
+    on gVisor, offered **only if** the ProxOps production-config retest (slirp4netns, ISI-2300 §3) confirms RUN
+    steps complete; otherwise real nested Docker requires a **Kata** RuntimeClass.
+  The operator refuses `docker: true` on a runtime pinned to gVisor-only unless one of these mechanisms is selected.
+  The flag is the gate; the RuntimeClass decides which mechanism backs it — spike-tunable (§9.1), not structural.
 
 #### 5.3.4 `Skill.requires` — self-describing skills + operator pod assembly
 
@@ -2113,7 +2120,7 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 | Reference shim + conformance assertions | §10.1 S5/S6 claimable | **ISI-2114** | ⚠ backlog — not started |
 | Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
-| Docker-in-sandbox mechanism (rootless dockerd vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 (RuntimeClass) | 🟡 **recommended** (spike §2): rootless-dockerd on gVisor as default docker backing; route only genuine nested-virt Docker to a Kata `runtimeClassHint`; **confirm rootless coverage on harness cluster** |
+| Docker-in-sandbox mechanism (rootless dockerd vs kaniko/buildah vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 / ISI-2295 / ISI-2300 | 🟢 **decided 2026-08-12** (ISI-2300): split `docker:true` into **build → daemonless kaniko/buildah/BuildKit-rootless (primary; sidesteps the per-container netns `setns` that failed under gVisor in ISI-2295)** and **daemon-at-runtime → rootless-dockerd (pending ProxOps production-config retest) or Kata `runtimeClassHint`**. Retest-independent; not a v1 gate. See `spikes/isi-2300-rootless-dockerd-gvisor-decision.md` |
 | CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | CTO Alfred (legal) | ✅ **disposed 2026-08-11** — mixed model via the `image`+`cliVersion` seam; spike lands Phase 4; **not a blocker** |
 
 **Architect recommendation to Alfred/CEO:** schedule and staff ISI-2112/2113/2114 **in parallel with
