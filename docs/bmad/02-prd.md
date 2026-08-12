@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310, rbac-canonical-vocab-r8-ISI-2313]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -29,6 +29,7 @@ revisions:
   - r4 (2026-08-11, ISI-2152 ← CEO NATS decision ISI-2134): closes the CTO-found gap (PRD r3 predated the NATS decision; architecture r13 had 56 NATS refs, PRD had 0). Adds Theme M (FR-M1…M5 — plugin architecture on a NATS event backbone, `FR-PLUG`) + FR-L4 (NATS JetStream Helm dependency, `FR-HELM`), NFR-REL4/EXT3/SEC9, OQ18, R18; see §13.4 for the requirement→change map. FR↔architecture lockstep restored. No locked decision reopened.
   - r6 (2026-08-12, ISI-2302): human **authentication & RBAC** folded in — new **Theme O (FR-AUTH1…AUTH5)**: username/password login (OIDC/SSO-ready seam), admin user/membership CRUD, project-scoped visibility, caller-identity-carrying Runs, role-adaptive console. New domain constraint **D9** (human identity as a first-class third trust plane, server-side-enforced), NFR-SEC10, NFR-OBS4, OQ19/OQ20, R19/R20; personas + journeys updated with login/role context; §13.6 change map. **Unlike r4/r5, this OPENS a new PRD↔architecture gap** — the architecture (r19) has no human-auth/console-RBAC section (0 FR-AUTH refs; all "auth" there is agent-credential OAuth, all "RBAC" is K8s workload RBAC). Routed to Architecture via a follow-up child issue; no locked decision reopened.
   - r7 (2026-08-12, ISI-2310): **console access-level granularity decision** — refines Theme O from **two** authorization roles (admin / project-scoped user) to **three access levels: Admin / Operator / Viewer**, resolving the FR↔UX divergence between PRD r6 (two roles) and the ISI-2307 console mocks / Architect IA revision (three). The added level is **Viewer** (read-only within an authorized `Project`), a per-`Project` read/write capability bit — **not** a new authz subsystem — that lets read-only access (auditor/stakeholder/watcher) be granted without over-granting Operator (least-privilege win, D2 / F20). UI labels the axis **"Access level"** to avoid collision with the `Role` CRD. Touches FR-AUTH2/AUTH5, §5 role note, §9.15 scope guard, R20. **No new scope** (auth was already graduated to v1 in r6); **no locked decision reopened**; rides the standing Theme-O CEO gate. The r6 PRD↔architecture gap is unchanged — Architect (Winston) authors the console-auth ADR (OIDC seam + group→access-level/membership mapping; console reflects K8s RBAC) against this three-level model.
+  - r8 (2026-08-12, ISI-2313 ← CEO v1 directive ISI-2301, ADR-033): **canonical role-model normalization.** Mechanical vocabulary alignment of the Theme O bodies (personas/access-level note ~§5, journeys §5.2/§5.5, D9, §9.15 FR-AUTH2/AUTH5 + scope guard + authorization-granularity line, R20, §13.6 map) to the model now stated authoritatively in ADR-033 / arch §12.3–§12.4 / Epic 15: **two global roles (`admin`|`user`)** and **three per-`Project` access levels (`viewer`|`contributor`|`maintainer`)**. Fixes the r7 drift (r7 said three *global* levels Admin/Operator/Viewer): there is **no global `operator` role** — Operator→per-`Project` `maintainer`, Viewer→per-`Project` `viewer`, and a new intermediate per-`Project` `contributor` (act/compose without administering membership/settings). **Enforcement semantics are unchanged** — only vocabulary + per-project tier count; the UI display axis stays "Access level". PRD-doc twin of the 04-epics normalization (ISI-2312, Story Writer). **No new scope, no locked decision reopened, auth-is-v1 gate not reopened**; rides the standing Theme-O CEO gate.
   - r5 (2026-08-11, ISI-2152): completeness pass against the CEO's *definitive checklist* — folds the six remaining checklist FRs the architecture (r8–r13) had already adopted but the PRD lacked: FR-MEM-GRAIL→FR-E8, FR-OLLAMA→FR-D6, FR-ORG→FR-F8, FR-AGENT-DETAIL→FR-F9, FR-CTX+FR-AGENT-TICKET→new Theme N (FR-N1…N5); plus FR-I2/I4 (sandbox usage + live agent↔task↔project map). Adds the §13.5 checklist-coverage matrix (all 13 checklist items → ≥1 FR). FR↔architecture lockstep verified against arch §7.6/§8.5/§8.6/§10.3/§13, ADR-024/026/028. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
@@ -179,31 +180,60 @@ all four satisfied simultaneously is the product's central design tension.
 | **Dana — Agent-runtime vendor / OSS integrator** (ecosystem) | Wants their runtime to run inside KSquad | A documented shim contract + conformance tests | Ships a shim in days; it appears in squads unchanged |
 | **Morgan — the agent itself** (coordination-surface user) | Executes work, checks out items, files comments/artifacts | Shared-work-item API + memory server + MCP tools — **not** a P2P chat channel | Coordinates through durable state; a crash loses nothing |
 
-> **Human access levels — Admin / Operator / Viewer (r6 ISI-2302; refined to three levels r7 ISI-2310).**
-> With Theme O the console is **multi-user and role-aware**, and the four audiences resolve onto **three
-> console access levels** at v1. The UI labels this axis **"Access level"**, never bare "Role" — to avoid
-> collision with the `Role` **CRD** (agent behavior profile, §5.1), which keeps its meaning everywhere else:
-> - **Admin** — platform-wide management: CRUDs user accounts, assigns per-`Project` memberships (with an
->   access level), and manages `Agent`/`Team`/`Skill` resources across the platform (FR-AUTH2). **Priya
->   (Platform Engineer)** is the archetypal admin.
-> - **Operator** — full authority *within* the `Project`s they are a member of (compose squads,
->   start/kill Runs, inspect artifacts, use the room and dashboards for those Projects), but **no**
->   user-administration and **no** cross-`Project` reach (FR-AUTH3/AUTH5). **Sam (Squad Author)** is the
->   archetypal Operator (an org MAY grant a tech lead Admin where it wants).
-> - **Viewer** — **read-only** within their authorized `Project`s: sees squads, Runs, artifacts, dashboards
->   and the room, but **cannot compose, start/kill Runs, or mutate** anything. The archetypal Viewer is a
->   **stakeholder / auditor / on-call watcher** who needs legibility without mutate authority. Viewer exists
->   so read-only access can be granted **without over-granting Operator** — a strict least-privilege win
+> **Human roles — two global (`admin`/`user`) + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`) (r6 ISI-2302; r7 three-tier granularity ISI-2310; normalized to the canonical role model r8 ISI-2313 per CEO directive ISI-2301 / ADR-033 / arch §12.3–§12.4).**
+> With Theme O the console is **multi-user and role-aware**. Authorization has **two axes**: a **global role**
+> — **`admin`** (platform-wide management) or **`user`** (everyone else) — and, for each `Project` a `user` is a
+> member of, a **per-`Project` access level**. The UI labels the per-`Project` axis **"Access level"**, never
+> bare "Role" — to avoid collision with the `Role` **CRD** (agent behavior profile, §5.1), which keeps its
+> meaning everywhere else:
+> - **`admin` (global)** — platform-wide management: CRUDs user accounts, assigns per-`Project` memberships
+>   (each with a per-`Project` access level), and manages `Agent`/`Team`/`Skill` resources across the platform
+>   (FR-AUTH2). **Priya (Platform Engineer)** is the archetypal admin. There is **no global `operator` role** —
+>   all non-admin gradation lives at the per-`Project` access level below.
+> - **`maintainer` (per-`Project`)** — full mutate authority *within* the `Project` (compose squads,
+>   start/kill Runs, inspect artifacts, use the room and dashboards for that Project) **including administering
+>   the Project's membership/settings**. **Sam (Squad Author)** is the archetypal maintainer on his own
+>   Projects — a `user` who holds `maintainer` there (an org MAY also grant a tech lead the global `admin` role
+>   where it wants).
+> - **`contributor` (per-`Project`)** — can **act and compose** within the `Project` (compose squads,
+>   start/kill Runs, inspect artifacts, use the room and dashboards) but **cannot administer** the Project's
+>   membership or settings. The intermediate tier (new in the canonical model) for someone who works in a
+>   Project without owning its administration.
+> - **`viewer` (per-`Project`)** — **read-only** within the `Project`: sees squads, Runs, artifacts, dashboards
+>   and the room, but **cannot compose, start/kill Runs, or mutate** anything. The archetypal viewer is a
+>   **stakeholder / auditor / on-call watcher** who needs legibility without mutate authority. `viewer` exists
+>   so read-only access can be granted **without over-granting** a write tier — a strict least-privilege win
 >   aligned with D2 and the operator-safety-wins tiebreaker (F20). The ISI-2307 "admin vs non-admin" split
->   is **Admin** vs **{Operator, Viewer}**: only Admin sees *Users & Roles*, the fleet-wide Dashboard, and
->   every `Project`.
+>   is **`admin`** vs **`user`**: only `admin` sees *Users & Roles*, the fleet-wide Dashboard, and every
+>   `Project`.
 >
 > **Dana (vendor)** operates outside any one tenant (shim conformance) and is not a console-auth persona.
 > **Morgan (agent)** now has **no standalone identity** — every agent Run acts **on behalf of the
 > authenticated caller that dispatched it** (FR-AUTH4), scoped to that caller's permissions. Authorization
-> is by **`Project` membership + access level**, **enforced server-side** (D9, NFR-SEC10); the access level a user holds
-> governs only which surfaces they *see* (FR-AUTH5), never what the server *allows* — UI adaptation is an
-> affordance, not the security boundary.
+> is by **global role + `Project` membership + per-`Project` access level**, **enforced server-side** (D9,
+> NFR-SEC10); the role/access level a user holds governs only which surfaces they *see* (FR-AUTH5), never what
+> the server *allows* — UI adaptation is an affordance, not the security boundary.
+
+> **⚠ ARCHITECT RECONCILIATION — canonical role model (ISI-2301, CEO directive 2026-08-12; ADR-033 / arch §12.3–§12.4).**
+> The CEO v1 directive (ISI-2301) fixes the authoritative vocabulary, and architecture r20 + Epic 15
+> (04-epics) are already normalized to it. **This PRD is now normalized to it too (r8, ISI-2313)** — the
+> persona/access-level note above, the journeys (§5.2/§5.5), D9, and §9.15 (FR-AUTH2/AUTH5) below all carry
+> the canonical vocabulary. The mapping below is retained so any lingering r7 "Admin/Operator/Viewer"
+> reference resolves unambiguously — the *enforcement semantics are unchanged*, only the axis names and the
+> per-project tier count differ:
+> - **Two global roles: `admin` | `user`** (the "Admin vs {Operator, Viewer}" split *is* `admin` vs `user`;
+>   there is no global `operator` role — non-admin gradation lives entirely at the per-`Project` tier).
+> - **Three per-`Project` roles: `viewer` | `contributor` | `maintainer`.** Map **Operator → `maintainer`**
+>   (full mutate within the Project), **Viewer → `viewer`** (read-only, PM's least-privilege tier preserved),
+>   and **`contributor`** is the new intermediate tier the CEO directive adds (act/compose within a Project
+>   without administering its membership/settings). A user may hold different per-`Project` roles across
+>   their memberships.
+> - Server-side deny-by-default enforcement, the Admin-only Users&Roles/fleet surfaces, and the
+>   "UI adaptation ≠ security boundary" invariant all carry over verbatim.
+>
+> Mechanical normalization of the §9.15 / FR-AUTH2 / FR-AUTH5 / persona / journey bodies to this vocabulary
+> **landed in r8 (ISI-2313)** — the PRD-doc twin of the 04-epics story-body normalization (ISI-2312, Story
+> Writer). **The canonical model (2 global + 3 per-project) governs**, matching CEO + ADR-033 + Epic 15.
 
 ### 5.1 Journey — Priya installs and gains legibility (S1, S2, S4)
 Priya has a conformant cluster and a mandate to let three teams run agent crews without giving a SaaS
@@ -217,9 +247,11 @@ sandbox is torn down and the namespace is untouched elsewhere. *New reality: she
 service" internally with bounded blast radius and full legibility.*
 
 ### 5.2 Journey — Sam authors a squad (S3, S6, S7)
-Sam wants automated review-and-fix on `payments-service`. He **logs in as an Operator**; the
-console shows **only the Projects he is a member of** and **hides the platform-management surfaces**
-(user admin, cross-Project views — FR-AUTH5) he has no rights to. In the console he creates a `Project`
+Sam wants automated review-and-fix on `payments-service`. He **logs in as a standard `user`**; on
+`payments-service` he holds the **`maintainer`** access level (he could equally be a `contributor` on a
+Project he acts in but doesn't administer). The console shows **only the Projects he is a member of** and
+**hides the platform-management surfaces** (user admin, cross-Project views — FR-AUTH5) that only an
+`admin` can use. In the console he creates a `Project`
 (repo + workspace), defines three `Agent`s bound to `Role`s (Reviewer, Fixer, Tester) drawn from two
 runtimes (**OpenClaw** and **Hermes**), assigns `Skill`s, and groups them into a `Team`. He starts a
 `Run` against an open backlog item. He watches the **live SSE stream**: the Reviewer checks out the
@@ -248,7 +280,8 @@ coordination is a property of the substrate, not the agent.*
 
 ### 5.5 Journey — Priya (admin) onboards users and scopes access (r6, ISI-2302)
 A third team asks for a squad. Priya, as **admin**, **creates a user account** for its lead, **assigns
-that user to the new `Project`** (FR-AUTH2), and grants them the project-scoped role. The lead logs in
+that user to the new `Project`** (FR-AUTH2), and grants them a per-`Project` access level (`maintainer`,
+`contributor`, or `viewer`). The lead logs in
 and the console shows **only** that Project — no other team's squads, Runs, artifacts, rooms, or
 dashboards are listed or reachable (FR-AUTH3), because authorization is checked **server-side** on every
 request (D9, NFR-SEC10), not merely hidden in the UI. When the lead starts a Run, the agent acts **as
@@ -377,7 +410,8 @@ credentials**, the following are first-class domain constraints, not optional NF
 - **D9 — Human identity and authorization are a first-class trust boundary (r6, ISI-2302).** Through r5
   the PRD defined **agent-workload isolation** (D2 — K8s RBAC/NetworkPolicy) and **BYO agent→provider
   credentials** (D3, Theme G), but **not human end-user identity** for the console/API. Introducing human
-  users, **three access levels** (**Admin** / **Operator** / **Viewer**), and per-`Project` membership makes **human
+  users, **two global roles** (**`admin`** / **`user`**) plus **three per-`Project` access levels**
+  (**`viewer`** / **`contributor`** / **`maintainer`**), and per-`Project` membership makes **human
   authentication + authorization a distinct *third* identity plane**, separate from (a) K8s workload RBAC
   and (b) BYO model credentials — and it must not be conflated with either. Three constraints hold: (1)
   authorization SHALL be **enforced server-side** at the API/coordination layer — UI role-adaptation
@@ -765,15 +799,20 @@ credentials**, the following are first-class domain constraints, not optional NF
   stored as **strong one-way hashes** (never reversible, never logged); session/token issuance, expiry, and
   revocation mechanism = Architecture (OQ19, NFR-SEC10). *(MVP — username/password; OIDC/SSO is a
   seam-ready fast-follow, §11.5.)*
-- **FR-AUTH2** An **Admin** access level SHALL be able to **create, read, update, and delete user accounts**
-  and **assign per-`Project` memberships** (which users belong to which `Project`s, with which access level).
-  **Three access levels** SHALL exist at v1 — UI-labeled **"Access level"** to avoid collision with the
-  `Role` CRD (§5.1): **Admin** (platform-wide management, incl. `Agent`/`Team`/`Skill` resources),
-  **Operator** (full mutate authority *within* assigned `Project`s — compose, start/kill Runs, inspect),
-  and **Viewer** (**read-only** within assigned `Project`s — no compose, no Run control, no mutation). The
-  Admin-vs-non-admin split (FR-AUTH5) is Admin vs {Operator, Viewer}; the Operator-vs-Viewer split is a
-  per-`Project` **read/write** capability, enforced server-side (NFR-SEC10). *(MVP — refined from two
-  levels to three, r7 ISI-2310.)*
+- **FR-AUTH2** A global **`admin`** role SHALL be able to **create, read, update, and delete user accounts**
+  and **assign per-`Project` memberships** (which users belong to which `Project`s, with which per-`Project`
+  access level). Authorization has **two global roles** — **`admin`** (platform-wide management, incl.
+  `Agent`/`Team`/`Skill` resources across the platform) and **`user`** (everyone else; **no** global
+  `operator` role exists) — and **three per-`Project` access levels**, UI-labeled **"Access level"** to avoid
+  collision with the `Role` CRD (§5.1): **`maintainer`** (full mutate authority *within* the `Project` —
+  compose, start/kill Runs, inspect, **plus** administering the Project's membership/settings),
+  **`contributor`** (act/compose *within* the `Project` — compose, start/kill Runs, inspect — but **not**
+  administering its membership/settings), and **`viewer`** (**read-only** within the `Project` — no compose,
+  no Run control, no mutation). The Admin-vs-non-admin split (FR-AUTH5) is **`admin`** vs **`user`**; the
+  per-`Project` write gradation (`maintainer`/`contributor` vs `viewer`) is a per-`Project` **read/write**
+  capability, enforced server-side (NFR-SEC10). A `user` MAY hold different access levels across their
+  `Project` memberships. *(MVP — canonical two-global + three-per-`Project` model, r8 ISI-2313 per
+  ISI-2301/ADR-033; supersedes the r7 three-global-level framing.)*
 - **FR-AUTH3** A user SHALL see and access **only the `Project`s they are authorized for.** `Project`s a
   user is not a member of — **and all resources under them** (squads, Runs, work items, artifacts,
   discussion rooms, dashboards, build browser) — SHALL NOT be listed, readable, or reachable. This SHALL be
@@ -786,18 +825,20 @@ credentials**, the following are first-class domain constraints, not optional NF
   (FR-B4), memory writes (FR-E6), and cost/throughput metering (FR-I3), binding those provenance surfaces
   to a concrete human actor so the audit trail answers *"who did this, on whose behalf"* (NFR-OBS4). This
   is the **human-identity ↔ agent-action bridge** (D9). *(MVP.)*
-- **FR-AUTH5** The console SHALL **adapt to the caller's access level**: a **non-admin (Operator or
-  Viewer)** SHALL NOT be shown platform-management surfaces they cannot use — **`Agents`/`Teams`/`Skills`
+- **FR-AUTH5** The console SHALL **adapt to the caller's role + access level**: a **non-admin `user`**
+  SHALL NOT be shown platform-management surfaces they cannot use — **`Agents`/`Teams`/`Skills`
   management, user administration, and cross-`Project`/global views SHALL be hidden**, leaving only their
-  authorized `Project`s and the operational/collaboration surfaces within them. In addition, a **Viewer**
-  SHALL NOT be shown **mutate affordances** within an authorized `Project` (compose/edit, start/kill Run,
-  and other write actions), leaving a **read-only** view. UI adaptation is a **usability affordance layered
-  on top of the server-side enforcement of FR-AUTH3 and the Operator/Viewer write check (D9, NFR-SEC10) —
-  never a substitute for it** (R19). *(MVP — Viewer read-only clause added r7 ISI-2310.)*
+  authorized `Project`s and the operational/collaboration surfaces within them. In addition, a
+  **`viewer`** on a `Project` SHALL NOT be shown **mutate affordances** within it (compose/edit, start/kill
+  Run, and other write actions), leaving a **read-only** view. UI adaptation is a **usability affordance
+  layered on top of the server-side enforcement of FR-AUTH3 and the per-`Project` write check (D9,
+  NFR-SEC10) — never a substitute for it** (R19). *(MVP — `viewer` read-only clause added r7 ISI-2310;
+  vocabulary normalized r8 ISI-2313.)*
 - **Scope guard:** v1 authentication is **username/password behind an OIDC/SSO-ready seam**; v1
-  authorization granularity is **`Project` membership + the three access levels (Admin/Operator/Viewer)**,
-  enforced server-side. **Full external IdP/SSO integration, MFA, SCIM provisioning, and fine-grained
-  per-resource ACLs beyond Project-membership + access level** are **Phase 2** (OQ19/OQ20, §11.5). Client-side-only authorization is out of
+  authorization granularity is **two global roles (`admin`/`user`) + `Project` membership + the three
+  per-`Project` access levels (`viewer`/`contributor`/`maintainer`)**, enforced server-side. **Full external
+  IdP/SSO integration, MFA, SCIM provisioning, and fine-grained per-resource ACLs beyond global role +
+  Project-membership + access level** are **Phase 2** (OQ19/OQ20, §11.5). Client-side-only authorization is out of
   scope by construction (D9, R19). First-run admin bootstrap SHALL NOT break the ≤4h S1 install (R20).
 
 ---
@@ -1140,7 +1181,7 @@ resolved here.
 | R17 | Gateway API / explicit-StorageClass assumptions break the ≤4h install on clusters lacking a Gateway controller or default storage | Med | FR-L1/L2 documented defaults + surfaced-at-install requirement; S1 acceptance includes it (FR-L3); Gateway-less fallback = Architecture (OQ16). |
 | R18 | **NATS as a second stateful dependency** — dual-write hole (event lost or double-committed vs Postgres), a failing/absent plugin bus blocking the core, or the seam eroding into a coordination/second-source-of-truth path (r4, ISI-2134) | Med | **Transactional outbox** captures the event in the same Postgres txn as the state change; a **relay** publishes to NATS at-least-once and republishes unflushed rows → **no dual-write hole** (FR-M3). Relay decoupling means **NATS-down never blocks a Run/claim/memory write** (FR-M5, NFR-REL4). One-way read-only seam (FR-M4, NFR-SEC9) + §11.5 out-of-scope keep it off coordination. Single-replica-default subchart bounds install/ops cost (FR-L4). Postgres stays sole store of record (ADR-001). Operational specifics = Architecture (OQ18). |
 | R19 | **Broken access control** — the UI hides surfaces (FR-AUTH5) but the API still serves a `Project` the caller isn't a member of (OWASP A01 client-side-only authz) (r6, ISI-2302) | **High** | **D9 + NFR-SEC10:** authorization enforced **server-side** at the API/coordination layer; UI adaptation is affordance-only; **every** `Project`-scoped read/write checks membership+role (FR-AUTH3), and Runs are bounded to the caller principal (FR-AUTH4). Verified with a **broken-access-control test case** alongside the S4 tenancy tests (a caller hitting the API directly cannot reach a non-member Project). |
-| R20 | **Auth becomes an adoption blocker or scope-creeps into a full IAM product** (r6, ISI-2302; r7, ISI-2310) | Med | v1 is **username/password + three access levels (Admin/Operator/Viewer) + `Project` membership** behind an **OIDC/SSO-ready seam** (FR-AUTH1 scope guard); the third level (Viewer) is a **read/write capability bit**, not a new authz subsystem, so it does not widen IAM scope; full IdP/MFA/SCIM/fine-grained ACLs deferred to Phase 2 (§11.5, OQ19/20). A **first-run admin bootstrap** keeps the ≤4h S1 install intact; auth is a gate on the API/console, off the R10 correctness-critical path. |
+| R20 | **Auth becomes an adoption blocker or scope-creeps into a full IAM product** (r6, ISI-2302; r7, ISI-2310; r8 normalized, ISI-2313) | Med | v1 is **username/password + two global roles (`admin`/`user`) + `Project` membership + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`)** behind an **OIDC/SSO-ready seam** (FR-AUTH1 scope guard); the per-`Project` levels are a **read/write capability tier**, not a new authz subsystem, so they do not widen IAM scope; full IdP/MFA/SCIM/fine-grained ACLs deferred to Phase 2 (§11.5, OQ19/20). A **first-run admin bootstrap** keeps the ≤4h S1 install intact; auth is a gate on the API/console, off the R10 correctness-critical path. |
 
 ### 13.2 Challenger finding → PRD change map (ISI-2121 → r2 via ISI-2125)
 | Finding | Gist | Where folded in |
@@ -1222,11 +1263,11 @@ per-component deployables (FR-L*), with image build/publish tracked in the CI pi
 | Issue ask | Requirement | Where folded in (r6) |
 |-----------|-------------|----------------------|
 | **FR-AUTH1** — user registration/login (username/password, extensible to OIDC/SSO) | Human user accounts + login behind an OIDC/SSO-ready auth seam; hashed passwords; session/token mechanism → Architecture | **FR-AUTH1** (§9.15), OQ19, NFR-SEC10 |
-| **FR-AUTH2** — admin CRUD users, assign project memberships | Admin CRUDs accounts + per-`Project` memberships; **three v1 access levels (Admin/Operator/Viewer)** — r7 ISI-2310 | **FR-AUTH2** (§9.15) |
+| **FR-AUTH2** — admin CRUD users, assign project memberships | `admin` CRUDs accounts + per-`Project` memberships; **two global roles (`admin`/`user`) + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`)** — r7 ISI-2310, normalized r8 ISI-2313 | **FR-AUTH2** (§9.15) |
 | **FR-AUTH3** — users see only authorized projects | Server-side per-`Project` visibility/access enforcement, aligned to the tenancy boundary | **FR-AUTH3** (§9.15), NFR-SEC10, D9, R19 |
 | **FR-AUTH4** — Agent Runs carry caller identity; actions scoped to caller permissions | Run carries caller principal; agent actions bounded to caller's permissions; caller recorded on coordination/memory/metering | **FR-AUTH4** (§9.15), D9, NFR-OBS4 |
 | **FR-AUTH5** — non-admin UI adapts (hides Agents/Teams/Skills mgmt) | Role-adaptive console; non-admin surfaces hidden — affordance layered on server-side enforcement | **FR-AUTH5** (§9.15), R19 |
-| **Update personas** (access levels) | **Three access levels** mapped onto the audiences (Priya→Admin, Sam→Operator, stakeholder/auditor→Viewer) — r7 ISI-2310 | §5 "Human access levels" note |
+| **Update personas** (roles + access levels) | Canonical model mapped onto the audiences (Priya→global `admin`; Sam→`user` holding per-`Project` `maintainer`/`contributor`; stakeholder/auditor→`user` holding per-`Project` `viewer`) — r7 ISI-2310, normalized r8 ISI-2313 | §5 "Human roles" note |
 | **Update journeys** with login/role context | Login + role scoping woven into Priya (5.1), Sam (5.2), Morgan (5.4); new admin-onboarding journey | §5.1, §5.2, §5.4, **§5.5** |
 | **Update NFRs** (security, audit) | Server-side authn/authz enforcement; authn/authz audit trail incl. caller-behind-Run | **NFR-SEC10** (security), **NFR-OBS4** (audit) |
 
@@ -1420,9 +1461,16 @@ Operator / Viewer** (Viewer = read-only within an authorized `Project`), resolvi
 with the ISI-2307 console mocks. This is a granularity refinement *within* the already-graduated Theme-O
 scope (a per-`Project` read/write capability bit, not a new authz subsystem); it rides this same gate.
 
-**Requesting BigBoss confirm:** (a) the **v1 auth scope** — username/password + **three access levels
-(Admin/Operator/Viewer)** + `Project` membership behind an OIDC/SSO-ready seam, with full IdP/MFA/SCIM
-deferred to Phase 2 (§11.5); (b)
+**r8 (ISI-2313) normalization:** the r7 vocabulary was mechanically normalized to the canonical role model
+now authoritative in CEO directive ISI-2301 / ADR-033 / arch §12.3–§12.4 / Epic 15 — **two global roles
+(`admin`/`user`) + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`)** (Operator→`maintainer`,
+Viewer→`viewer`, new intermediate `contributor`; **no** global `operator` role). **Enforcement semantics are
+unchanged** — only vocabulary + per-project tier count; **the auth-is-v1 gate is NOT reopened** and this
+rides the same standing Theme-O gate.
+
+**Requesting BigBoss confirm:** (a) the **v1 auth scope** — username/password + **two global roles
+(`admin`/`user`) + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`)** + `Project`
+membership behind an OIDC/SSO-ready seam, with full IdP/MFA/SCIM deferred to Phase 2 (§11.5); (b)
 acknowledgement that r6 **opens a new PRD↔architecture gap** (architecture has no human-auth section) that
 a **follow-up Architecture issue** must close **before** Phase 4 stories are written against Theme O; and
 (c) the prior ratification items still stand unchanged (discussion-room fence, NATS framing, best-effort
