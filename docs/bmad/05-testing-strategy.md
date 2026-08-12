@@ -17,6 +17,7 @@ status: draft-for-devops-cosign-off
 revisions:
   - r1 (2026-08-11, ISI-2157): initial testing methodology + CI/CD design; DevOps-owned sections (§11) flagged for co-sign
   - r2 (2026-08-12, ISI-2305): added §6.7 **Authentication & Authorization (RBAC) test matrix** — auth session lifecycle, admin/user access matrix per endpoint, per-project isolation, agent-identity + scoped-credential enforcement, privilege-escalation prevention, console adaptive-nav (non-admin UI), and the auth+middleware+agent integration case. §6 intro bumped six→seven mechanisms; traceability (§12) + epic map (§3.3) extended; **open item: human console authN mechanism (OIDC/IdP vs local cred) is unpinned — needs an ADR (§13)**, so the auth-session cases are written mechanism-aware and the IdP-delegated variant is the design-consistent default
+  - r4 (2026-08-12, ISI-2322 / Architect Winston): added **sub-ticket parent/child tree** console tests (§3.2) for the CEO-validated expandable-tree UI (FR-B5, Arch §6.1 `work_item.parent_id` / §13, ADR-036, r24) — **parent expand/collapse** (caret + child-count badge + lazy-load-on-first-expand assertion), **deep nesting** (recursive caret + indent-cap "continue in child"), **orphan child handling** (dangling `parent_id` renders as root, never hidden), and a **read-only-tree guard** (no coord mutation on expand/collapse; the only Tickets write is the 8.14 status-transition). §3.3 Epic 8 L1 row extended. Vitest units + Playwright deep-nesting E2E; no new mechanism, rides the existing console lane
   - r3 (2026-08-12, ISI-2308 / Architect Winston): **resolved the §6.7 open authN-mechanism decision** — pinned to **ADR-033** (already landed via ISI-2301/2303, CEO Henrik 2026-08-12): **local username/password store (argon2id, Postgres `auth` schema §12.3) is the v1 default; OIDC/SSO is an opt-in fast-follow behind the `AuthProvider` seam** because the ≤4h air-gapped S1 install cannot hard-depend on an external IdP. This **inverts the r2 IdP-first default**: §6.7.1 **A5 is now the local-cred primary case** (single-use time-boxed reset token, sessions invalidated on reset, no user-enumeration, argon2id, NFR-SEC3) and **A5-oidc is the skipped-with-reason opt-in-seam variant**. §6.7.1 **`skip` dropped**; §6.7.0, A1, framework note, §13 open-items, and the §12 traceability row updated. Local-cred A5 test-body implementation handed to Amelia
 ---
 
@@ -97,6 +98,38 @@ own image, SBOM, CVE scan, and test lane.
   **ESLint** for quality. Detect and follow whatever the console scaffolding lands with — do not
   impose a framework the repo did not choose (persona core: *detect before generating*).
 - **API tests** (BFF): status codes (200/400/404/500), response structure, happy + error per route.
+- **Sub-ticket tree (Tickets Kanban/List, 8.14/8.17; FR-B5, Arch §6.1/§13, ADR-036).** Cover:
+  (a) **parent expand/collapse** — a parent shows a caret + correct **child-count badge**, expanding
+  **lazy-loads** its direct children (assert one `GET …?parentId=` fires only on first expand, not on
+  initial board load), collapsing hides them; a **leaf shows no caret**; (b) **deep nesting** — a child
+  that is itself a parent gets its own caret and lazy-loads recursively; render stops at the **indent
+  cap** with a "continue in child" affordance (no unbounded indent); (c) **orphan child handling** —
+  a child whose parent is closed/deleted (`parent_id` dangling-tolerant, §6.1) **renders as a root**,
+  never hidden; (d) **read-only tree** — expansion is client-only view state (no coord mutation fires
+  on expand/collapse); the only Tickets write is the 8.14 status-transition, tested separately.
+  Vitest for the component units (badge count, orphan-as-root, leaf-no-caret); Playwright for the
+  expand→lazy-load→deep-nesting path (semantic locators, `aria-expanded`).
+- **Dual-view Tickets — Kanban + List (8.14; FR-B5/FR-F1, Arch §13 board-derivation).** Cover:
+  (a) **board-state derivation** — a work item with `state=in_review` lands in the **In Review** column
+  and nowhere else; each of the five states maps to exactly one column; a `state`-only fixture change
+  moves the card (assert the board is a pure projection, **no** separate "column" field consulted);
+  (b) **Blocked = condition, not column** — a `blocked` item renders in its workflow lane (e.g. In
+  Progress) **with a Blocked badge**, never in a 6th column (asserts the §8.6 r25 refinement);
+  (c) **DnD status accuracy** — dragging a card from *Todo* to *In Progress* fires exactly one
+  `PATCH …/work-items/{id}/state {to:"in_progress", expectedFrom:"todo"}`; the card lands in the target
+  column on 200; a **stale drag** (server state already advanced) gets a **409 and the board re-syncs to
+  server truth** (no lost-update, no client-authored state); a **viewer** role sees **DnD disabled** and
+  no PATCH is issuable (RBAC UI gate, mirrors §6.7.2 server enforcement); assert the human transition
+  does **not** issue a claim/lease call (distinct authority path, Arch §6.2);
+  (d) **List sort** — the table sorts correctly on each column (ID, Title, Status, Priority, Assignee,
+  Labels, Updated), incl. `Updated` (recency) desc/asc;
+  (e) **view-toggle persistence** — toggling Kanban↔List writes the preference and a reload / `?view=`
+  deep-link **restores the same view**; the **active search/filter set survives the toggle** (filters
+  are shared server-side query params, applied identically to both views);
+  (f) **search + filters** — priority/assignee/label filters and the global search box each narrow both
+  views to the expected set (assert the BFF request carries the filter as a query param, tenancy-scoped).
+  Vitest for derivation/badge/sort/persistence units; Playwright for the DnD accuracy + 409-resync +
+  toggle-persistence paths (semantic locators, `@dnd-kit`/native drag as the console scaffolding lands).
 - **E2E:** see §6.4 (Playwright, semantic locators).
 
 ### 3.3 Epic → L1 mapping
@@ -110,7 +143,7 @@ own image, SBOM, CVE scan, and test lane.
 | 5 Shims & A2A | shims | Agent Card generation, capability negotiation, **deterministic `a2a_task_id` dedup** |
 | 6 Memory service | memory | MCP tool surface, pgvector search, provenance surfacing on read |
 | 7 Credentials & pause/resume | operator, shims | credential injection (never logged), Paused→resume |
-| 8 Console | console | UI/BFF units + E2E; **BFF authZ choke point + adaptive-nav (§6.7.2/6.7.6)** |
+| 8 Console | console | UI/BFF units + E2E; **BFF authZ choke point + adaptive-nav (§6.7.2/6.7.6)**; **sub-ticket tree expand/collapse + deep-nesting + orphan-as-root (§3.2, 8.14/8.17, FR-B5)** |
 | 10 Discussion rooms | apiserver, memory | discussion schema, memory-projection, **not-a-coordination-channel** guard |
 | 11 Source-control sync | operator, apiserver | repo-sync reconciler, webhook ingress, mirror mapping |
 | 12 Plugin architecture | apiserver `pkg/events` | outbox transactional append, delivery worker retry/dead-letter/circuit-breaker, **read-only observer guard** |

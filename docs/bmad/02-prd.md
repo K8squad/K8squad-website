@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310, rbac-canonical-vocab-r8-ISI-2313]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310, rbac-canonical-vocab-r8-ISI-2313, global-search-r9-ISI-2323]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -30,6 +30,7 @@ revisions:
   - r6 (2026-08-12, ISI-2302): human **authentication & RBAC** folded in — new **Theme O (FR-AUTH1…AUTH5)**: username/password login (OIDC/SSO-ready seam), admin user/membership CRUD, project-scoped visibility, caller-identity-carrying Runs, role-adaptive console. New domain constraint **D9** (human identity as a first-class third trust plane, server-side-enforced), NFR-SEC10, NFR-OBS4, OQ19/OQ20, R19/R20; personas + journeys updated with login/role context; §13.6 change map. **Unlike r4/r5, this OPENS a new PRD↔architecture gap** — the architecture (r19) has no human-auth/console-RBAC section (0 FR-AUTH refs; all "auth" there is agent-credential OAuth, all "RBAC" is K8s workload RBAC). Routed to Architecture via a follow-up child issue; no locked decision reopened.
   - r7 (2026-08-12, ISI-2310): **console access-level granularity decision** — refines Theme O from **two** authorization roles (admin / project-scoped user) to **three access levels: Admin / Operator / Viewer**, resolving the FR↔UX divergence between PRD r6 (two roles) and the ISI-2307 console mocks / Architect IA revision (three). The added level is **Viewer** (read-only within an authorized `Project`), a per-`Project` read/write capability bit — **not** a new authz subsystem — that lets read-only access (auditor/stakeholder/watcher) be granted without over-granting Operator (least-privilege win, D2 / F20). UI labels the axis **"Access level"** to avoid collision with the `Role` CRD. Touches FR-AUTH2/AUTH5, §5 role note, §9.15 scope guard, R20. **No new scope** (auth was already graduated to v1 in r6); **no locked decision reopened**; rides the standing Theme-O CEO gate. The r6 PRD↔architecture gap is unchanged — Architect (Winston) authors the console-auth ADR (OIDC seam + group→access-level/membership mapping; console reflects K8s RBAC) against this three-level model.
   - r8 (2026-08-12, ISI-2313 ← CEO v1 directive ISI-2301, ADR-033): **canonical role-model normalization.** Mechanical vocabulary alignment of the Theme O bodies (personas/access-level note ~§5, journeys §5.2/§5.5, D9, §9.15 FR-AUTH2/AUTH5 + scope guard + authorization-granularity line, R20, §13.6 map) to the model now stated authoritatively in ADR-033 / arch §12.3–§12.4 / Epic 15: **two global roles (`admin`|`user`)** and **three per-`Project` access levels (`viewer`|`contributor`|`maintainer`)**. Fixes the r7 drift (r7 said three *global* levels Admin/Operator/Viewer): there is **no global `operator` role** — Operator→per-`Project` `maintainer`, Viewer→per-`Project` `viewer`, and a new intermediate per-`Project` `contributor` (act/compose without administering membership/settings). **Enforcement semantics are unchanged** — only vocabulary + per-project tier count; the UI display axis stays "Access level". PRD-doc twin of the 04-epics normalization (ISI-2312, Story Writer). **No new scope, no locked decision reopened, auth-is-v1 gate not reopened**; rides the standing Theme-O CEO gate.
+  - r9 (2026-08-12, ISI-2323 ← CEO-validated console mocks 2026-08-12): **global cross-entity search.** Adds **Theme P (FR-SEARCH1…5)** — an always-visible top-bar search bar over tickets/Runs/files/agents/projects, debounced with a grouped result dropdown + keyboard nav (FR-SEARCH1/2), **RBAC-scoped server-side** so results never exceed the caller's Project membership + access level (FR-SEARCH3, ties FR-AUTH3/NFR-SEC10), contextual per-screen + entity-type filters (FR-SEARCH4), and graceful empty/no-match/special-character handling (FR-SEARCH5); plus NFR-PERF3 (interactive latency, RBAC-in-query). Search is a **derived read-model** — no new store of record, no coordination path (§6/R6 untouched). Index/query mechanism (Postgres FTS vs dedicated index) + relevance targets routed to Architecture (new OQ21, arch §17.5). **No new authority, no locked decision reopened.**
   - r5 (2026-08-11, ISI-2152): completeness pass against the CEO's *definitive checklist* — folds the six remaining checklist FRs the architecture (r8–r13) had already adopted but the PRD lacked: FR-MEM-GRAIL→FR-E8, FR-OLLAMA→FR-D6, FR-ORG→FR-F8, FR-AGENT-DETAIL→FR-F9, FR-CTX+FR-AGENT-TICKET→new Theme N (FR-N1…N5); plus FR-I2/I4 (sandbox usage + live agent↔task↔project map). Adds the §13.5 checklist-coverage matrix (all 13 checklist items → ≥1 FR). FR↔architecture lockstep verified against arch §7.6/§8.5/§8.6/§10.3/§13, ADR-024/026/028. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
@@ -482,6 +483,14 @@ credentials**, the following are first-class domain constraints, not optional NF
   artifacts — **never** via direct agent-to-agent chat. *(MVP)*
 - **FR-B4** The coordination record SHALL be queryable as an audit trail (who did what, when, with
   what result). *(MVP)*
+- **FR-B5** Work items SHALL support an **optional parent/child hierarchy** (sub-tickets): a work item
+  MAY have one parent, and the console SHALL display the resulting hierarchy as an **expandable tree in
+  both the Kanban and List views** (disclosure/expand-collapse with a child-count indicator, indented
+  children). The hierarchy is **organizational/display only** — it SHALL NOT create a coordination or
+  custody edge: claim/lease/handoff semantics (FR-B2/B3) remain per-work-item, a parent is never
+  auto-claimed or cascade-closed by a child, and closing/deleting a parent SHALL NOT delete its
+  children (orphaned children remain visible as roots). *(MVP — CEO mock validation 2026-08-12,
+  ISI-2322)*
 
 > **Build-cost honesty (Challenger F8).** FR-B2's checkout/claim/**lease** semantics plus safe
 > **concurrency** (no double-claim under contention, correct reclaim after crash, idempotent
@@ -649,9 +658,10 @@ credentials**, the following are first-class domain constraints, not optional NF
   throughput** (e.g. items opened/claimed/closed, Runs in flight / succeeded / failed) over time.
   *(MVP.)*
 - **FR-I2** The dashboard SHALL show **token/cost consumption**, attributable at least along the axes
-  **per user, per agent, per Run, and per Project**, and SHALL surface **sandbox resource usage** for
-  in-flight/recent Runs. *(MVP — attribution axes are the requirement; cost precision is bounded by what
-  each runtime reports, OQ14.)*
+  **per user, per agent, per Run, and per Project**, presented **both as a current total and as a trend
+  over a selectable time window** (e.g. tokens/day), and SHALL surface **sandbox resource usage** for
+  in-flight/recent Runs. *(MVP — attribution axes + the trend view are the requirement; cost precision is
+  bounded by what each runtime reports, OQ14.)*
 - **FR-I3** Consumption/throughput data SHALL be derived from the coordination record and Run lifecycle
   signals (NFR-OBS2/OBS3), **not** from a separate agent self-report an agent could forge. *(MVP —
   provenance of metering.)*
@@ -659,8 +669,31 @@ credentials**, the following are first-class domain constraints, not optional NF
   **SSE-updated**, so operators see current activity across the squad at a glance. This complements the
   org diagram (FR-F8) and is a **read model** derived from Run/claim state (FR-I3 provenance). *(MVP —
   the "who's running what" requirement of FR-DASH.)*
+- **FR-I5** The dashboard SHALL surface a **Pending Approvals** section listing **work items awaiting a
+  human approval decision**, each **linking to the approval action**. An agent MAY raise a **human-approval
+  gate** on a work item (a first-class, durable state in the coordination record — §6.1); the gated item
+  **blocks** until an **authorized** human (per §9.6 RBAC — write-level on that `Project`) **approves or
+  rejects**, and that decision is a **provenanced, append-only** record. *(MVP — the "tickets requiring
+  human approval" requirement.)* **Scope guard:** the approval gate is **human-in-the-loop**, not an
+  agent-to-agent coordination channel — approve/reject is written by an authorized human principal, never
+  brokered agent↔agent (§6.1 no-P2P, R13).
+- **FR-I6** The dashboard SHALL surface a **PR status mini-board** grouping the `Project`'s pull requests
+  by state (**ready-for-review / draft / blocked / merged**), derived from the **source-control sync**
+  read model (Theme H, FR-H1…H5) — **not** a second GitHub integration. Each PR row SHALL link to its
+  producing Run/branch where correlated. *(MVP — the "PRs by status" requirement; degrades to empty when
+  no repo is synced.)*
+- **FR-I7** The dashboard SHALL present an at-a-glance **KPI card row** summarizing **tickets by status**,
+  **tokens consumed (with trend, FR-I2)**, **PRs by status (FR-I6)**, and **live agent Runs (FR-I4)**, plus
+  a **Recent Tickets** list with **status badges** and a **"View all"** link into the Project → Tickets
+  view (FR-F*). Every card SHALL draw from the **real data sources** named in FR-I1…I6 (coordination
+  record, SCM mirror, OTel metering, Run/claim state) — **no** placeholder or agent-self-reported figures
+  (FR-I3 provenance). *(MVP.)*
+- **FR-I8** The dashboard SHALL provide **quick-access links** to the `Project`'s primary surfaces —
+  **Issues/Tickets, File Explorer (build browser), Board, and Discussion** — so it is the operator's
+  entry point into the Project. *(MVP — navigation affordance, honors the Project-rooted IA, §9.6.)*
 - **Scope guard:** operational visibility over KSquad's own entities (Projects, Runs, work items,
-  agents, cost). **Not** a general/custom-query analytics product, **not** external-metrics ingestion.
+  agents, cost, approvals, PRs). **Not** a general/custom-query analytics product, **not** external-metrics
+  ingestion.
 
 ### 9.10 Per-Project discussion room (Theme J — r3, ISI-2147) — collaboration surface, NOT coordination
 > **LOCKED-DECISION-ADJACENT.** Read §6.1 first: this is a *third surface* (collaboration), fenced off
@@ -841,6 +874,44 @@ credentials**, the following are first-class domain constraints, not optional NF
   Project-membership + access level** are **Phase 2** (OQ19/OQ20, §11.5). Client-side-only authorization is out of
   scope by construction (D9, R19). First-run admin bootstrap SHALL NOT break the ≤4h S1 install (R20).
 
+### 9.16 Global cross-entity search (Theme P — r9, ISI-2323) — the always-visible find surface
+> **New in r9.** CEO-validated console mocks (2026-08-12) add an **always-visible global search bar in the
+> top bar** — one entry point to find anything across the console. This is a **legibility** feature (S2), not
+> a new record: search **reads across the existing entities** (work items/tickets, Runs, files/artifacts,
+> agents, projects) and **returns only what the caller can already reach** — it introduces **no new authority,
+> no new store of record, and no coordination path** (it never claims/mutates; R6 scope guard holds). Search
+> results are a **derived read-model**, so the two-records discipline (§6) is untouched. Index/query mechanism
+> (Postgres full-text search vs a dedicated index) and relevance ranking are **Architecture** (arch §17.5,
+> new OQ21), not resolved here.
+- **FR-SEARCH1** The console SHALL provide a **global search bar** in the **top bar, always visible** on every
+  screen, that searches **across all first-class entities** — **work items/tickets** (§9.2), **Runs** (§9.1),
+  **files/artifacts** (§9.6/FR-F3, build browser Theme K), **agents** (`Agent`/`Team`/`Role`), and
+  **`Project`s** — from a single query. *(MVP.)*
+- **FR-SEARCH2** Search SHALL be **interactive**: a **debounced** query drives a **result dropdown** with results
+  **grouped by entity type** (tickets, files, agents, Runs, projects), each result **click-through** to its
+  detail surface, and **full keyboard navigation** (focus the bar, arrow through results, open, dismiss) without
+  a mouse. *(MVP.)*
+- **FR-SEARCH3** Search results SHALL be **scoped to the caller's authorization** — a result SHALL appear **only
+  if** the caller could already reach that entity: by **global role + `Project` membership + per-`Project` access
+  level**, **enforced server-side** on the query (D9, FR-AUTH3, NFR-SEC10), never merely filtered in the UI. An
+  entity in a `Project` the caller is not a member of SHALL NOT appear in results, previews, or result counts
+  (existence-hiding, aligned with the tenancy boundary FR-E5/NFR-SEC1). *(MVP.)*
+- **FR-SEARCH4** Search SHALL support **contextual filters per screen**: when the caller is within a `Project`
+  context, search SHALL be **scopable to that `Project`** (with an explicit affordance to widen to all authorized
+  `Project`s), and SHALL offer **entity-type filters** (e.g. tickets-only, files-only). Contextual scoping is a
+  **convenience over** the FR-SEARCH3 authorization floor — it narrows, never widens, what the caller may see.
+  *(MVP.)*
+- **FR-SEARCH5** Search SHALL handle **edge inputs gracefully**: an **empty query** shows a neutral/recent state
+  (no error), a **no-match** query shows a clear **empty state** (not a blank or a spinner), and
+  **special/reserved characters** (e.g. `:`, `*`, quotes, path separators, wildcards, injection-shaped input)
+  are **treated as literal search text** — they SHALL NOT error, and SHALL NOT reach the query engine as
+  executable syntax (no SQL/FTS-operator injection). *(MVP — see NFR-SEC10, NFR-PERF3.)*
+- **Scope guard:** v1 search is a **read-only cross-entity finder** over the entities above, RBAC-scoped and
+  debounced. It is **not** a full-text document search engine, **not** a BI/analytics query surface, and **not**
+  a coordination or mutate path (R6). Fuzzy/typo tolerance, saved searches, and search across memory-record
+  *content* beyond provenance are **Phase 2**. Relevance-ranking quality and index freshness targets are set in
+  Architecture (OQ21).
+
 ---
 
 ## 10. Non-Functional Requirements
@@ -909,6 +980,11 @@ Only NFRs that matter for KSquad are listed (selective by design).
   (numeric target set against ISI-2113; S9).
 - **NFR-PERF2** Console live progress (SSE) SHALL reflect Run state changes with low, human-imperceptible
   lag under normal load (target confirmed in Architecture).
+- **NFR-PERF3** Global search (Theme P) SHALL feel **interactive**: a debounced query SHALL return a
+  first grouped result page with low, human-imperceptible lag under normal load, and search load SHALL NOT
+  degrade the correctness-critical path (coordination/reconcile). The RBAC scope filter (FR-SEARCH3) SHALL
+  be applied **in the query**, not by post-filtering a broader result set. Numeric latency + relevance/index-
+  freshness targets are set in Architecture (OQ21). *(r9 — ISI-2323; FR-SEARCH1…5.)*
 
 ### 10.4 Scalability & multi-tenancy
 - **NFR-SCALE1** Squads SHALL be independently schedulable; adding squads SHALL NOT require
