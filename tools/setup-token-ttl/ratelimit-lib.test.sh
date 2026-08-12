@@ -19,6 +19,12 @@ eq  "401 => AUTHFAIL"           "$(rl_classify 'HTTP 401 authentication_error: t
 eq  "429+stray 401 => RATELIMIT (not AUTHFAIL)" \
     "$(rl_classify 'rate_limit_error: usage limit reached (ref 401xx) retry later' 1)"             RATELIMIT
 eq  "network nonzero => ERR"    "$(rl_classify 'curl: (6) could not resolve host' 7)"              ERR
+# F2: an error envelope returned AT EXIT 0 matches on "type"/"content" — it must NOT classify OK,
+# else OVERLOAD/RATELIMIT never fire and the guard no-ops with no resume scheduled.
+eq  "overloaded_error @code0 => OVERLOAD (not OK)" \
+    "$(rl_classify '{"type":"error","error":{"type":"overloaded_error","message":"overloaded"}}' 0)"  OVERLOAD
+eq  "rate_limit_error @code0 => RATELIMIT (not OK)" \
+    "$(rl_classify '{"type":"error","error":{"type":"rate_limit_error","message":"usage limit reached"}}' 0)" RATELIMIT
 
 echo "[extract — headers beat message text (AC2)]"
 # retry-after header present alongside a misleading "in 9 hours" message => header wins.
@@ -30,6 +36,15 @@ eq  "retry-after epoch = now+120" "$e" "$((NOW+120))"
 read -r e s <<<"$(rl_extract_reset 'anthropic-ratelimit-unified-reset: 2001-09-09T02:46:40Z' "$NOW" RATELIMIT)"
 eq  "ratelimit-reset header src" "$s" "header:ratelimit-reset"
 ge  "ratelimit-reset parsed"     "$e" 1000000000
+# F1: multiple *-reset headers at different times. Prefer `unified` even when a tokens-reset
+# appears EARLIER in the body (head -1 would have wrongly picked the earlier, non-binding one).
+read -r e s <<<"$(rl_extract_reset 'anthropic-ratelimit-tokens-reset: 1000000200
+anthropic-ratelimit-unified-reset: 1000000500' "$NOW" RATELIMIT)"
+eq  "unified reset preferred over earlier tokens reset" "$e" "$((NOW+500))"
+# No unified header => take the MAX (latest = conservative), never the first-in-text.
+read -r e s <<<"$(rl_extract_reset 'anthropic-ratelimit-requests-reset: 1000000200
+anthropic-ratelimit-tokens-reset: 1000000900' "$NOW" RATELIMIT)"
+eq  "max reset epoch chosen among non-unified headers" "$e" "$((NOW+900))"
 echo "[extract — message fallback + conservative default]"
 read -r e s <<<"$(rl_extract_reset 'rate limit, try again in 5 minutes' "$NOW" RATELIMIT)"
 eq  "relative message"          "$s" "msg:relative:in 5 minutes"

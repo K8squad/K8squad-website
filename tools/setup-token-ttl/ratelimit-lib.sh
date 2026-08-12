@@ -21,7 +21,10 @@
 # happens to mention "401"/"unauthorized" still classifies RATELIMIT, never AUTHFAIL.
 rl_classify() {
   local out="$1" code="$2"
-  if [[ "$code" -eq 0 ]] && printf '%s' "$out" | grep -qiE '"(result|type|role|content)"'; then
+  # F2: keep ONLY markers an error envelope can't carry. {"type":"error",...} matches on
+  # "type"/"content", so those would classify an overloaded_error/rate_limit_error body as OK
+  # at exit 0 and short-circuit before OVERLOAD/RATELIMIT. "result"/"role" are success-only.
+  if [[ "$code" -eq 0 ]] && printf '%s' "$out" | grep -qiE '"(result|role)"'; then
     echo OK; return
   fi
   if printf '%s' "$out" | grep -qiE '529|overloaded_error|"type"[^}]*overloaded'; then
@@ -55,8 +58,20 @@ rl_extract_reset() {
   local resume="" src="" v
 
   # -- headers first --
-  v="$(printf '%s' "$text" | grep -oiE 'anthropic-ratelimit-[a-z-]*reset"?[[:space:]:=]+"?[0-9TZ:+-]{10,}' | grep -oiE '[0-9]{10}|20[0-9]{2}-[0-9]{2}-[0-9]{2}[tT ][0-9:]{5,8}[zZ]?' | head -1 || true)"
-  if [[ -n "$v" ]]; then resume="$(_rl_to_epoch "$v")"; [[ -n "$resume" ]] && src="header:ratelimit-reset"; fi
+  # F1: a 429 carries several *-reset headers (requests/tokens/input-tokens/output-tokens/
+  # unified) at DIFFERENT times. head -1 = first-in-text, which can be an earlier non-binding
+  # limit -> resume before the governing limit clears -> re-trip the shared pool. Instead:
+  # prefer the `unified` reset, else the MAX epoch among matches (latest = conservative).
+  local hdr unified_epoch="" max_epoch="" ep
+  while IFS= read -r hdr; do
+    [[ -z "$hdr" ]] && continue
+    v="$(printf '%s' "$hdr" | grep -oiE '[0-9]{10}|20[0-9]{2}-[0-9]{2}-[0-9]{2}[tT ][0-9:]{5,8}[zZ]?' | head -1 || true)"
+    ep="$(_rl_to_epoch "$v")"; [[ -z "$ep" ]] && continue
+    printf '%s' "$hdr" | grep -qiE 'unified' && unified_epoch="$ep"
+    { [[ -z "$max_epoch" ]] || [[ "$ep" -gt "$max_epoch" ]]; } && max_epoch="$ep"
+  done <<<"$(printf '%s' "$text" | grep -oiE 'anthropic-ratelimit-[a-z-]*reset"?[[:space:]:=]+"?[0-9TZ:+-]{10,}' || true)"
+  if [[ -n "$unified_epoch" ]]; then resume="$unified_epoch"; src="header:ratelimit-reset"
+  elif [[ -n "$max_epoch" ]]; then resume="$max_epoch"; src="header:ratelimit-reset"; fi
   if [[ -z "$resume" ]]; then
     v="$(printf '%s' "$text" | grep -oiE 'retry-after"?[[:space:]:=]+"?[0-9]+' | grep -oE '[0-9]+' | head -1 || true)"
     [[ -n "$v" ]] && { resume=$(( now + v )); src="header:retry-after:${v}s"; }
