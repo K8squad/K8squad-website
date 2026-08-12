@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -20,12 +20,14 @@ inputDocuments:
   - ISI-2161                         # CEO r5: Team organization diagram console screen → FR-F8 (arch §13)
   - ISI-2162                         # CEO r5: Agent detail page → FR-F9 (arch §13)
   - ISI-2131                         # CEO r5: agent↔ticket lifecycle + context stories → Theme N (arch §8.5/§8.6)
+  - ISI-2302                         # CEO r6: human authentication & RBAC → Theme O (FR-AUTH1…5); OPENS a PRD↔arch gap (arch has no human-auth §) — routed to Architecture
   - docs/bmad/03-architecture.md     # r13 (ISI-2134): NATS event backbone §17.4/§16/§6.6/§7.6/ADR-023; §8.5/§8.6 context+lifecycle; §10.3 Ollama; §13 org/agent-detail — FR↔architecture lockstep source
 revisions:
   - r1 (2026-08-10, ISI-2118): initial PRD synthesis
   - r2 (2026-08-10, ISI-2125): Challenger findings (ISI-2121) folded in — see §13.2 for the finding→change map
   - r3 (2026-08-11, ISI-2152): six new CEO requirements (ISI-2145..2150) folded in — new Themes H/I/J/K/L, FR-F7, NFR updates, OQ13–OQ17, risks R13–R17; see §13.3 for the requirement→change map. Re-review requested at CEO gate.
   - r4 (2026-08-11, ISI-2152 ← CEO NATS decision ISI-2134): closes the CTO-found gap (PRD r3 predated the NATS decision; architecture r13 had 56 NATS refs, PRD had 0). Adds Theme M (FR-M1…M5 — plugin architecture on a NATS event backbone, `FR-PLUG`) + FR-L4 (NATS JetStream Helm dependency, `FR-HELM`), NFR-REL4/EXT3/SEC9, OQ18, R18; see §13.4 for the requirement→change map. FR↔architecture lockstep restored. No locked decision reopened.
+  - r6 (2026-08-12, ISI-2302): human **authentication & RBAC** folded in — new **Theme O (FR-AUTH1…AUTH5)**: username/password login (OIDC/SSO-ready seam), admin user/membership CRUD, project-scoped visibility, caller-identity-carrying Runs, role-adaptive console. New domain constraint **D9** (human identity as a first-class third trust plane, server-side-enforced), NFR-SEC10, NFR-OBS4, OQ19/OQ20, R19/R20; personas + journeys updated with login/role context; §13.6 change map. **Unlike r4/r5, this OPENS a new PRD↔architecture gap** — the architecture (r19) has no human-auth/console-RBAC section (0 FR-AUTH refs; all "auth" there is agent-credential OAuth, all "RBAC" is K8s workload RBAC). Routed to Architecture via a follow-up child issue; no locked decision reopened.
   - r5 (2026-08-11, ISI-2152): completeness pass against the CEO's *definitive checklist* — folds the six remaining checklist FRs the architecture (r8–r13) had already adopted but the PRD lacked: FR-MEM-GRAIL→FR-E8, FR-OLLAMA→FR-D6, FR-ORG→FR-F8, FR-AGENT-DETAIL→FR-F9, FR-CTX+FR-AGENT-TICKET→new Theme N (FR-N1…N5); plus FR-I2/I4 (sandbox usage + live agent↔task↔project map). Adds the §13.5 checklist-coverage matrix (all 13 checklist items → ≥1 FR). FR↔architecture lockstep verified against arch §7.6/§8.5/§8.6/§10.3/§13, ADR-024/026/028. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
@@ -38,11 +40,11 @@ program: 'ISI-2115'
 
 # Product Requirements Document — KSquad
 
-**Author:** John (Product Manager)
-**Date:** 2026-08-10 · **Revised:** 2026-08-11 (r5 — CEO definitive-checklist completeness; r4 — NATS/plugin ISI-2134; r3 — CEO requirements ISI-2145..2150)
+**Author:** John (Product Manager) · **r6 revision:** Winston (Architect), ISI-2302
+**Date:** 2026-08-10 · **Revised:** 2026-08-12 (r6 — human auth & RBAC ISI-2302; r5 — CEO definitive-checklist completeness; r4 — NATS/plugin ISI-2134; r3 — CEO requirements ISI-2145..2150)
 **Phase:** BMAD Phase 2 — PRD
-**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r5 re-review requested (§14)**
-**Source ticket:** ISI-2118 (r1/r2) · ISI-2152 (r3/r4) · **Parent:** ISI-2116 · **Program:** ISI-2115
+**Gate:** CEO (BigBoss) approval required before Phase 3 (Architecture) · **r6 re-review requested (§14)**
+**Source ticket:** ISI-2118 (r1/r2) · ISI-2152 (r3/r4/r5) · ISI-2302 (r6) · **Parent:** ISI-2116 · **Program:** ISI-2115
 
 > **Scope discipline.** This PRD builds on the seven LOCKED decisions in the kickoff brief
 > (`00-kickoff-brief.md`, commit 90747e3) and the six themes + two-records principle in the
@@ -176,17 +178,38 @@ all four satisfied simultaneously is the product's central design tension.
 | **Dana — Agent-runtime vendor / OSS integrator** (ecosystem) | Wants their runtime to run inside KSquad | A documented shim contract + conformance tests | Ships a shim in days; it appears in squads unchanged |
 | **Morgan — the agent itself** (coordination-surface user) | Executes work, checks out items, files comments/artifacts | Shared-work-item API + memory server + MCP tools — **not** a P2P chat channel | Coordinates through durable state; a crash loses nothing |
 
+> **Human roles — admin vs project-scoped user (r6, ISI-2302).** With Theme O the console is **multi-user
+> and role-aware**, and the four audiences above resolve onto **two authorization roles** at v1:
+> - **admin** — platform-wide management: CRUDs user accounts, assigns per-`Project` memberships, and
+>   manages `Agent`/`Team`/`Skill` resources across the platform (FR-AUTH2). **Priya (Platform Engineer)**
+>   is the archetypal admin.
+> - **project-scoped user** — full authority *within* the `Project`s they are a member of (compose squads,
+>   start/kill Runs, inspect artifacts, use the room and dashboards for those Projects), but **no**
+>   user-administration and **no** cross-`Project` reach (FR-AUTH3/AUTH5). **Sam (Squad Author)** is the
+>   archetypal project-scoped user (an org MAY grant a tech lead admin where it wants).
+>
+> **Dana (vendor)** operates outside any one tenant (shim conformance) and is not a console-auth persona.
+> **Morgan (agent)** now has **no standalone identity** — every agent Run acts **on behalf of the
+> authenticated caller that dispatched it** (FR-AUTH4), scoped to that caller's permissions. Authorization
+> is by **`Project` membership + role**, **enforced server-side** (D9, NFR-SEC10); the role a user holds
+> governs only which surfaces they *see* (FR-AUTH5), never what the server *allows* — UI adaptation is an
+> affordance, not the security boundary.
+
 ### 5.1 Journey — Priya installs and gains legibility (S1, S2, S4)
 Priya has a conformant cluster and a mandate to let three teams run agent crews without giving a SaaS
-vendor her repos. She `helm install`s KSquad; CRDs register and the operator console comes up. She
-opens the console: empty but self-explanatory — "create a Project, bind a repo, compose a Team." She
-hands the console URL to two tech leads. A week later a Run spikes CPU; she opens the console, sees
+vendor her repos. She `helm install`s KSquad; CRDs register and the operator console comes up. On
+first run she **bootstraps the admin account** and logs in as **admin**: empty but self-explanatory —
+"create a Project, bind a repo, compose a Team." Rather than handing out a shared URL, she **creates
+user accounts for two tech leads and assigns each to their Project** (FR-AUTH2) — each logs in and
+sees **only their own Projects** (FR-AUTH3). A week later a Run spikes CPU; she opens the console, sees
 the offending Run streaming live, inspects its artifacts, and **kills it in two clicks** — the
 sandbox is torn down and the namespace is untouched elsewhere. *New reality: she offers "squads as a
 service" internally with bounded blast radius and full legibility.*
 
 ### 5.2 Journey — Sam authors a squad (S3, S6, S7)
-Sam wants automated review-and-fix on `payments-service`. In the console he creates a `Project`
+Sam wants automated review-and-fix on `payments-service`. He **logs in as a project-scoped user**; the
+console shows **only the Projects he is a member of** and **hides the platform-management surfaces**
+(user admin, cross-Project views — FR-AUTH5) he has no rights to. In the console he creates a `Project`
 (repo + workspace), defines three `Agent`s bound to `Role`s (Reviewer, Fixer, Tester) drawn from two
 runtimes (**OpenClaw** and **Hermes**), assigns `Skill`s, and groups them into a `Team`. He starts a
 `Run` against an open backlog item. He watches the **live SSE stream**: the Reviewer checks out the
@@ -209,7 +232,20 @@ agents grabbing the same item), does work, files a comment + artifact, and write
 the **memory server** via an MCP tool. Its sandbox is OOM-killed mid-task. The controller reconciles:
 the checkout is released/retried, and a fresh sandbox resumes from durable state — **nothing is
 lost**, because coordination lives in work items and knowledge lives in memory, never in ephemeral
-chat. *New reality: crash-safe coordination is a property of the substrate, not the agent.*
+chat. Every action it took is attributed to the **caller principal** that dispatched the Run
+(FR-AUTH4), so the audit trail answers *"who did this, and on whose behalf."* *New reality: crash-safe
+coordination is a property of the substrate, not the agent.*
+
+### 5.5 Journey — Priya (admin) onboards users and scopes access (r6, ISI-2302)
+A third team asks for a squad. Priya, as **admin**, **creates a user account** for its lead, **assigns
+that user to the new `Project`** (FR-AUTH2), and grants them the project-scoped role. The lead logs in
+and the console shows **only** that Project — no other team's squads, Runs, artifacts, rooms, or
+dashboards are listed or reachable (FR-AUTH3), because authorization is checked **server-side** on every
+request (D9, NFR-SEC10), not merely hidden in the UI. When the lead starts a Run, the agent acts **as
+that caller** and cannot reach a Project the caller isn't a member of (FR-AUTH4). Later Priya offboards
+a departing engineer by disabling the account; their sessions are revoked and their Runs stop carrying a
+valid caller identity. *New reality: multi-tenant access is governed by human identity + Project
+membership, enforced at the API, with a full authn/authz audit trail (NFR-OBS4).*
 
 ---
 
@@ -328,6 +364,19 @@ credentials**, the following are first-class domain constraints, not optional NF
   (same posture as D6 memory reads); inbound webhooks SHALL be **authenticated/verified** (signature
   check) before they mutate any KSquad state; and the sync connector's credentials SHALL follow the BYO
   Secret-ref model (D3, FR-G1) — no shared master token to GitHub. (FR-H4, NFR-SEC8.)
+- **D9 — Human identity and authorization are a first-class trust boundary (r6, ISI-2302).** Through r5
+  the PRD defined **agent-workload isolation** (D2 — K8s RBAC/NetworkPolicy) and **BYO agent→provider
+  credentials** (D3, Theme G), but **not human end-user identity** for the console/API. Introducing human
+  users, roles (**admin** vs **project-scoped user**), and per-`Project` membership makes **human
+  authentication + authorization a distinct *third* identity plane**, separate from (a) K8s workload RBAC
+  and (b) BYO model credentials — and it must not be conflated with either. Three constraints hold: (1)
+  authorization SHALL be **enforced server-side** at the API/coordination layer — UI role-adaptation
+  (FR-AUTH5) is a usability affordance, **never** a security control (R19); (2) human identity SHALL be
+  carried as the **caller principal** into agent Runs (FR-AUTH4), so an agent acts *on behalf of* an
+  authenticated caller and is **scoped to that caller's permissions**, binding the existing
+  provenance/attribution model (FR-B4, FR-E6, FR-I3) to a concrete human actor; (3) the human-authz
+  boundary SHALL align with the existing **`Project`/squad tenancy boundary** (FR-E5, NFR-SEC1/SEC5/SEC7)
+  — a user's Project membership *is* their tenancy scope. (FR-AUTH1…AUTH5, NFR-SEC10, NFR-OBS4.)
 
 ---
 
@@ -691,6 +740,49 @@ credentials**, the following are first-class domain constraints, not optional NF
   Project CRD revision; the **resolved envelope SHALL be snapshotted on the Run** for audit and
   re-entrant reuse. *(MVP — FR-CTX; architecture §8.5, §6.4/6.5.)*
 
+### 9.15 Authentication & human RBAC (Theme O — r6, ISI-2302) — the human-identity plane
+> **New in r6.** Adds the **human end-user identity + authorization plane** the PRD lacked: who the human
+> user *is* (authentication) and what `Project`s/roles they have (authorization). This is a **third,
+> distinct identity plane** — separate from **K8s workload RBAC** (D2, sandbox isolation) and **BYO
+> agent→provider credentials** (Theme G, model access) — and must not be conflated with either (D9).
+> **FR↔architecture note:** unlike the r5 additions, the architecture (r19) has **no** human-auth/console-
+> RBAC design yet — r6 **opens a PRD↔architecture gap** that a follow-up Architecture issue closes (§13.6,
+> §14). Mechanism (session/token, OIDC seam, enforcement point) is routed to Architecture (OQ19/OQ20), not
+> resolved here.
+- **FR-AUTH1** The system SHALL provide human **user accounts** with **registration/login** via
+  **username + password** as the v1 baseline, behind an **authentication seam** that is **extensible to
+  OIDC/SSO** (external identity provider) **without changing the authorization model**. Passwords SHALL be
+  stored as **strong one-way hashes** (never reversible, never logged); session/token issuance, expiry, and
+  revocation mechanism = Architecture (OQ19, NFR-SEC10). *(MVP — username/password; OIDC/SSO is a
+  seam-ready fast-follow, §11.5.)*
+- **FR-AUTH2** An **admin** role SHALL be able to **create, read, update, and delete user accounts** and
+  **assign per-`Project` memberships** (which users belong to which `Project`s, with which role). At least
+  **two roles** SHALL exist at v1: **admin** (platform-wide management, incl. `Agent`/`Team`/`Skill`
+  resources) and **project-scoped user** (access limited to assigned `Project`s). *(MVP.)*
+- **FR-AUTH3** A user SHALL see and access **only the `Project`s they are authorized for.** `Project`s a
+  user is not a member of — **and all resources under them** (squads, Runs, work items, artifacts,
+  discussion rooms, dashboards, build browser) — SHALL NOT be listed, readable, or reachable. This SHALL be
+  **enforced server-side** at the API/coordination layer (D9, NFR-SEC10), aligned with the per-`Project`
+  tenancy boundary (FR-E5, NFR-SEC1/SEC5/SEC7). *(MVP.)*
+- **FR-AUTH4** An agent **`Run` SHALL carry the identity of the caller** that initiated it (the
+  authenticated human principal), and the agent's actions SHALL be **scoped to that caller's
+  permissions** — an agent acting on behalf of a caller SHALL NOT reach a `Project` or resource the caller
+  cannot. The caller identity SHALL be recorded as the **principal** on coordination-record entries
+  (FR-B4), memory writes (FR-E6), and cost/throughput metering (FR-I3), binding those provenance surfaces
+  to a concrete human actor so the audit trail answers *"who did this, on whose behalf"* (NFR-OBS4). This
+  is the **human-identity ↔ agent-action bridge** (D9). *(MVP.)*
+- **FR-AUTH5** The console SHALL **adapt to the caller's role**: a **non-admin (project-scoped) user**
+  SHALL NOT be shown platform-management surfaces they cannot use — **`Agents`/`Teams`/`Skills`
+  management, user administration, and cross-`Project`/global views SHALL be hidden**, leaving only their
+  authorized `Project`s and the operational/collaboration surfaces within them. UI adaptation is a
+  **usability affordance layered on top of the server-side enforcement of FR-AUTH3 (D9, NFR-SEC10) — never
+  a substitute for it** (R19). *(MVP.)*
+- **Scope guard:** v1 authentication is **username/password behind an OIDC/SSO-ready seam**; v1
+  authorization granularity is **`Project` membership + the two roles**, enforced server-side. **Full
+  external IdP/SSO integration, MFA, SCIM provisioning, and fine-grained per-resource ACLs beyond
+  Project-membership + role** are **Phase 2** (OQ19/OQ20, §11.5). Client-side-only authorization is out of
+  scope by construction (D9, R19). First-run admin bootstrap SHALL NOT break the ≤4h S1 install (R20).
+
 ---
 
 ## 10. Non-Functional Requirements
@@ -731,6 +823,16 @@ Only NFRs that matter for KSquad are listed (selective by design).
   authenticate outbound integrations via **BYO per-plugin Secret refs** (no shared master token);
   plugin credentials SHALL never be logged or exposed cross-tenant, and the bus SHALL NOT cross tenancy
   boundaries. *(r4 — ISI-2134; FR-M4/M5.)*
+- **NFR-SEC10** Human authentication and authorization (Theme O) SHALL be enforced **server-side** at the
+  API/coordination layer, **never only in the UI**: passwords SHALL be stored as strong one-way hashes and
+  never logged (FR-AUTH1); sessions/tokens SHALL be **revocable and expire**; and **every `Project`-scoped
+  read/write SHALL check the caller's membership + role before returning or mutating data** (FR-AUTH3).
+  Agent Runs SHALL be constrained to the **caller principal's** permissions (FR-AUTH4). UI role-adaptation
+  (FR-AUTH5) is a usability affordance, **not** a security boundary; an unauthorized cross-`Project` access
+  SHALL be **denied by construction**, consistent with the tenancy boundary (NFR-SEC1/SEC5/SEC7, D9).
+  Verified alongside the tenancy/blast-radius tests (S4) with a **broken-access-control case** (a
+  project-scoped caller — directly via the API, not the UI — cannot read or mutate a Project they are not a
+  member of). *(r6 — ISI-2302; R19.)*
 
 ### 10.2 Reliability & recoverability
 - **NFR-REL1** No committed coordination state SHALL be lost on sandbox/agent/controller failure
@@ -780,6 +882,12 @@ Only NFRs that matter for KSquad are listed (selective by design).
   attribute consumption per user / agent / Run / Project (FR-I2), derived from Run lifecycle and the
   coordination record rather than forgeable agent self-report (FR-I3). Metering accuracy is bounded by
   what each runtime reports (OQ14). *(r3 — ISI-2146.)*
+- **NFR-OBS4** Authentication and authorization events SHALL be captured in the queryable audit trail
+  (D4, NFR-OBS1): **login success/failure**, **user-account and membership changes** (FR-AUTH2), and the
+  **caller identity behind every agent Run** (FR-AUTH4). Combined with the coordination record, this makes
+  *"who did what, when, and on whose behalf"* answerable after the fact for **both human and agent-initiated
+  actions** — an authz event and its downstream agent actions share one caller principal. *(r6 —
+  ISI-2302.)*
 
 ---
 
@@ -833,6 +941,14 @@ required to run *anything* safely and legibly.
   - **Ollama / BYO model-provider seam** — FR-D6 (also the credential-free CI/e2e lane).
   - **Console surfaces** — FR-F8 (org diagram), FR-F9 (agent detail page), FR-I4 (live agent↔task↔
     Project map) — read-only, coordination-free legibility views.
+- **r6 — Human authentication & RBAC (ISI-2302):** FR-AUTH1…AUTH5 — username/password login behind an
+  **OIDC/SSO-ready seam**, **admin** user/membership CRUD, **project-scoped** visibility (server-side
+  enforced), **caller-identity-carrying Runs**, and a **role-adaptive console**. Establishes the **human
+  identity plane** (D9) distinct from K8s workload RBAC and BYO model credentials; NFR-SEC10 (server-side
+  enforcement) + NFR-OBS4 (authn/authz audit). **Cross-cutting, lands around the spine** (a gate on the
+  API/console, not on the R10 coordination-spine correctness path), with a **first-run admin bootstrap**
+  that keeps the ≤4h S1 install intact (R20). **New PRD↔architecture gap — architecture must design this
+  (§13.6, OQ19/OQ20).**
 - **Named design partner + day-one install acceptance test (resolves OQ8):** Paperclip platform team
   (internal, confirmed at CEO Gate 1); S1 now includes the FR-L1/L2 exposure+storage acceptance.
 
@@ -890,6 +1006,11 @@ ISI-2126.)*
   view over KSquad's own entities, not a general dashboarding tool. *(r3 — refines R6.)*
 - **Multi-provider source-control sync at v1** — v1 is **GitHub only** (Theme H); GitLab/Gitea and deep
   two-way field mapping are Phase 2. *(r3.)*
+- **Full external IdP/SSO, MFA, SCIM provisioning, and fine-grained per-resource ACLs at v1** — v1 auth
+  (Theme O) is **username/password + `Project`-membership/two-role RBAC** behind an **OIDC/SSO-ready
+  seam**; deeper identity integration is Phase 2 (OQ19/OQ20). *(r6 — ISI-2302.)*
+- **Client-side-only authorization** — UI role-adaptation (FR-AUTH5) is an affordance and SHALL NEVER
+  substitute for server-side enforcement (D9, NFR-SEC10); out of scope by construction. *(r6 — ISI-2302.)*
 - **Single-vendor (Claude-only) platform** — agent-agnosticism is the point; excluded.
 
 ---
@@ -919,6 +1040,8 @@ resolved here.
 | OQ16 | Gateway API exposure specifics — GatewayClass choice, TLS, and how defaults keep the ≤4h install true across clusters that may not have a Gateway controller | Architecture | **New (r3, ISI-2149).** Requirement set (FR-L1, NFR-USE1); implementation + fallback for Gateway-less clusters = Architecture. |
 | OQ17 | Build-browser content source — workspace PVC vs git/PR diff vs artifact store, and read-only access scoping per principal | Architecture | **New (r3, ISI-2148).** Requirement set (FR-K1/K2, read-only). Source + per-principal access model = Architecture (aligns with FR-C6/NFR-SEC5). |
 | OQ18 | NATS/JetStream operational shape for the plugin seam — subject taxonomy + versioned event catalog schema, JetStream retention/replay window, single-replica-default vs HA toggle, and outbox→relay→NATS publish/reconciliation mechanics (`published_at`, unflushed-row republish) | Architecture | **New (r4, ISI-2134).** Direction set (FR-M1…M5, FR-L4): Postgres source-of-truth, NATS event-flow-only, at-least-once via outbox relay, read-only plugins. **Largely resolved in architecture §17.4 / §16 / ADR-023 (r13)** — carried here so the FR↔architecture lockstep is explicit. Exact subject schema, catalog versioning, and retention tuning = Architecture. |
+| **OQ19** | Human-auth session/token mechanism + OIDC/SSO seam — session-cookie vs JWT, storage, expiry/revocation, first-run admin bootstrap, and how the username/password baseline and an external IdP plug into **one** authorization model without a rewrite (FR-AUTH1) | **PRD → Architecture** | **New (r6, ISI-2302).** Requirement set (FR-AUTH1, server-side enforcement NFR-SEC10, OIDC-ready seam); mechanism = Architecture. **Blocks nothing in this PRD but is a net-new architecture design area — architecture has no auth section today.** |
+| **OQ20** | Authorization enforcement placement + caller-identity propagation — where the `Project`-membership+role check lives so it is applied **uniformly** across the API/coordination layer, console, discussion room, dashboards, and build browser without per-surface drift, and how the **caller principal propagates into Runs** (FR-AUTH4) end-to-end (dispatch → shim → coordination/memory/metering writes) | **Architecture** | **New (r6, ISI-2302).** Direction set (server-side, `Project`+role granularity, caller-as-principal — D9, NFR-SEC10); single enforcement point + propagation mechanism = Architecture. Ties to OQ7 (tenancy boundary). |
 
 ---
 
@@ -965,6 +1088,18 @@ resolved here.
   OQ18, R18, and scope/traceability updates (§13.4). **No locked decision is reopened** — the seam is a
   read-only, one-way observation surface fenced from coordination (the §6 no-P2P lock applied a third
   time). FR↔architecture lockstep restored and cross-checked (§13.4).
+- **r6 folded in (ISI-2302) — human authentication & RBAC; OPENS a PRD↔architecture gap:** adds **Theme O
+  (FR-AUTH1…AUTH5)** — the human end-user identity + authorization plane the PRD lacked — plus **D9**
+  (human identity as a distinct third trust plane), **NFR-SEC10** (server-side enforcement), **NFR-OBS4**
+  (authn/authz audit), **OQ19/OQ20**, **R19/R20**, and persona/journey updates. **No locked decision is
+  reopened** (the human-authz boundary *aligns with* the existing `Project`/squad tenancy boundary and the
+  provenance/principal model). **Honest lockstep note (unlike r4/r5):** r4 and r5 *closed* gaps where the
+  architecture had already designed the capability; **r6 is the inverse — it introduces a capability the
+  architecture (r19) has NOT designed** (0 FR-AUTH refs; all "auth" there is agent-credential OAuth, all
+  "RBAC" is K8s workload RBAC). So r6 **creates** a new FR↔architecture gap by design. It is routed to
+  Architecture as a **first-class follow-up child issue** (§14) with OQ19/OQ20 — Phase 3 must add a
+  human-auth/console-RBAC section before Phase 4 stories are written against Theme O. Flagged for the CEO
+  gate as a scope + sequencing item, not silently absorbed.
 
 ### 13.1 Risk register (Phase 1 R1–R7 + Challenger-driven R8 upgrade and R9–R12, mapped to requirements)
 | # | Risk | Sev | Mitigation in this PRD |
@@ -987,6 +1122,8 @@ resolved here.
 | R16 | Cost/token metering inaccurate or forgeable across heterogeneous runtimes | Med | FR-I3 + NFR-OBS3 derive metering from Run lifecycle/coordination record, not agent self-report; attribution axes are the v1 requirement, precision best-effort per runtime (OQ14). |
 | R17 | Gateway API / explicit-StorageClass assumptions break the ≤4h install on clusters lacking a Gateway controller or default storage | Med | FR-L1/L2 documented defaults + surfaced-at-install requirement; S1 acceptance includes it (FR-L3); Gateway-less fallback = Architecture (OQ16). |
 | R18 | **NATS as a second stateful dependency** — dual-write hole (event lost or double-committed vs Postgres), a failing/absent plugin bus blocking the core, or the seam eroding into a coordination/second-source-of-truth path (r4, ISI-2134) | Med | **Transactional outbox** captures the event in the same Postgres txn as the state change; a **relay** publishes to NATS at-least-once and republishes unflushed rows → **no dual-write hole** (FR-M3). Relay decoupling means **NATS-down never blocks a Run/claim/memory write** (FR-M5, NFR-REL4). One-way read-only seam (FR-M4, NFR-SEC9) + §11.5 out-of-scope keep it off coordination. Single-replica-default subchart bounds install/ops cost (FR-L4). Postgres stays sole store of record (ADR-001). Operational specifics = Architecture (OQ18). |
+| R19 | **Broken access control** — the UI hides surfaces (FR-AUTH5) but the API still serves a `Project` the caller isn't a member of (OWASP A01 client-side-only authz) (r6, ISI-2302) | **High** | **D9 + NFR-SEC10:** authorization enforced **server-side** at the API/coordination layer; UI adaptation is affordance-only; **every** `Project`-scoped read/write checks membership+role (FR-AUTH3), and Runs are bounded to the caller principal (FR-AUTH4). Verified with a **broken-access-control test case** alongside the S4 tenancy tests (a caller hitting the API directly cannot reach a non-member Project). |
+| R20 | **Auth becomes an adoption blocker or scope-creeps into a full IAM product** (r6, ISI-2302) | Med | v1 is **username/password + two roles + `Project` membership** behind an **OIDC/SSO-ready seam** (FR-AUTH1 scope guard); full IdP/MFA/SCIM/fine-grained ACLs deferred to Phase 2 (§11.5, OQ19/20). A **first-run admin bootstrap** keeps the ≤4h S1 install intact; auth is a gate on the API/console, off the R10 correctness-critical path. |
 
 ### 13.2 Challenger finding → PRD change map (ISI-2121 → r2 via ISI-2125)
 | Finding | Gist | Where folded in |
@@ -1064,6 +1201,26 @@ already adopted). All 13 items now map to at least one FR:
 an install/packaging concern owned by Architecture §16 / DevOps; the PRD requirement is the Helm chart +
 per-component deployables (FR-L*), with image build/publish tracked in the CI pipeline, not a new FR.
 
+### 13.6 CEO r6 requirement → PRD change map (ISI-2302 — human authentication & RBAC)
+| Issue ask | Requirement | Where folded in (r6) |
+|-----------|-------------|----------------------|
+| **FR-AUTH1** — user registration/login (username/password, extensible to OIDC/SSO) | Human user accounts + login behind an OIDC/SSO-ready auth seam; hashed passwords; session/token mechanism → Architecture | **FR-AUTH1** (§9.15), OQ19, NFR-SEC10 |
+| **FR-AUTH2** — admin CRUD users, assign project memberships | Admin role CRUDs accounts + per-`Project` memberships; two v1 roles (admin, project-scoped user) | **FR-AUTH2** (§9.15) |
+| **FR-AUTH3** — users see only authorized projects | Server-side per-`Project` visibility/access enforcement, aligned to the tenancy boundary | **FR-AUTH3** (§9.15), NFR-SEC10, D9, R19 |
+| **FR-AUTH4** — Agent Runs carry caller identity; actions scoped to caller permissions | Run carries caller principal; agent actions bounded to caller's permissions; caller recorded on coordination/memory/metering | **FR-AUTH4** (§9.15), D9, NFR-OBS4 |
+| **FR-AUTH5** — non-admin UI adapts (hides Agents/Teams/Skills mgmt) | Role-adaptive console; non-admin surfaces hidden — affordance layered on server-side enforcement | **FR-AUTH5** (§9.15), R19 |
+| **Update personas** (admin vs project-scoped user) | Two human roles mapped onto the four audiences (Priya→admin, Sam→project-scoped) | §5 "Human roles" note |
+| **Update journeys** with login/role context | Login + role scoping woven into Priya (5.1), Sam (5.2), Morgan (5.4); new admin-onboarding journey | §5.1, §5.2, §5.4, **§5.5** |
+| **Update NFRs** (security, audit) | Server-side authn/authz enforcement; authn/authz audit trail incl. caller-behind-Run | **NFR-SEC10** (security), **NFR-OBS4** (audit) |
+
+**FR↔architecture status — gap OPENED, routed (not yet closed).** Unlike r3/r4/r5, the architecture
+(`03-architecture.md` r19) contains **no** human-auth/console-RBAC design (0 FR-AUTH references; its
+"auth" is Claude-credential OAuth, its "RBAC" is K8s workload RBAC). r6 therefore **opens** a
+PRD↔architecture gap rather than closing one. A **follow-up Architecture child issue** (§14) is created to
+add the human-identity plane to the architecture (session/token + OIDC seam per OQ19; uniform
+enforcement point + caller-identity propagation per OQ20) so lockstep is restored **before** Phase 4
+stories are written against Theme O.
+
 ---
 
 - **Gate:** CEO (BigBoss) approval, routed by Alfred (CTO). Per the kickoff, **no architecture work
@@ -1112,6 +1269,7 @@ per-component deployables (FR-L*), with image build/publish tracked in the CI pi
 | CEO r3 ISI-2145..2150 | §13.3 requirement→change map (r3 via ISI-2152) |
 | CEO NATS decision (r4, ISI-2134) — plugin backbone | Theme M (FR-M*), FR-L4, NFR-REL4/EXT3/SEC9, OQ18, R18, §13.4 |
 | CEO checklist completeness (r5) — GRAIL/Ollama/org/agent-detail/context/lifecycle | FR-E8, FR-D6, FR-F8/F9, FR-I4, Theme N (FR-N*); §13.5 coverage matrix |
+| CEO r6 ISI-2302 (human auth & RBAC) | **Theme O (FR-AUTH1…5)**, D9, NFR-SEC10, NFR-OBS4, §5 roles + §5.5 journey, OQ19/OQ20, R19/R20; §13.6 change map |
 
 ---
 
@@ -1216,3 +1374,38 @@ rides an existing seam (Run reconciler, shim, memory seam, console read models).
 **FR↔architecture lockstep re-verified (§13.5):** FR-E8↔§7.6/ADR-024, FR-D6↔§10.3/ADR-026,
 FR-F8/F9↔§13, Theme N↔§8.5/§8.6/ADR-028. **Phase 4 story writing waits on this r5 re-review** so stories
 are written against the complete, ratified capability contract.
+
+---
+
+## CEO Gate — r6 Re-Review Requested — 2026-08-12 (human authentication & RBAC)
+
+**Status: PENDING CEO (BigBoss) re-review — supersedes the r3/r4/r5 requests above.**
+
+**Why r6:** the PRD (through r5) defined **agent-workload isolation** (K8s RBAC) and **BYO
+agent→provider credentials**, but had **no human end-user identity** for the console/API — no login, no
+roles, no per-`Project` membership. ISI-2302 closes that: **Theme O (FR-AUTH1…AUTH5)** adds the
+**human-identity + authorization plane** as a distinct **third** trust plane (D9).
+
+**What changed in r6:**
+
+1. **Theme O — authentication & human RBAC (FR-AUTH1…AUTH5).** Username/password login behind an
+   **OIDC/SSO-ready seam** (FR-AUTH1); **admin** CRUDs users + assigns per-`Project` memberships
+   (FR-AUTH2); **project-scoped users see only their authorized Projects** (FR-AUTH3, server-side);
+   **agent Runs carry the caller's identity and are scoped to the caller's permissions** (FR-AUTH4); the
+   **console adapts to role** (hides Agents/Teams/Skills mgmt for non-admins — FR-AUTH5).
+2. **D9** — human identity/authz as a first-class trust boundary, **server-side-enforced**, aligned to
+   the existing `Project`/squad tenancy boundary and bridged into the provenance/principal model.
+3. **NFR-SEC10** (server-side enforcement; broken-access-control test) + **NFR-OBS4** (authn/authz audit,
+   caller-behind-every-Run); persona/journey updates (§5); OQ19/OQ20; R19/R20.
+
+**Requesting BigBoss confirm:** (a) the **v1 auth scope** — username/password + two roles + `Project`
+membership behind an OIDC/SSO-ready seam, with full IdP/MFA/SCIM deferred to Phase 2 (§11.5); (b)
+acknowledgement that r6 **opens a new PRD↔architecture gap** (architecture has no human-auth section) that
+a **follow-up Architecture issue** must close **before** Phase 4 stories are written against Theme O; and
+(c) the prior ratification items still stand unchanged (discussion-room fence, NATS framing, best-effort
+metering precision).
+
+**FR↔architecture status:** **GAP OPENED, ROUTED (§13.6).** Architecture (r19) has 0 FR-AUTH refs; a
+child issue routes OQ19 (session/token + OIDC seam) and OQ20 (uniform enforcement point + caller-identity
+propagation) to the Architect. **Phase 4 story writing on Theme O waits on both this r6 re-review and the
+architecture follow-up.**
