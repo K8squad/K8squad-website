@@ -6,6 +6,9 @@ inputDocuments:
   - ISI-1406                          # Sympozium observable-llm — 7-signal taxonomy (reason-labeled runs, handoff latency, memory r/w, access decisions, traceparent chain)
   - Sympozium PR #11 / PR #18         # OTel instrumentation (traces+metrics+logs; traceparent on AgentRun CR; noop-on-unset; slog+otelslog; HTTP-transport auto-trace)
   - ISI-1918                          # MemOS memory-semconv v0.1.0 (memory.tier/operation/cube.id; memory_operations_total, memory_operation_duration_ms, memory_result_count)
+  - ISI-2303                          # RBAC arch (identity provider, RBAC middleware, Users/ProjectMemberships/Roles data model, Runs carry initiatedByUserId, CRD createdBy/ownedBy) — the identity model this revision instruments
+  - ISI-2302                          # RBAC PRD FR-AUTH1..5 (login, admin user CRUD, project-scoped visibility, caller-identity propagation, adaptive UI)
+  - ISI-2304                          # RBAC epics — Epic 13 "user-scoped telemetry dimensions" is the story this plan specs
 workflowType: 'observability-plan'
 authoringMode: 'O11y-engineer-led synthesis over the CEO-approved PRD + Architect Gate-2 architecture; reuses org OTel prior art'
 project_name: 'KSquad'
@@ -17,6 +20,9 @@ parent: 'ISI-2116'
 program: 'ISI-2115'
 depends_on_architecture: 'ISI-2119 (docs/bmad/03-architecture.md, commit 7b91079)'
 honors: [operator-safety-over-expressiveness, two-records-principle, secrets-never-leave-the-seam, vendor-neutral-otel, cardinality-discipline]
+revisions:
+  - r1 (2026-08-12, ISI-2306 / KSquad RBAC series): added user-scoped telemetry & audit. Threads the human-user identity dimension (`ksquad.user.id` = Run `initiatedByUserId`, from ISI-2303) through every span/log/exemplar (§3), forbids it as a raw metric label (§1.2/§5.6 — it is unbounded per-actor, rolled up in the backend like §15's per-ticket cost), adds the security audit log class (§6) + auth/authz/admin metrics + RBAC security signals (new §16), alerts (§9), semconv attrs (§7), and the user-activity / per-project dashboard. Depends on ISI-2303 landing the identity model to be truthful (flagged §16.7). No cardinality-law exception introduced; no new architectural decision — instruments the RBAC decisions made in ISI-2303.
+depends_on_rbac_architecture: 'ISI-2303 (Users/ProjectMemberships/Roles + auth service + initiatedByUserId + createdBy/ownedBy) — user-scoped telemetry is truthful only once this lands; see §16.7'
 ---
 
 # Observability Plan — KSquad
@@ -44,10 +50,14 @@ honors: [operator-safety-over-expressiveness, two-records-principle, secrets-nev
    trace; every log line carries `trace_id`/`span_id`; every span carries the same `ksquad.run.id`.
    The join key across all three pillars is the **Run**.
 2. **Cardinality is the enemy — the Run is a trace/log dimension, never a metric label.**
-   `run.id`, `work_item.id`, `principal.id`, `sandbox.pod`, `trace_id` are **unbounded** → they live on
-   spans, logs, and metric **exemplars**, *never* as Prometheus label values. Metric labels are drawn
-   only from the **bounded** enum sets in §5.6. This is the single rule most likely to be violated; it
-   is a first-class review gate (§12).
+   `run.id`, `work_item.id`, `principal.id`, **`user.id` (= `initiatedByUserId`, §16)**, `sandbox.pod`,
+   `trace_id` are **unbounded** → they live on spans, logs, and metric **exemplars**, *never* as
+   Prometheus label values. Metric labels are drawn only from the **bounded** enum sets in §5.6. This is
+   the single rule most likely to be violated; it is a first-class review gate (§12). *Corollary for the
+   RBAC revision:* "every metric carries user identity" (ISI-2306) is satisfied by the **exemplar** — the
+   §1.1 correlation link, not a label — so per-user drill-down is a trace/audit join, never a per-series
+   explosion (§16.2). Bounded scope dimensions (`project`, `role`) stay as labels/resource attrs for the
+   cheap aggregations.
 3. **Vendor-neutral at the seam.** Instrumentation is OTel SDK + semantic conventions only. Backend
    choice (Prometheus scrape, Dynatrace OTLP, LGTM) is a **collector exporter** decision, swappable
    without touching a line of service code. Mirrors the architecture's own seam discipline (§7.4).
@@ -55,7 +65,10 @@ honors: [operator-safety-over-expressiveness, two-records-principle, secrets-nev
    never logged/echoed/artifacted — and by extension never span-attributed. Agent-authored strings
    (memory content, work-item bodies, model output) are **untrusted input** (§8.4 arch, R9): they are
    PII-scanned and are never emitted verbatim as span/log attributes — only hashes, lengths, kinds,
-   and provenance IDs.
+   and provenance IDs. **User PII is the same class (RBAC revision):** the only user identifier that ever
+   enters telemetry is the **opaque `ksquad.user.id` (UUID)**; usernames, emails, passwords, and session
+   tokens are **never** emitted as attributes, log bodies, or audit fields — the redaction processor (§6)
+   backstops it and the security audit log stores actor identity as the opaque id only (§16.4).
 5. **Instrument once, phase the export.** SDK is wired into every service from day one with a
    **noop-on-unset** fallback (Sympozium pattern: providers are noop when `OTEL_EXPORTER_OTLP_ENDPOINT`
    is empty — zero overhead, zero risk). Turning observability on is an operator config, not a redeploy.
@@ -115,6 +128,8 @@ TRACE ROOT: Run <ksquad.run.id>                                     (operator, R
 
 | Boundary | Carrier | Owner |
 |----------|---------|-------|
+| console/CLI → apiserver (request) | **authenticated session → `ksquad.user.id`** (= `initiatedByUserId`) on the request context; RBAC middleware (ISI-2303) resolves it before any span opens | auth/BFF middleware (ISI-2303) |
+| apiserver → `Run` CR (create) | **`Run.spec.initiatedByUserId`** — durable identity of the human who triggered the Run; the operator stamps `ksquad.user.id` on the Run root span/logs from it | apiserver + Run controller (§5.2) |
 | operator → apiserver (coordination writes) | gRPC/HTTP OTel propagator (auto) | control plane |
 | operator/apiserver → shim | **A2A task metadata** `traceparent` field | `internal/a2a` (§7) |
 | controller ↔ `Run` CR (async, cross-restart) | **`Run.status` annotation** `ksquad.io/traceparent` | Run controller (§5.2) |
@@ -134,6 +149,14 @@ renders a **Paperclip-style per-ticket activity timeline** by joining traces + c
 `run_events` on `work_item.id`: claims, Runs, phase transitions, SSE progress, artifact appends,
 terminal reasons, in causal order. This costs nothing at the metrics layer — `work_item.id` stays
 forbidden as a metric label (§1.2/§5.6) and lives exactly where unbounded IDs belong.
+
+**Per-user activity view (RBAC revision, ISI-2306).** Every span, log line, and metric exemplar a Run
+emits also carries **`ksquad.user.id`** (the `initiatedByUserId` the Run was created with, §5.2), so the
+same join mechanism yields a **per-user activity timeline** ("who triggered which Runs, on which
+projects") and, scoped by the bounded `project` dimension, the **per-project usage breakdown** the
+dashboard needs (§16.6). Identity is *durable state on the `Run` CR*, not request-time context — so the
+attribution survives a controller restart exactly as the `traceparent` annotation does. `user.id` obeys
+the cardinality law identically to `work_item.id`: exemplar/trace/log only, never a metric label (§16.2).
 
 ---
 
@@ -164,8 +187,9 @@ forbidden as a metric label (§1.2/§5.6) and lives exactly where unbounded IDs 
 
 ### 4.3 Span attributes (bounded, PII-safe)
 
-Standard on every span: `ksquad.run.id`, `ksquad.team` (squad namespace), `ksquad.project`,
-`ksquad.runtime`, `service.name`, plus OTel resource (`k8s.namespace.name`, `k8s.pod.name`,
+Standard on every span: `ksquad.run.id`, **`ksquad.user.id`** (the initiating human, §16), `ksquad.team`
+(squad namespace), `ksquad.project`, `ksquad.runtime`, `service.name`, plus OTel resource
+(`k8s.namespace.name`, `k8s.pod.name`,
 `k8s.node.name` — injected by the collector's `k8sattributes` processor, **not** hand-set). Content
 attributes are **hash/length/kind only**, never raw text (§1.4).
 
@@ -262,7 +286,7 @@ implement it.
 | `ksquad.a2a.sse.stream.active` | gauge | — | live SSE streams (drives the console "live" pulse) |
 | `ksquad.shim.capability.negotiated` | counter | `runtime`, `capability` (streaming\|tool_calls\|interactive), `supported` (bool) | **capability negotiation** honesty (FR-D4, §7.2) |
 | `ksquad.shim.conformance.result` | gauge | `runtime`, `check` | **conformance-suite** pass/fail per check (§7.5) — CI-emitted |
-| `ksquad.agent.tokens` | counter | `runtime`, `direction` (input\|output) | token accounting (Sympozium `agent.context.input_tokens`), best-effort per shim; **per-ticket rollups** aggregate on `work_item.id` via exemplars/traces (§15), never as a label |
+| `ksquad.agent.tokens` | counter | `runtime`, `direction` (input\|output) | token accounting (Sympozium `agent.context.input_tokens`), best-effort per shim; **per-ticket** rollups aggregate on `work_item.id` and **per-user cost** rollups aggregate on `user.id` — both via exemplars/traces (§15/§16.5), never as a label |
 
 `capability` and `check` are bounded by the conformance suite's fixed check list (§7.5 arch) — a vendor
 adding a runtime cannot inflate cardinality because the check set is fixed by the suite, not the runtime.
@@ -273,13 +297,19 @@ adding a runtime cannot inflate cardinality because the check set is fixed by th
 `phase`, `from`/`to` (phase enum), `runtime` (openclaw\|hermes\|…, finite), `runtime_class`
 (kata\|gvisor), `operation`, `result`, `state`, `kind`, `trigger`, `reason` (curated enums),
 `decision`, `surface`, `capability`, `check`, `direction`, `pool_hit`, `cause`, `error_code`,
-`provenance_class`, `signal`, `endpoint`, `source`, `cache_hit`, `live` (build browser, ISI-2165).
+`provenance_class`, `signal`, `endpoint`, `source`, `cache_hit`, `live` (build browser, ISI-2165),
+**`role`** (curated RBAC enum — `admin`\|`project_user`\|…, §16.2), **`auth_result`**
+(success\|failure\|locked), **`target_kind`** (user\|role\|membership\|team\|agent\|skill\|project\|config),
+**`action`** (create\|update\|delete\|grant\|revoke\|login\|logout\|refresh) — the RBAC additions (§16).
 Total series per instrument stays in the low hundreds.
 
 **Forbidden as metric labels (trace/log/exemplar only):** `run.id`, `work_item.id`, `principal.id`,
-`sandbox.pod`, `trace_id`, `team`/`project` names (these ride as **resource attributes** for scoping,
-which Prometheus federates without per-series explosion, or as exemplars). A CI check (§11) greps the
-instrumentation for label keys outside the allowlist and fails the build — cardinality discipline is
+**`user.id` (= `initiatedByUserId`)**, `sandbox.pod`, `trace_id`, `team`/`project` names, **usernames /
+emails / session tokens (never emitted at all — PII/secret, §1.4)**. Scope names (`team`, `project`) ride
+as **resource attributes** (Prometheus federates them without per-series explosion) or as exemplars;
+`user.id` rides as an exemplar/span/log dimension and is rolled up per-user in the backend (§16.2/§16.5).
+A CI check (§11) greps the instrumentation for label keys outside the allowlist and fails the build —
+`user.id` (and any username/email key) as a label is an explicit build failure. Cardinality discipline is
 tested, not hoped for.
 
 ---
@@ -289,20 +319,31 @@ tested, not hoped for.
 - **Structured, correlated:** Go services use `slog` + `otelslog` bridge (Sympozium pattern) so every
   line auto-carries `trace_id`, `span_id`, `ksquad.run.id`, `service.name`. Console (Node) uses `pino`
   with the same fields injected server-side in the BFF. JSON out; the collector adds k8s resource attrs.
-- **Two log classes, kept distinct:**
-  1. **Audit log = the `run_events`/`audit_log` rows in Postgres** (§6.1 arch) — the durable,
+- **Three log classes, kept distinct:**
+  1. **Run/coordination audit = the `run_events`/`audit_log` rows in Postgres** (§6.1 arch) — the durable,
      queryable operator-facing record (D4, NFR-OBS1). This is *authoritative* and is **not** replaced by
      stdout logs. Observability *exports a projection* of it (metrics §5.1, and optionally a log-pipeline
      mirror for the vendor backend) but never treats stdout as the audit source of truth.
-  2. **Application/diagnostic logs** — stdout JSON, sampled/leveled, for debugging. Ephemeral by
+  2. **Security audit log (RBAC revision, ISI-2306)** — a durable, queryable Postgres audit stream for
+     **identity and administrative events**: authentication (login success/failure/lockout, logout, token
+     refresh), authorization denials, and **admin/config mutations** (user CRUD, role assignment, project
+     membership grant/revoke, and every config change — Team/Agent/Role/Skill/Project/OTelConfig CRD edits
+     and Settings changes). Every row carries **actor `user.id`**, `action`, `target_kind` + opaque
+     target id, timestamp, source (IP/session), and a **before/after summary or hash** (never raw secret
+     values). This is the "**who triggered what Run, who changed what config**" record the ticket asks for;
+     it is *authoritative and append-only*, distinct from `run_events` (which is Run-scoped) and from
+     stdout. Retention/immutability follows the same policy as `audit_log`. Full spec: §16.4.
+  3. **Application/diagnostic logs** — stdout JSON, sampled/leveled, for debugging. Ephemeral by
      comparison.
 - **PII & secret redaction (mandatory, NFR-SEC3 + R9):** a collector `transform`/`redaction` processor
   runs a PII+secret scan on all log bodies and attributes before export: credential patterns
-  (`CLAUDE_CODE_OAUTH_TOKEN`, bearer/API-key shapes), emails, tokens, and known secret-ref keys are
-  dropped/hashed. Agent-authored content (memory bodies, work-item text, model output) is treated as
+  (`CLAUDE_CODE_OAUTH_TOKEN`, bearer/API-key shapes), **passwords and session/auth tokens (RBAC),
+  usernames and emails (RBAC PII, §1.4)**, and known secret-ref keys are dropped/hashed — only the opaque
+  `user.id` survives. Agent-authored content (memory bodies, work-item text, model output) is treated as
   **untrusted** and is never logged verbatim — only IDs, kinds, lengths, hashes. This scan is
   double-guarded: services must not log secrets in the first place (arch §12), and the collector is the
-  backstop.
+  backstop. **The security audit log itself is written already-clean** (opaque ids only) — the redaction
+  processor is defense-in-depth, not the primary control, on that path.
 - **Log levels as policy:** `INFO` for state transitions and audit-relevant events, `WARN` for
   retryable/backoff, `ERROR` for terminal-failure conditions. Reconcile loops log at `DEBUG` per
   iteration (level-triggered loops are chatty) — sampled at the collector.
@@ -331,7 +372,13 @@ the schema and telemetry is validated against it in CI.
 | `ksquad.memory.kind` | string | fact\|decision\|… | from `memory_records.kind` |
 | `ksquad.memory.provenance_class` | string | same_principal\|other_principal\|system | untrusted-read weighting (FR-E7) |
 | `ksquad.authz.decision` | string | `allowed`\|`denied` | Sympozium `access.decisions` shape |
-| `ksquad.authz.surface` | string | memory\|claim\|egress | |
+| `ksquad.authz.surface` | string | memory\|claim\|egress\|**project_membership**\|**admin**\|**api** | RBAC surfaces added (§16) |
+| `ksquad.user.id` | string | UUID (= Run `initiatedByUserId`, ISI-2303) | **initiating human**; span/log/exemplar only — never a metric label (§16.2). Usernames/emails are **not** registered (PII, never emitted) |
+| `ksquad.user.role` | string | curated enum `admin`\|`project_user`\|… | bounded → allowed metric label (§5.6); the caller's effective role |
+| `ksquad.auth.event` | string | login\|logout\|token_refresh\|password_change\|lockout | authentication event kind (§16.4) |
+| `ksquad.auth.result` | string | success\|failure\|locked | bounded label for `ksquad.auth.login.total` (§16.3) |
+| `ksquad.admin.target_kind` | string | user\|role\|membership\|team\|agent\|skill\|project\|config | what an admin mutation touched (§16.4) |
+| `ksquad.admin.action` | string | create\|update\|delete\|grant\|revoke | admin mutation verb (§16.4) |
 | `ksquad.fence.epoch` | int | monotonic | lease-epoch/fence token (§6.2) |
 
 **Reuse & alignment:** OTel resource semconv for `k8s.*`, `service.*`; OTel `gen_ai.*` where the shim can
@@ -359,9 +406,27 @@ architecture already mandates (§4.3 arch) — observability makes that test's o
 production signal, not just a CI gate. **Never** emit the offending content itself; the signal carries
 the record ID + hash + provenance only.
 
-Parallel `ksquad.authz.decisions{surface, decision}` covers the three authz surfaces (memory write,
-work-item claim, egress) — a rising `denied` rate is either an attack or a misconfiguration, both of
-which the operator must see.
+Parallel `ksquad.authz.decisions{surface, decision}` covers the authz surfaces (memory write, work-item
+claim, egress, **and the RBAC surfaces `project_membership` / `admin` / `api`** added in the RBAC
+revision) — a rising `denied` rate is either an attack or a misconfiguration, both of which the operator
+must see.
+
+**RBAC / authentication security signals (ISI-2306).** The RBAC layer (ISI-2303) is a new attack surface;
+it gets its own bounded security signals (full metric list §16.3):
+
+- **`ksquad.auth.login.total{auth_result}`** — a sustained spike in `failure` per user/IP (the identity
+  rides the **exemplar**, not a label) is **brute-force / credential-stuffing**; `locked` counts account
+  for lockout policy firing. Alerts §9.
+- **Privilege-escalation tripwire** — an `admin` change that grants the `admin` role or adds membership to
+  a sensitive project (`ksquad.admin.change.total{target_kind=role|membership, action=grant|update}`) is a
+  high-value audit event; anomalous timing/actor feeds a **security ticket** (§9). The authoritative
+  record is the security audit log (§16.4) — the metric is the rate/alert projection.
+- **`ksquad.authz.decisions{surface=project_membership, decision=denied}`** rising — a user probing
+  projects they are not a member of (FR-AUTH3). Never emit the target project *name*; the record id +
+  actor `user.id` ride the exemplar.
+
+As with poisoning signals, **never emit credentials or the offending payload** — auth signals carry the
+opaque `user.id`, the `auth_result`/`action`/`target_kind` enums, and a source hash only.
 
 ---
 
@@ -382,6 +447,9 @@ SLI is one of the metrics above; each alert is actionable and maps to an operato
 | **Poisoning candidates** `memory.poisoning.candidates` | 0 | any sustained non-zero | **page** (security) |
 | **Reconcile health** `reconcile.errors` | low | error rate spike per controller | **ticket** |
 | **Shim conformance** `shim.conformance.result` | all pass | any check regresses to fail (CI + runtime) | **block release** |
+| **Brute-force login** `auth.login.total{auth_result=failure}` (RBAC) | ≈ baseline | failure spike concentrated on a user/IP (via exemplar) **or** lockout rate > 0 sustained | **ticket** (security) |
+| **Privilege escalation** `admin.change.total{target_kind=role\|membership, action=grant}` (RBAC) | rare, expected | any `admin`-role grant, or membership change outside a change window / by an unexpected actor | **ticket** (security) |
+| **RBAC access probing** `authz.decisions{surface=project_membership, decision=denied}` (RBAC) | ≈ 0 legitimate | denial-rate spike (FR-AUTH3) | **ticket** (security) |
 
 **SLO philosophy:** the two **page**-grade correctness SLOs (claim latency, crash-reclaim health) are
 the ones the architecture stakes its differentiators on (§1: operator-safety, the coordination spine).
@@ -447,6 +515,7 @@ capability) is the path — noted as a fast-follow, not an MVP need.
 
 **CI gates (observability-as-code):**
 1. **Cardinality lint** — grep instrumentation for metric label keys outside the §5.6 allowlist → fail.
+   Explicitly fails on `user.id`/`initiatedByUserId`/username/email as a metric label (RBAC, §16.2 — OBS-9).
 2. **Semconv validation** — Weaver validates the registry; `validate-telemetry-data` runs emitted
    telemetry from an envtest/e2e Run against the schema.
 3. **Secret-leak scan** — the isolation suite (§4.3 arch) asserts no credential appears in any span/log
@@ -521,6 +590,11 @@ parallel with (not after) the foundational epic, exactly as §14 arch schedules 
 | Arch §9.2 egress | §10 collector egress-allowlist (tenancy input) |
 | Arch §4.6/§13.5 (OTel tracing = fast-follow) | §4.1 P0/P1 phasing (honored, not overridden) |
 | Sympozium ISI-1406 / PR #11/#18; MemOS ISI-1918 | §2 reuse map + §7 semconv |
+| **FR-AUTH1** (login) / **FR-AUTH4** (Runs carry caller identity) — ISI-2302 | §16.1 `ksquad.user.id`=`initiatedByUserId` on every span/log/exemplar; §16.3 `auth.login.total`; §16.4 auth audit |
+| **FR-AUTH2** (admin user/membership CRUD) — ISI-2302 | §16.3 `admin.change.total`; §16.4 admin/config-change audit; §16.6 admin dashboards |
+| **FR-AUTH3** (project-scoped visibility) — ISI-2302 | §16.6 user-scoped dashboards (BFF-enforced); §8/§16.3 `authz.decisions{surface=project_membership}` probing signal |
+| **FR-AUTH5** (adaptive UI) — ISI-2302 | §16.6 dashboards gated admin vs project-user |
+| ISI-2306 ticket: user cost / security events / dashboard | §16.5 per-user cost; §16.4 security audit log; §16.6 dashboards |
 
 ---
 
@@ -540,6 +614,148 @@ error-code taxonomy) is explicitly deferred to the architecture revision (ISI-21
 
 ---
 
+## 16. User-scoped telemetry & audit (RBAC series — ISI-2306)
+
+The KSquad RBAC series (ISI-2302 PRD FR-AUTH1..5 · ISI-2303 architecture · ISI-2304 epics) adds a
+**human-user identity layer**: an auth service + user store, RBAC middleware on the apiserver BFF, a
+`Users`/`ProjectMemberships`/`Roles` data model, and — the load-bearing hook for observability — **every
+`Run` carries `initiatedByUserId`** and CRDs carry `createdBy`/`ownedBy`. This section specs the telemetry
+and audit that makes that layer *observable*. It instruments the RBAC decisions made in ISI-2303; it adds
+**no new architectural decision** and — critically — **no exception to the cardinality law (§1.2)**.
+
+> **This is the observability half of Epic 13 ("user-scoped telemetry dimensions", ISI-2304).** The
+> enforcement (who *may* do what) lives in the RBAC middleware and auth service (ISI-2303); this plan
+> **observes** that enforcement, exactly as §8 observes the memory-poisoning defense it does not implement.
+
+### 16.1 The dimension: `ksquad.user.id`
+
+One new correlation dimension, `ksquad.user.id`, an **opaque UUID equal to the Run's `initiatedByUserId`**
+(ISI-2303 data model). It is stamped on **every span, log line, and metric exemplar** a Run emits
+(propagated per §3: authenticated session → `Run.spec.initiatedByUserId` → root span/logs → children).
+For **non-Run** work it is the acting user directly (an admin editing config, a user logging in). It joins
+against the `Users` table for display; **only the opaque id ever enters telemetry** — usernames and emails
+are PII and are never emitted (§1.4, §6 redaction backstop).
+
+### 16.2 The cardinality decision (the one call that matters)
+
+The ticket says *"every trace/span/metric carries user identity."* `user.id` is **unbounded per-actor**
+(grows with adoption), so making it a raw Prometheus label would violate the plan's #1 law and reintroduce
+exactly the series-explosion §1.2 exists to prevent. The resolution — consistent with the §15 per-ticket
+cost precedent, **no new latitude invented**:
+
+| Where user identity lives | Mechanism | Satisfies |
+|---------------------------|-----------|-----------|
+| **Traces / spans** | `ksquad.user.id` span attribute (§4.3) | "every trace carries user identity" — literally |
+| **Logs / audit** | `ksquad.user.id` field on every line + the security audit log (§16.4) | "every log carries user identity" — literally |
+| **Metrics** | `ksquad.user.id` on the **exemplar** (the §1.1 metric→trace link), **never a label** | "every metric carries user identity" — via the exemplar, the plan's own correlation model |
+| **Per-user aggregation** (cost, activity) | **backend rollup** over exemplars/traces/audit rows on `user.id` | dashboard drill-down without per-series explosion (§16.5/§16.6) |
+| **Cheap bounded breakdowns** | `role` (curated enum label) and `project` (resource attr) *are* metric labels | per-project / per-role dashboards at label speed |
+
+So "every metric carries user identity" is **true via the exemplar**, and per-user numbers are a
+trace/audit join — the same mechanism KSquad already uses for per-ticket token cost. **A CI gate (§11)
+fails the build if `user.id` (or any username/email key) appears as a metric label.** This is the honest
+trade-off: label-speed aggregation is available for the *bounded* dimensions the product actually slices
+on at scale (project, role); *identity-precise* drill-down is a join, which at KSquad's operator scale
+(tens–hundreds of users, human-slow query volume) is the correct cost to pay, not a compromise.
+
+### 16.3 Metrics — authentication, authorization & admin (bounded labels only)
+
+New instruments, all labels drawn from the §5.6 allowlist; `user.id` rides exemplars only.
+
+| Instrument | Type | Labels (bounded) | Why |
+|------------|------|------------------|-----|
+| `ksquad.auth.login.total` | counter | `auth_result` (success\|failure\|locked) | login throughput; `failure`/`locked` spikes = brute-force (§8, §9) |
+| `ksquad.auth.session.active` | up/down gauge | — | concurrent authenticated sessions |
+| `ksquad.auth.token.refresh.total` | counter | `result` (ok\|expired\|revoked) | session-token lifecycle health (session strategy, ISI-2303 ADR) |
+| `ksquad.authz.decisions` | counter | `surface` (…\|project_membership\|admin\|api), `decision` (allowed\|denied) | **the RBAC enforcement projection** — reuses the §8 instrument, `surface` enum extended |
+| `ksquad.admin.change.total` | counter | `target_kind` (user\|role\|membership\|team\|agent\|skill\|project\|config), `action` (create\|update\|delete\|grant\|revoke) | **"who changed what config"** — rate/alert projection of the §16.4 audit rows |
+| `ksquad.run.by_role.total` | counter | `role` (curated), `runtime` | per-role Run volume (bounded — feeds the dashboard without user-cardinality) |
+
+`role` and the `*_kind`/`action`/`auth_result` enums are the only new labels; all are curated finite sets
+(a user cannot inflate cardinality — the role set is admin-provisioned, ISI-2303). This mirrors the arch
+§17.2 rate-limit metrics that already dimension per **project/agent/role**.
+
+### 16.4 The security audit log — the authoritative "who did what"
+
+Log class #2 from §6. A durable, append-only Postgres stream (extends `audit_log`) that is the
+**authoritative record** the ticket's *audit-trail* and *security-event-logging* bullets ask for. It is
+distinct from `run_events` (Run-scoped) and is never sourced from stdout.
+
+**Event families & row shape** (every row: `ts`, actor `user.id`, `source` (IP/session hash), `action`,
+`target_kind`, opaque `target_id`, `result`, `detail` = before/after **summary or hash**, never raw
+secret/PII):
+
+- **Authentication** (`auth.event` ∈ login\|logout\|token_refresh\|password_change\|lockout) — login
+  attempts (success **and** failure), logout, refresh, lockout. *Failed* logins are recorded with the
+  attempted-username **hash** and source, never the password.
+- **Authorization denials** — every RBAC-middleware `denied` (surface + target id), so probing is
+  forensically reconstructable, not just a counter.
+- **Admin / config mutations** — user CRUD, **role change**, **project-membership grant/revoke**, and
+  **every config change**: Team/Agent/Role/Skill/Project **and** OTelConfig CRD edits (via `createdBy`/
+  `ownedBy` + the change) and console Settings changes. This is the *"who changed what config"* record.
+- **Run attribution** — the *"who triggered what Run"* fact is already durable as `Run.initiatedByUserId`
+  + the `run_events` rows (§5.1) carrying `user.id`; the security audit log **cross-links** it, it does not
+  duplicate the Run lifecycle.
+
+**Guarantees:** append-only, same retention/immutability policy as `audit_log`; written already-clean
+(opaque ids only); queryable by actor, target, time (powers the §16.6 dashboard and any compliance export).
+
+### 16.5 Per-user cost attribution (extends existing cost metering)
+
+The existing cost signal is `ksquad.agent.tokens{runtime, direction}` (§5.5), and §15 already established
+that per-X cost rollups are a **backend computation over exemplars/traces**, not a metric label. Per-user
+cost is the identical mechanism with **zero new metric**: `user.id` is already on every `agent.tokens`
+exemplar (§16.1), so the backend rolls tokens up by `user.id` (and by `user.id × project` using the bounded
+`project` scope) and applies the pricing model to produce **per-user / per-project cost**. If a first-class
+cost *unit* is later wanted (currency, not tokens), that is the same backend rollup with a price table — a
+computation over this signal, not a new label. Flagged for the FinOps/console owner as the natural home.
+
+### 16.6 Dashboard — user activity & per-project usage
+
+The ticket's dashboard is two panels, each built on a mechanism already specced — no new signal required:
+
+1. **User activity** — a per-user timeline (logins, Runs triggered, admin changes, cost) built by the
+   backend joining the **security audit log** (§16.4) + **traces/logs** on `user.id` (§16.1). This is the
+   §3 per-ticket-activity join, re-keyed on the user. Admin-only surface (FR-AUTH2/5).
+2. **Per-project usage breakdown** — Runs, tokens/cost, active users, failure rate **by `project`**, which
+   is a **bounded scope dimension** (resource attr / label), so this panel is label-speed metrics
+   (`ksquad.run.completed`, `ksquad.run.by_role.total`, `agent.tokens` federated by `project`) — no
+   per-user cardinality needed for the aggregate view; drill-down to a specific user is the §16.5 join.
+
+Both are **observability-as-code** (§1.6): the dashboards ship version-controlled in-repo like the rest.
+The console renders them via the BFF, **user-scoped** — a project user sees only their authorized projects
+(FR-AUTH3); the cross-user/all-project view is admin-gated (FR-AUTH2/5) and enforced in the BFF, not the
+dashboard.
+
+### 16.7 Dependency & disposition — truthful only once ISI-2303 lands
+
+**Honest gate (same posture as §15's work-item `blocked` deferral):** this instrumentation is *truthful*
+only once **ISI-2303** lands the identity model it reads —
+`Users`/`ProjectMemberships`/`Roles`, the auth service, RBAC middleware, `Run.initiatedByUserId`, and
+CRD `createdBy`/`ownedBy`. Until those exist there is no `user.id` to stamp. This plan **reserves the
+semconv and the audit schema now** (so the emitting services are built identity-aware from day one, not
+retrofitted — the expensive path §4.1 warns against), and depends on ISI-2303 for the model to be real.
+
+**Handoffs:**
+- **→ Architect (ISI-2303):** confirm the field name (`initiatedByUserId`), the `Role` enum surface
+  (`admin`\|`project_user`\|…), and that the **security audit log** is a first-class table in the RBAC data
+  model (the auth service must *write* it — observability projects/alerts on it, but the auth service owns
+  the source of truth). If ISI-2303 names the actor field differently, this plan follows it.
+- **→ Developer (Amelia), Epic 13 (ISI-2304):** **OBS-8 (P0)** — propagate `ksquad.user.id` from the RBAC
+  middleware onto every span/log/exemplar (§16.1) and emit the §16.3 auth/admin metrics + write the §16.4
+  security audit log; **OBS-9 (P0)** — extend the §11 cardinality CI gate to fail on `user.id`/username/
+  email as a metric label; **OBS-10 (P1)** — the §16.6 user-activity + per-project dashboards.
+- **→ Testing Architect (ISI-2305):** the security audit log completeness (every login/role-change/
+  membership-change produces exactly one authoritative row) and the **`user.id`-never-a-label** CI gate are
+  assertable KPIs — they belong in the auth/RBAC test suite alongside FR-AUTH enforcement tests.
+
+**Disposition:** revision **r1 (ISI-2306)** complete. Adds the user identity dimension, security audit log,
+auth/admin metrics + signals + alerts, per-user cost rollup, and the user-activity/per-project dashboards —
+all honoring the cardinality law with **no exception** and **no new architectural decision**. Blocked on
+nothing to *author*; **flagged** as truthful-once-ISI-2303-lands.
+
+---
+
 ## Appendix A — Signal-to-component matrix (the §17.2 coverage the ticket asked for)
 
 | Architecture component | Metrics | Traces | Logs / Audit | Alert |
@@ -550,7 +766,12 @@ error-code taxonomy) is explicitly deferred to the architecture revision (ISI-21
 | Memory service (§8) — r/w counters w/ provenance+scope, poisoning | §5.4 | memory.op span | denied-write logs (provenanced) | poisoning page, authz ticket |
 | Shim / A2A (§7) — SSE progress, capability negotiation, conformance | §5.5 | shim.execute span + traceparent | A2A lifecycle logs | conformance-regression block |
 | Build browser (design §9.4/ADR-021, ISI-2165) — reads, snapshot emit, RO-reader cost | `ksquad.buildbrowser.*` (component plan) | `buildbrowser.*` span (child live / **linked** completed) | scope-denial + emit-failure + reader logs | "no build view" coverage, RO-reader cost, scope-denial — **all ticket-grade** | see `design/build-browser-observability-plan.md` |
+| **Identity / RBAC (ISI-2303, §16)** — login, authz decisions, admin/config change, user cost | §16.3 `auth.*`/`authz.decisions`/`admin.change.*`/`run.by_role.*` (labels bounded; `user.id` on exemplars) | `ksquad.user.id` on **every** span (§16.1) | **security audit log** (§16.4, authoritative) + `user.id` on all logs | brute-force / privilege-escalation / access-probing — **security-grade** (§9) |
 
 **Disposition:** this plan is the observability design for the Gate-2 architecture, ready to feed Phase-4
-epics (OBS-1..7). It adds no architectural decisions, honors the arch's tracing phasing, and reuses the
-org's Sympozium/MemOS OTel taxonomy. Ready for Architect/CTO review alongside the architecture at Gate 2.
+epics (OBS-1..7, plus OBS-8..10 for the RBAC user-scoped layer, §16.7). It adds no architectural
+decisions, honors the arch's tracing phasing, and reuses the org's Sympozium/MemOS OTel taxonomy. **RBAC
+revision r1 (ISI-2306)** layers user-scoped telemetry & audit (§16) with **no cardinality-law exception** —
+`user.id` on spans/logs/exemplars, per-user rollups in the backend, bounded `role`/`project` labels for the
+dashboards, and an authoritative security audit log — flagged truthful-once-ISI-2303-lands. Ready for
+Architect/CTO review alongside the architecture at Gate 2.
