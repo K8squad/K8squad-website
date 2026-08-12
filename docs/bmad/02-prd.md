@@ -861,14 +861,16 @@ credentials**, the following are first-class domain constraints, not optional NF
   to a concrete human actor so the audit trail answers *"who did this, on whose behalf"* (NFR-OBS4). This
   is the **human-identity ↔ agent-action bridge** (D9). *(MVP.)*
 - **FR-AUTH5** The console SHALL **adapt to the caller's role + access level**: a **non-admin `user`**
-  SHALL NOT be shown platform-management surfaces they cannot use — **`Agents`/`Teams`/`Skills`
-  management, user administration, and cross-`Project`/global views SHALL be hidden**, leaving only their
-  authorized `Project`s and the operational/collaboration surfaces within them. In addition, a
+  SHALL see **`Agents`, `Teams`, and `Skills` in read-only mode** — they can browse agent details, team
+  organization diagrams, and skill definitions, but **cannot create, edit, or delete them** (only the
+  CRUD management actions are hidden). **User administration and cross-`Project`/global views SHALL be
+  hidden**, leaving only their authorized `Project`s and the operational/collaboration surfaces within them.
+  In addition, a
   **`viewer`** on a `Project` SHALL NOT be shown **mutate affordances** within it (compose/edit, start/kill
   Run, and other write actions), leaving a **read-only** view. UI adaptation is a **usability affordance
   layered on top of the server-side enforcement of FR-AUTH3 and the per-`Project` write check (D9,
   NFR-SEC10) — never a substitute for it** (R19). *(MVP — `viewer` read-only clause added r7 ISI-2310;
-  vocabulary normalized r8 ISI-2313.)*
+  vocabulary normalized r8 ISI-2313; Agents/Teams/Skills corrected to read-only (not hidden) for non-admin r9 ISI-2336.)*
 - **Scope guard:** v1 authentication is **username/password behind an OIDC/SSO-ready seam**; v1
   authorization granularity is **two global roles (`admin`/`user`) + `Project` membership + the three
   per-`Project` access levels (`viewer`/`contributor`/`maintainer`)**, enforced server-side. **Full external
@@ -1373,7 +1375,7 @@ per-component deployables (FR-L*), with image build/publish tracked in the CI pi
 | **FR-AUTH2** — admin CRUD users, assign project memberships | `admin` CRUDs accounts + per-`Project` memberships; **two global roles (`admin`/`user`) + three per-`Project` access levels (`viewer`/`contributor`/`maintainer`)** — r7 ISI-2310, normalized r8 ISI-2313 | **FR-AUTH2** (§9.15) |
 | **FR-AUTH3** — users see only authorized projects | Server-side per-`Project` visibility/access enforcement, aligned to the tenancy boundary | **FR-AUTH3** (§9.15), NFR-SEC10, D9, R19 |
 | **FR-AUTH4** — Agent Runs carry caller identity; actions scoped to caller permissions | Run carries caller principal; agent actions bounded to caller's permissions; caller recorded on coordination/memory/metering | **FR-AUTH4** (§9.15), D9, NFR-OBS4 |
-| **FR-AUTH5** — non-admin UI adapts (hides Agents/Teams/Skills mgmt) | Role-adaptive console; non-admin surfaces hidden — affordance layered on server-side enforcement | **FR-AUTH5** (§9.15), R19 |
+| **FR-AUTH5** — non-admin UI adapts (Agents/Teams/Skills read-only; user admin hidden) | Role-adaptive console; non-admin sees Agents/Teams/Skills in read-only mode (CRUD actions hidden); user admin and cross-Project views hidden — affordance layered on server-side enforcement | **FR-AUTH5** (§9.15), R19 |
 | **Update personas** (roles + access levels) | Canonical model mapped onto the audiences (Priya→global `admin`; Sam→`user` holding per-`Project` `maintainer`/`contributor`; stakeholder/auditor→`user` holding per-`Project` `viewer`) — r7 ISI-2310, normalized r8 ISI-2313 | §5 "Human roles" note |
 | **Update journeys** with login/role context | Login + role scoping woven into Priya (5.1), Sam (5.2), Morgan (5.4); new admin-onboarding journey | §5.1, §5.2, §5.4, **§5.5** |
 | **Update NFRs** (security, audit) | Server-side authn/authz enforcement; authn/authz audit trail incl. caller-behind-Run | **NFR-SEC10** (security), **NFR-OBS4** (audit) |
@@ -1557,7 +1559,7 @@ roles, no per-`Project` membership. ISI-2302 closes that: **Theme O (FR-AUTH1…
    **OIDC/SSO-ready seam** (FR-AUTH1); **admin** CRUDs users + assigns per-`Project` memberships
    (FR-AUTH2); **project-scoped users see only their authorized Projects** (FR-AUTH3, server-side);
    **agent Runs carry the caller's identity and are scoped to the caller's permissions** (FR-AUTH4); the
-   **console adapts to role** (hides Agents/Teams/Skills mgmt for non-admins — FR-AUTH5).
+   **console adapts to role** (non-admins see Agents/Teams/Skills **read-only**; user admin hidden — FR-AUTH5).
 2. **D9** — human identity/authz as a first-class trust boundary, **server-side-enforced**, aligned to
    the existing `Project`/squad tenancy boundary and bridged into the provenance/principal model.
 3. **NFR-SEC10** (server-side enforcement; broken-access-control test) + **NFR-OBS4** (authn/authz audit,
