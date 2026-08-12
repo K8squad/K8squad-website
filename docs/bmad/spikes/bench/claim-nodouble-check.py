@@ -199,6 +199,24 @@ def check_model():
     assert fence_ok, "a claim returned a non-positive fence token"
     print("[model] PASS — naive detectably breaks; §6.2 holds no-double-claim.\n")
 
+    # (C) belt-and-suspenders (story lines 12-15): EACH mechanism alone must hold
+    #     no-double-claim, so a regression that silently disables ONE is still
+    #     caught by the other. Test the two single-mechanism arms explicitly —
+    #     both-on vs both-off (A/B) can't distinguish "one mechanism rotted".
+    for label, sl, cas in [("row-lock only (CAS off)", True, False),
+                           ("CAS only (no row lock)", False, True)]:
+        arm = run_model(skip_locked=sl, cas=cas)
+        arm_doubles, arm_fence = audit(arm)
+        arm_claimed = {i for i, _, _ in arm}
+        print(f"[model] indep: {label:24} "
+              f"{len(arm_doubles)} double-claimed, {len(arm_claimed)}/{N_ITEMS} claimed")
+        assert not arm_doubles, (
+            f"DOUBLE-CLAIM with {label}: the OTHER mechanism failed to cover a "
+            f"disabled one — belt-and-suspenders (lines 12-15) is broken: {arm_doubles}")
+        assert arm_claimed == set(range(N_ITEMS)), f"lost work with {label}"
+        assert arm_fence, f"non-positive fence with {label}"
+    print("[model] PASS — each mechanism independently holds no-double-claim.\n")
+
 
 # ---------------------------------------------------------------------------
 # Optional: run the EXACT §6.2 SQL against a real Postgres (Story 2.7 CI path).

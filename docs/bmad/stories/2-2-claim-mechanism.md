@@ -82,10 +82,28 @@ acq AS (
 done AS (
   UPDATE work_item SET state = 'claimed'
    WHERE id IN (SELECT work_item_id FROM acq)
+),
+-- (4) Coordination audit (§6.5) — SAME txn, AC6. Fed from acq, so a failed
+--     acquire writes zero audit rows (no trail for a claim that never happened).
+aud AS (
+  INSERT INTO coord_audit (work_item_id, principal, action, at)   -- cols per Story 2.1 §6.5
+  SELECT work_item_id, :me, 'claim.acquire', now() FROM acq
+),
+-- (5) claim.acquired domain event → transactional outbox (§6.6) — SAME txn, AC6.
+--     SELECT FROM acq ⇒ zero rows on a failed acquire (no phantom event; no
+--     event without a claim). Story 2.5 owns the relay; this story writes the row.
+evt AS (
+  INSERT INTO outbox (topic, work_item_id, fence_token, payload, created_at)  -- cols per §6.6/Story 2.5
+  SELECT 'claim.acquired', work_item_id, fence_token,
+         jsonb_build_object('holder', :me, 'run', :run), now() FROM acq
 )
 SELECT work_item_id, fence_token FROM acq;   -- 1 row ⇒ claimed(fence); 0 rows ⇒ nothing to claim
 
 COMMIT;
+-- NB (AC6): effects (4)/(5) MUST ride this same txn. A dev copying an earlier
+-- draft that stops at (3) ships a claim with no audit/outbox row — AC6 fail,
+-- and Story 2.5's relay has nothing to relay. The SELECT-FROM-acq pattern is
+-- what makes them fire iff the acquire succeeded.
 ```
 
 **Row returned ⇒ this Run holds `work_item_id` with fence `fence_token`.** Zero rows ⇒ no open,
@@ -94,14 +112,50 @@ unlocked, acquirable item was available this pass; the caller checks whether any
 transactions**, because the `FOR UPDATE SKIP LOCKED` row lock on the picked `work_item` is held until
 `COMMIT` and the conditional `UPDATE claim` rejects any acquire of a live-leased row.
 
-**Claim-row lifecycle (F3):** the `claim` row exists **one-per-work-item**. Two equivalent
-implementations — pick the idempotent one:
+**Targeted variant (F5 second entry shape — AC2, pinned so it can't drift from the queue-pull path):**
+identical `acq`/`done`/`aud`/`evt` effects; **only the `picked` CTE changes** — one named row, **no
+`SKIP LOCKED`**:
+
+```sql
+-- Targeted: scheduler set Run.spec.workItemRef (§5.2). Serialize on THAT one row.
+WITH picked AS (
+  SELECT id FROM work_item
+   WHERE id = :ref AND state = 'open'
+   FOR UPDATE                 -- plain FOR UPDATE: block on the row, do NOT skip it
+), acq AS ( … identical conditional fence-bump acquire … ),
+   done AS ( … ), aud AS ( … ), evt AS ( … )   -- effects (2)-(5) byte-for-byte the same
+SELECT work_item_id, fence_token FROM acq;
+-- 1 row ⇒ claimed. 0 rows ⇒ that SPECIFIC item is no longer `open` (already claimed / gone) —
+-- a FIRST-CLASS distinct outcome (AC2), NOT "skipped, retry". queue-empty ≠ target-taken (F5).
+```
+
+The CAS acquire (2) is **mandatory in both variants** — dropping it from the targeted path (because
+"only one row, why race?") reopens the reclaim/lease-expiry double-acquire F5 was pinned to close.
+
+**Claim-row lifecycle (F3):** the `claim` row exists **one-per-work-item**. Two implementations —
+**the lazy path is pinned as the shipped one** (the eager path has a silent-livelock hazard, below):
 - **eager:** create `claim(work_item_id, holder=NULL, fence_token=0)` in the same txn that inserts the
-  `work_item` (Story 2.1). The acquire is then a pure `UPDATE` (above).
-- **lazy (recommended):** collapse create-or-acquire into `INSERT INTO claim(work_item_id, …) VALUES (…)
-  ON CONFLICT (work_item_id) DO UPDATE SET … WHERE claim.holder_principal IS NULL OR
-  claim.lease_expires_at < now()`. Idempotent, re-entrant (§6.4), and keeps `work_item` creation
-  decoupled from claim creation. Either way the row is **rewritten in place**, never appended.
+  `work_item` (Story 2.1). The acquire is then a pure `UPDATE` (above). ⚠️ **Hazard (review, ISI-2337):
+  the pure `UPDATE claim` matches nothing if the row was never created.** `acq` is then empty → zero
+  rows → the item stays `open` and the lock releases; with the FIFO `ORDER BY created_at` the very next
+  pass re-picks the *same* item and fails identically → **livelock, masked as "all locked" (lost work,
+  never surfaced)**. Only ship eager if claim-row creation is a *transactional invariant* of
+  `work_item` insert (same-txn in 2.1) **and** an assertion/count guards it — otherwise use lazy.
+- **lazy (PINNED):** collapse create-or-acquire into one idempotent statement:
+  ```sql
+  INSERT INTO claim (work_item_id, holder_principal, run_id, fence_token, lease_expires_at, acquired_at, renewed_at)
+  VALUES (:wi, :me, :run, 1, now() + :lease, now(), now())     -- fresh claim ⇒ fence_token = 1, NOT 0
+  ON CONFLICT (work_item_id) DO UPDATE
+     SET holder_principal = :me, run_id = :run,
+         fence_token      = claim.fence_token + 1,             -- monotonic bump on re-acquire
+         lease_expires_at = now() + :lease, acquired_at = now(), renewed_at = now()
+   WHERE claim.holder_principal IS NULL OR claim.lease_expires_at < now()
+  RETURNING work_item_id, fence_token;
+  ```
+  ⚠️ **Pin `fence_token = 1` on the INSERT branch (review, ISI-2337):** a fresh lazy claim that defaults
+  to `0` returns a non-positive fence — violates AC1 ("positive, monotonic") and the falsification's
+  `fence >= 1` assertion. Idempotent, re-entrant (§6.4), decouples `work_item` from claim creation, and
+  has **no missing-row livelock**. Either way the row is **rewritten in place**, never appended.
 
 ## Acceptance Criteria
 
@@ -158,16 +212,22 @@ trail or a phantom event with no claim. (The outbox **relay** is Story 2.5; this
 
 ```
 [model] N=200 items, M=32 claimers, real threads
-[model] NAIVE (no row lock, no CAS): 200 item(s) double-claimed
+[model] NAIVE (no row lock, no CAS): 198 item(s) double-claimed
 [model] §6.2  (FOR UPDATE SKIP LOCKED): 0 double-claimed, 200/200 items claimed
 [model] PASS — naive detectably breaks; §6.2 holds no-double-claim.
+[model] indep: row-lock only (CAS off)  0 double-claimed, 200/200 claimed
+[model] indep: CAS only (no row lock)   0 double-claimed, 200/200 claimed
+[model] PASS — each mechanism independently holds no-double-claim.
 ```
 
 - **Default (no deps):** an in-process model of Postgres row locking driven by **real threads**. It
   removes both protections in the naive variant to keep its detecting power honest, then proves the
   §6.2 variant (SKIP-LOCKED row lock held to commit **+** conditional CAS) holds no-double-claim and
   claims all 200 items. Exits non-zero if the naive variant *stops* double-claiming (teeth lost) or the
-  §6.2 variant *ever* double-claims / loses an item / returns a non-positive fence.
+  §6.2 variant *ever* double-claims / loses an item / returns a non-positive fence. It also runs the two
+  **single-mechanism arms** (row-lock-only, CAS-only) and asserts each *independently* holds
+  no-double-claim — so a regression that silently disables **one** of the two mechanisms is caught here,
+  not just the both-off naive case (ISI-2337 review; honors the belt-and-suspenders claim, lines 12-15).
 - **Real Postgres (Story 2.7 CI path):** set `DATABASE_URL` and install `psycopg`; the harness runs the
   **exact §6.2 SQL** (the CTE above) across M connection-backed claimers and asserts the same
   invariants against a live server. This is the authoritative gate; the model check guards the *logic*.
