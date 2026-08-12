@@ -16,6 +16,7 @@ inputDocuments:
 status: draft-for-devops-cosign-off
 revisions:
   - r1 (2026-08-11, ISI-2157): initial testing methodology + CI/CD design; DevOps-owned sections (§11) flagged for co-sign
+  - r2 (2026-08-12, ISI-2305): added §6.7 **Authentication & Authorization (RBAC) test matrix** — auth session lifecycle, admin/user access matrix per endpoint, per-project isolation, agent-identity + scoped-credential enforcement, privilege-escalation prevention, console adaptive-nav (non-admin UI), and the auth+middleware+agent integration case. §6 intro bumped six→seven mechanisms; traceability (§12) + epic map (§3.3) extended; **open item: human console authN mechanism (OIDC/IdP vs local cred) is unpinned — needs an ADR (§13)**, so the auth-session cases are written mechanism-aware and the IdP-delegated variant is the design-consistent default
 ---
 
 # KSquad Testing Strategy & CI/CD Methodology
@@ -108,7 +109,7 @@ own image, SBOM, CVE scan, and test lane.
 | 5 Shims & A2A | shims | Agent Card generation, capability negotiation, **deterministic `a2a_task_id` dedup** |
 | 6 Memory service | memory | MCP tool surface, pgvector search, provenance surfacing on read |
 | 7 Credentials & pause/resume | operator, shims | credential injection (never logged), Paused→resume |
-| 8 Console | console | UI/BFF units + E2E |
+| 8 Console | console | UI/BFF units + E2E; **BFF authZ choke point + adaptive-nav (§6.7.2/6.7.6)** |
 | 10 Discussion rooms | apiserver, memory | discussion schema, memory-projection, **not-a-coordination-channel** guard |
 | 11 Source-control sync | operator, apiserver | repo-sync reconciler, webhook ingress, mirror mapping |
 | 12 Plugin architecture | apiserver `pkg/events` | outbox transactional append, delivery worker retry/dead-letter/circuit-breaker, **read-only observer guard** |
@@ -178,7 +179,9 @@ final numeric tuning is spike-gated (ISI-2113).
 
 ## 6. L4 — Security Tests
 
-Six mechanisms, run as a dedicated `security` workflow + inline gates.
+Seven mechanisms, run as a dedicated `security` workflow + inline gates. §6.1–6.6 are supply-chain /
+blast-radius mechanisms; **§6.7 is the authentication & authorization (RBAC) test matrix** (ISI-2305)
+— the identity-and-access half of the "tested, not asserted" security bar.
 
 ### 6.1 Dependency & module scanning
 - **`govulncheck`** on every Go module — call-graph-aware, gates on **known-exploitable** vulns.
@@ -214,9 +217,148 @@ runs in kind against a hostile-Run fixture:
   Marked nice-to-have in the brief; recommend enabling on release images from day one (cheap, high
   provenance value).
 
----
+### 6.7 Authentication & Authorization (RBAC) test matrix (ISI-2305)
 
-## 7. L5 — Code Quality & Coverage Gates
+> **What this proves.** Identity is *established* correctly (authN), *scoped* correctly (authZ/RBAC),
+> and *cannot be widened* (escalation-proof) — across the three enforcement points the architecture
+> actually names: the **console BFF choke point** (§13 — resolves `caller.principal` + Team scope
+> *before* any backend call), the **apiserver middleware** (write-auth + provenance, §7.3.1), and the
+> **agent execution identity** (per-principal BYO Secret, read-only consumer, §11/§12). These sit
+> alongside — not on top of — the Kubernetes primitives (namespace RBAC / NetworkPolicy / Secrets)
+> that §6.5 already exercises; here we prove the *application-layer* gate, because K8s RBAC does not
+> see a BFF request's principal.
+
+#### 6.7.0 Architecture ground-truth & the one open decision (read first)
+
+The access model these tests assert against, pinned from the architecture:
+
+- **Principal is the authZ subject.** `Run.owningPrincipal == caller.principal` gates per-Run reads
+  (§9.4, ISI-2166); memory/discussion writes are provenanced and impersonation is *impossible by
+  construction* (§7.3.1). There is **no principal spoofing path** — that is a property under test, not
+  an assumption.
+- **Two console roles + one platform role.** `operator` (acts within their Team — create/pause/
+  resume/kill own-Team Runs, connect own credential), `viewer` (read-only, Team-scoped; the org
+  chart/dashboards **never** expose a mutate/claim/handoff affordance — §12.1), and `platform-admin`
+  (K8s-RBAC layer — registers `AgentRuntime`/`Skill.source`, authors `Team`/`Agent` CRDs, sets the
+  capability envelope; §5.3.6). "admin vs user" in ISI-2305 maps to **platform-admin vs operator/
+  viewer**; "user cannot access admin endpoints" = operator/viewer cannot reach the platform-admin
+  plane.
+- **Existence-hiding.** Out-of-scope reads return **`404`, not `403`** (don't confirm existence) —
+  already locked for the build browser (8.7d); §6.7 applies the same rule Team-wide.
+- **⚠ OPEN DECISION (blocks fully-concrete auth-session cases).** KSquad has **no home-grown password/
+  session store** designed. The *provider* credential model is OAuth (§11.1), but the **human console
+  authN mechanism is unpinned**: OIDC/IdP-delegated (SSO) vs a local credential store. The
+  design-consistent default — matching the K8s-native, no-secret-handling posture (NFR-SEC3) and the
+  existing OAuth lifecycle — is **IdP-delegated (OIDC)**, in which case *password reset lives in the
+  IdP, and KSquad never stores or handles a password*. The §6.7.1 auth-session cases are therefore
+  written **mechanism-aware**: the IdP variant is the primary suite; a local-cred variant is scaffolded
+  **skipped-with-reason** and activates only if an ADR chooses local creds. **Handoff: this needs an
+  ADR (PM/Architect) before §6.7.1 can drop its `skip` (§13 open items).**
+
+**Determinism guard (matches §4.1):** the §6.7 suite **fails fast** if the BFF has no principal-
+resolution middleware wired, or if any endpoint reaches a backend before an authZ decision is
+recorded — it must not silently pass on a build where the choke point was never installed.
+
+**Positive controls are mandatory (matches §6.5):** every deny case ships with the matching allow case
+(the legitimate role *can* do the thing) so a blanket-500 or blanket-deny bug cannot masquerade as
+"secure". A test suite that only proves denials proves nothing.
+
+#### 6.7.1 Auth session lifecycle (apiserver middleware + BFF)
+
+Framework: Go `testing`+`testify` against the apiserver auth middleware; Playwright for the console
+redirect/teardown legs. IdP faked by a pinned local OIDC stub (e.g. mock-oidc) in CI — no external IdP
+dependency, no real credentials.
+
+| Case | Scenario | Assertion (pass condition) |
+|------|----------|----------------------------|
+| **A1 · login (valid)** | caller presents a valid IdP token/session | BFF resolves a principal + its Team memberships; a scoped session is established; the principal is attached to the request context for every downstream authZ decision |
+| **A2 · invalid credentials** | malformed / bad-signature / wrong-audience / expired-at-presentation token | **`401`**, **no** principal established, **no** downstream apiserver/kube/git call made (verified by a backend spy); no stack/secret leak in the body |
+| **A3 · session expiry** | a session valid at login crosses its TTL mid-use | next request → **`401`** + re-auth signal; any **in-flight SSE stream is closed** (not left streaming under a dead principal); no authZ decision uses the stale principal |
+| **A4 · logout** | principal logs out | session invalidated server-side; subsequent calls with the old session → **`401`**; SSE subscriptions torn down; a replayed post-logout session token is **not** re-accepted |
+| **A5 · password reset** *(IdP variant — primary)* | user triggers "reset/recover" | KSquad **redirects to the IdP** and **never stores/handles the password** (asserted: no password field crosses the BFF, nothing password-shaped hits any log — reinforces NFR-SEC3); on IdP completion the next login (A1) succeeds with the same principal identity |
+| **A5-local** · password reset *(local-cred variant)* | — | **skipped-with-reason** pending the authN ADR; if local creds are chosen: reset token single-use + time-boxed, old sessions invalidated on reset, no user-enumeration via reset responses |
+
+#### 6.7.2 RBAC access matrix — per endpoint × role
+
+Table-driven over `(endpoint-family, verb, role, scope) → expected status`. Endpoint families are the
+real ones in the architecture; every cell is one test row. `own` = caller's Team/principal; `other` =
+a different Team or a non-owner principal in the same Team.
+
+| Endpoint family (real ref) | platform-admin | operator (own) | viewer (own) | any role (other-scope) |
+|---|---|---|---|---|
+| **Read own dashboards / consumption / org-chart / audit** (§13, §6/§8 read model) | `200` | `200` | `200` | **`404`** |
+| **Per-Run build browser** `GET /runs/{id}/build/{tree,diff,file,meta}` (8.7d) | owner-only¹ | `200` iff owner | `200` iff owner | **`404`** |
+| **Mutate Run** (create / pause / resume / kill; §13 BFF→operator) | `200` | `200` | **`403`** | **`404`** |
+| **Coordination / claim write** (`pkg/coord`; §6.2 — agent/coordinator principals only) | **`403`**² | **`403`**² | **`403`** | **`403`** |
+| **Credentials** ("Connect Claude" / re-login; §11.1) | own principal only | own principal only | own principal only | **`403/404`** — cannot connect/refresh/read another principal's Secret |
+| **Admin plane** (register `AgentRuntime`/`Skill.source`, set capability envelope, `Team` RBAC; §5.3.6) | `200` | **`403`** | **`403`** | **`403`** |
+
+¹ platform-admin is not implicitly a Run owner — the build view is per-*principal*, so even admin gets
+`404` on a Run they don't own (existence-hiding holds against admin too, unless an explicit break-glass
+audit path is later ADR'd). ² the console is a **read-only org chart** with **no P2P/claim affordance**
+(§12.1, no-P2P) — a human console caller reaching a claim-write verb is itself the anomaly under test.
+
+- The matrix runs at **both** layers: BFF integration (fake principal header + scope) **and** an
+  apiserver-middleware unit layer, so a BFF that forgets to forward scope can't hide behind a correct
+  apiserver, and vice-versa.
+
+#### 6.7.3 Per-project / per-team isolation (extends §6.5)
+
+Builds directly on §6.5's cross-namespace + cross-principal cases; adds the **Project-scope** cut the
+ticket names.
+
+| Case | Scenario | Assertion |
+|------|----------|-----------|
+| **I1 · cross-Project read** | user with access to Project A requests a Run/artifact/build/memory record scoped to **Project B** (same or different Team) | **`404`** — Project scope is enforced at the BFF *and* by the Team-namespace RBAC/NetworkPolicy underneath; no listing endpoint leaks B's IDs into A's response |
+| **I2 · cross-Project write** | A-scoped principal attempts a mutate/claim/memory-write targeting a Project-B object | rejected at the apiserver (**`403/404`**), never reaches the DB row; provenance would have mis-attributed → blocked by construction (§7.3.1) |
+| **I3 · enumeration** | A-scoped principal pages/filters list endpoints trying to surface B's Projects/Runs | zero B-scoped rows in any response; counts/aggregates (consumption, org chart) exclude B — no side-channel via totals |
+
+#### 6.7.4 Agent identity & scoped-credential enforcement
+
+Proves the *agent-execution* identity leg (not human console) — the third enforcement point.
+
+| Case | Scenario | Assertion |
+|------|----------|-----------|
+| **AG1 · Run carries correct identity** | a Run executes and writes a comment / status / artifact / memory record | every write is attributed to the Run's `owningPrincipal` / `author_run_id` / `author_agent_id`; a Run **cannot** author a record attributed to a different principal (§7.3.1 impersonation-impossible) |
+| **AG2 · scoped credential — mount only** | agent pod consumes its BYO provider Secret | pod **mounts** the per-user Secret read-only; the Run's SA **cannot read another principal's / another Team's** credential Secret (K8s RBAC + §12 per-principal isolation); credential value **never** appears in logs/spans (NFR-SEC3, redaction §6.7.1-adjacent) |
+| **AG3 · stale-fence identity** | a fenced/zombie holder (see L2 **C4/C5**) tries to write under its old identity after reclaim | rejected — ties the auth model to the coordination fence: identity alone is insufficient, the **live fence** must also hold (cross-refs L2, no new mechanism) |
+
+#### 6.7.5 Privilege-escalation prevention
+
+| Case | Scenario | Assertion |
+|------|----------|-----------|
+| **E1 · vertical escalation** | operator/viewer calls a **platform-admin** endpoint (§6.7.2 admin row) | **`403`**; no partial effect (no CRD created then rejected — fail *before* the write) |
+| **E2 · capability self-declaration** | a git-sourced `Skill` body (untrusted, D8) declares broader `permissions`/`mcpToolRefs` than the operator authorized | the **CRD/operator-authorized envelope wins**; the repo-declared widening is **ignored**, not merged (§5.3.6 — "never self-declared by the repo"); no new tool/permission is reachable at runtime |
+| **E3 · token/scope confusion** | caller replays a *provider* OAuth token (§11.1) as if it were a *console* session, or a viewer session against a mutate verb | rejected — provider creds are not console-authZ tokens; scope is not transferable across the two planes |
+| **E4 · horizontal via identity swap** | caller sets/forges a principal header the BFF is supposed to derive, not trust | BFF derives principal from the authenticated session **only**; a client-supplied principal/Team header is **ignored** (asserted against a spoofed header — this is the E4 trap) |
+
+#### 6.7.6 Console adaptive nav (non-admin UI) — Playwright E2E
+
+Semantic-locator E2E (per §8 conventions), one run per role fixture. UI is a *reflection* of the
+authZ model, not a substitute — every hidden affordance also has a §6.7.2 API-layer deny (a hidden
+button is not a security control; the API is).
+
+| Case | Role fixture | Assertion |
+|------|--------------|-----------|
+| **N1 · viewer nav** | viewer | no mutate/claim/handoff/kill controls rendered; Settings→admin panes absent; org chart is read-only (§12.1, §13) — asserted by **role/label absence**, not CSS `hidden` |
+| **N2 · operator nav** | operator | Run mutate controls + own-credential "Connect Claude" present; **platform-admin** panes (runtime/skill-source registration) absent |
+| **N3 · admin nav** | platform-admin | admin registration surfaces present |
+| **N4 · nav ≠ authZ** | viewer, via devtools/direct fetch | invoking a hidden mutate endpoint directly still returns **`403`** — proves the nav is cosmetic and the BFF is the real gate (defeats "hidden-in-UI ≈ secure") |
+
+#### 6.7.7 Integration — auth service + apiserver middleware + agent execution
+
+One end-to-end identity-propagation test (kind + Postgres + OIDC stub, joins the L2/E2E harness):
+
+- **Path:** IdP login → BFF establishes principal+scope → apiserver middleware authZ on a Run action →
+  operator reconciles → **agent pod runs under the Run's `owningPrincipal` with its scoped Secret** →
+  the agent's coordination/memory writes are provenanced to that same principal → the console reads
+  back **only** what that principal is scoped to see.
+- **Assertion:** identity is **one continuous thread** end-to-end — the principal established at login
+  is the same principal that authorizes the write and stamps the provenance; **no boundary silently
+  re-derives, widens, or drops it**. A break anywhere (BFF forwards no scope; middleware trusts a
+  client header; agent runs under a shared/ambient identity; provenance mis-attributes) fails this test.
+- Runs on the **`e2e.yml`** lane (nightly + release), reusing the OIDC stub; the API-layer matrix
+  (§6.7.2/6.7.5) runs on **`security.yml`** every PR (fast, no cluster).
 
 | Check | Tool | Gate |
 |-------|------|------|
@@ -403,6 +545,13 @@ CI-provisioned secret needed for v1 is the built-in `GITHUB_TOKEN`. No registry 
 | L3 P4 (outbox lag) | §17.4 | 12 | plugin isolation |
 | L4 blast-radius (S4) | §12.2, §17.1 | 4 / X | NFR-SEC1/4/5, F6/F7/F11 |
 | L4 provenance/poisoning | §7.3 | 6 | NFR-SEC6, F5/F6 |
+| **L4 §6.7.1 auth session (A1–A5)** | §13 BFF choke, §11.1 | 8 / 7 | NFR-SEC3; **authN-mechanism ADR (open)** |
+| **L4 §6.7.2 RBAC matrix** | §13, §12.1, §5.3.6 | 8 | NFR-SEC1; admin/operator/viewer |
+| **L4 §6.7.3 per-Project isolation (I1–I3)** | §12.1, §9.4 | 4 / 8 | NFR-SEC1/5 |
+| **L4 §6.7.4 agent identity (AG1–AG3)** | §7.3.1, §11, §12 | 6 / 7 | NFR-SEC3/6; impersonation-impossible |
+| **L4 §6.7.5 escalation (E1–E4)** | §5.3.6, §11.1 | 5 / 8 | no-privilege-escalation (D8) |
+| **L4 §6.7.6 adaptive nav (N1–N4)** | §12.1, §13 | 8 | NFR-SEC1 (UI≠authZ) |
+| **L4 §6.7.7 auth integration** | §13, §7.3.1, §11 | 5 / 8 | end-to-end identity thread |
 | L4 govulncheck/Trivy/gitleaks/CodeQL | §17.1 | all | supply-chain / NFR-SEC3 |
 | L5 lint/coverage | — | all | quality gate |
 | E2E Ollama smoke | §10, §9.2 | 5 / 3 | ISI-2158 free-testing lane |
@@ -417,6 +566,13 @@ CI-provisioned secret needed for v1 is the built-in `GITHUB_TOKEN`. No registry 
   recipe ready (§11.4, needs repo-admin scope to apply); cosign keyless / no stored secrets (§11.5).
   Skeleton pushed to `K8squad/K8squad`. *Only residual:* applying branch protection needs an
   Administration-scoped token (repo admin / Alfred).
+- **⚠ Human console authN mechanism — needs an ADR (PM/Architect), blocks §6.7.1 `skip` drop.** The
+  auth-*session* cases (A1–A5) are scaffolded mechanism-aware, with **IdP-delegated (OIDC)** as the
+  design-consistent primary suite (matches the K8s-native, no-secret-handling NFR-SEC3 posture and the
+  existing OAuth credential lifecycle §11.1); the local-credential variant (A5-local) stays
+  **skipped-with-reason** until the decision lands. Everything else in §6.7 (RBAC matrix, isolation,
+  agent identity, escalation, adaptive nav, integration) is mechanism-independent and active now.
+  *Owner of the unblock: PM (John) / Architect ADR — until then A5-local cannot un-skip.*
 - **Observability Agent:** align the OTel metric/span names the L3 perf tests assert on with the
   dashboard taxonomy (04-observability-plan.md, §17.2) so tests and dashboards read the same signals.
 - **Spike ISI-2113:** provides the numeric baselines for P1/P2 gates (thresholds stay relative until
