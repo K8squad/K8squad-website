@@ -24,10 +24,15 @@ Two backends:
                `FOR UPDATE [SKIP LOCKED]` = try-acquire a per-row lock; SKIP
                LOCKED skips a locked row, plain FOR UPDATE blocks on it; the
                lock is held until the transaction "commits". Zero deps.
-  * postgres — set DATABASE_URL (and have psycopg installed) to run the exact
-               §6.2 SQL against a REAL Postgres. This is the path Story 2.7
-               wires into CI as the required gate. Only the §6.2 variant runs
-               here (we don't ship a knowingly-broken statement to real PG).
+  * postgres — set DATABASE_URL (and have psycopg installed) to run the §6.2
+               lock->acquire->transition core (effects pick/acq/done) against a
+               REAL Postgres. NB: the audit (§6.5) + outbox (§6.6) CTEs — effects
+               (4)/(5), AC6 — are NOT exercised here; their tables land in Story
+               2.1/2.5, and Story 2.7 wires the full §6.2 statement (all five
+               effects) into CI as the required gate. This path proves the
+               no-double-claim/fence invariant on real row-locking; AC6's
+               in-same-txn write is gated in 2.7, not here. Only the §6.2 variant
+               runs (we don't ship a knowingly-broken statement to real PG).
 
 Exit 0 iff every assertion holds. Any breach exits non-zero — this is the
 smallest thing that fails if the §6.2 claim logic breaks.
@@ -249,6 +254,9 @@ def check_postgres(dsn):
         c.commit()
 
     # ONE transaction: SKIP-LOCKED pop → conditional fence-bump acquire → claimed.
+    # Core three effects only (pick/acq/done). The aud (§6.5) + evt (§6.6) CTEs
+    # of the authoritative §6.2 statement — AC6 — are omitted until coord_audit/
+    # outbox land (2.1/2.5); Story 2.7 runs the full five-effect CTE in CI.
     claim_txn = f"""
     WITH picked AS (
         SELECT id FROM work_item WHERE state='open'

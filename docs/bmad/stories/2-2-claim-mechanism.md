@@ -229,8 +229,14 @@ trail or a phantom event with no claim. (The outbox **relay** is Story 2.5; this
   no-double-claim — so a regression that silently disables **one** of the two mechanisms is caught here,
   not just the both-off naive case (ISI-2337 review; honors the belt-and-suspenders claim, lines 12-15).
 - **Real Postgres (Story 2.7 CI path):** set `DATABASE_URL` and install `psycopg`; the harness runs the
-  **exact §6.2 SQL** (the CTE above) across M connection-backed claimers and asserts the same
-  invariants against a live server. This is the authoritative gate; the model check guards the *logic*.
+  §6.2 **lock→acquire→transition core** (effects `pick`/`acq`/`done` of the CTE above) across M
+  connection-backed claimers and asserts the no-double-claim / unique-monotonic-fence invariants against
+  a live server. **Coverage note (review, ISI-2192):** the `aud` (§6.5) and `evt` (§6.6) CTEs — effects
+  (4)/(5), **AC6** — are *not* exercised by either backend here (their tables, `coord_audit`/`outbox`,
+  land in Story 2.1/2.5); **Story 2.7 wires the full five-effect §6.2 statement into CI as the required
+  gate**, and that is where AC6's same-txn write is proven. Likewise the **targeted variant (AC2)** and
+  **re-entrancy (AC5)** are pinned in prose here but exercised in 2.7. The model check guards the
+  no-double-claim *logic* (AC1/AC3), which is the R10 crux and the sole non-negotiable of this story.
 - **Why differential:** a happy-path "it claimed each item once" demo can pass with a broken design
   under a lucky interleaving. Proving the harness *catches* a real double-claim first is what makes the
   §6.2 PASS meaningful.
