@@ -217,6 +217,7 @@ nav wrapping / routing changes (App Router nested layouts).
 | 16 | Adaptive navigation | `images/16-adaptive-nav.png` | **Admin vs non-admin** rails side by side (Dashboard + Users&Roles are admin-only; settings read-only for non-admin) + the **authorized-projects selector** rule |
 | 17 | Login (desktop) | `images/17-login.png` | **SSO / OIDC** sign-in — brand panel + sign-in card; console stores no human password; access from directory groups |
 | 18 | Mobile — RBAC | `images/18-mobile-rbac.png` | Mobile **SSO login flow** + **role-adaptive bottom nav** (admin gets a *Manage* tab; non-admin sees authorized projects only) |
+| 19 | Project dashboard | `images/19-project-dashboard.png` | **Project-scoped landing** loaded when the Project root is clicked (CEO follow-up): KPI tiles + quick-access cards for the five sub-sections + project activity feed. Is the `Overview` sub-nav tab |
 
 **The new rail (`console_kit_ia.py`).** Three groups replace the flat list:
 - **GLOBAL** — **Dashboard** (fleet, 8.8) · **Overview** (squad, 8.1) · **Agents** (org diagram 8.10 +
@@ -240,6 +241,20 @@ chip, mirroring the two-records / memory tag), **artifacts**, **checkout/holder 
 **links to each ticket's Runs (8.2) and build outputs (8.7)**. Source: `gen-13-nav-ia.py` +
 `gen-14-project-tickets.py` (both import `console_kit_ia.py`, the hierarchical-rail kit; token-mirrored
 dark/light).
+
+**Revision v9 — CEO follow-up (Henrik, ISI-2291 review 2026-08-12).** Three refinements, re-rendered
+across dark + light:
+1. **Files (file explorer) sub-item** — a fifth Project sub-section (`ic_files` glyph) to *browse &
+   visualize the project's files*. Added to the rail, the sub-nav tab strip, and the IA map (screen 13).
+2. **Project → dashboard on click** — clicking the Project root (rail selector) loads a **project
+   dashboard** on the main frame, surfaced as the **`Overview`** sub-nav tab. New **screen 19**
+   (`gen-19-project-dashboard.py`): project-scoped KPI tiles (open tickets / active runs / builds /
+   files / agents), quick-access cards for the five sub-sections, and a live project activity feed.
+3. **Ticket → sub-tickets tree** — screen 14 is now a **work-item tree**: parent tickets carry an
+   expand chevron + `N sub-tickets` chip and nest their children on a tree-guide spine, with a
+   **Tree / List** view toggle. The detail pane (comments / artifacts / checkout / linked Runs+builds)
+   is unchanged. The Project sub-nav now reads **Overview · Build · Files · Tickets · Runs · Discussion**.
+(Numbered **19** to avoid the concurrent RBAC set's screens 15–18.)
 
 ---
 

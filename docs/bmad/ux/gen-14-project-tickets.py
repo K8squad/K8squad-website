@@ -14,16 +14,21 @@ PNGs are the audited 1.5x (2160x1350) via @resvg/resvg-js.
 import console_kit_ia as K
 from console_kit_ia import text, rect, chip, dot, line, status, _stk
 
-# (id, title, status, assignee, initials, comments, updated, selected)
-TICKETS = [
-    ("ISI-2291", "Console nav-rail + breadcrumb IA mocks", "claimed", "Graphic Designer", "GD", 6, "12m", True),
-    ("ISI-2288", "Settings page — OTelConfig + platform", "claimed", "UX Engineer", "UX", 3, "1h", False),
-    ("ISI-2289", "OTelConfig CRD — controller + schema", "open", "Obs Agent", "OA", 1, "2h", False),
-    ("ISI-2168", "Build-browser observability plan", "done", "Obs Agent", "OA", 8, "3h", False),
-    ("ISI-2151", "Architecture r13 — NATS delivery seam", "done", "Architect", "AR", 14, "5h", False),
-    ("ISI-2120", "Phase-4 epics — nav IA threading", "blocked", "Story Writer", "SW", 5, "1d", False),
-    ("ISI-2134", "CEO Gate 2 — Ollama + git skills", "done", "BigBoss", "BB", 4, "1d", False),
-    ("ISI-2116", "Program — Phase 4 delivery track", "open", "BigBoss", "BB", 2, "2d", False),
+# Ticket tree: parent → sub-tickets. Node = (id, title, status, initials, comments,
+# updated, expanded, selected, [children]); child = (id, title, status, initials, comments, updated)
+TREE = [
+    ("ISI-2291", "Console nav-rail + breadcrumb IA mocks", "claimed", "GD", 6, "12m", True, True, [
+        ("ISI-2291.1", "Nav-rail hierarchy + rail kit", "done", "GD", 2, "20m"),
+        ("ISI-2291.2", "Project → Tickets tree view", "claimed", "GD", 3, "3m"),
+        ("ISI-2291.3", "File explorer + Project dashboard", "open", "GD", 1, "1m"),
+    ]),
+    ("ISI-2288", "Settings page — OTelConfig + platform", "claimed", "UX", 3, "1h", False, False, []),
+    ("ISI-2151", "Architecture r13 — NATS delivery seam", "done", "AR", 14, "5h", True, False, [
+        ("ISI-2151.1", "Outbox → relay → nats_sub", "done", "AR", 4, "6h"),
+        ("ISI-2151.2", "ADR-023 one-way delivery seam", "done", "AR", 2, "6h"),
+    ]),
+    ("ISI-2120", "Phase-4 epics — nav IA threading", "blocked", "SW", 5, "1d", False, False, []),
+    ("ISI-2116", "Program — Phase 4 delivery track", "open", "BB", 2, "2d", False, False, []),
 ]
 
 COMMENTS = [
@@ -55,28 +60,69 @@ def avatar(T, cx, cy, initials, r=11):
             + text(cx, cy + 3.5, initials, r - 2.5, T["accent2"], w=700, anchor="middle"))
 
 
-def ticket_row(T, x, y, w, tk):
-    tid, title, st, who, ini, ncom, upd, sel = tk
+def comment_glyph(T, x, y, n):
+    return (f'<path d="M{x} {y-4} h11 a1.4 1.4 0 0 1 1.4 1.4 v4.5 a1.4 1.4 0 0 1 -1.4 1.4 '
+            f'h-6 l-3 2.4 v-2.4 h-2 a1.4 1.4 0 0 1 -1.4 -1.4 v-4.5 a1.4 1.4 0 0 1 1.4 -1.4 z" '
+            f'{_stk(T["t4"],1.3)}/>' + text(x + 20, y + 5, str(n), 10.5, T["t3"], mono=True))
+
+
+def chevron(T, cx, cy, expanded, c):
+    if expanded:
+        return f'<path d="M{cx-4} {cy-2} l4 4 l4 -4" {_stk(c,1.6)}/>'
+    return f'<path d="M{cx-2} {cy-4} l4 4 l-4 4" {_stk(c,1.6)}/>'
+
+
+def subticket_row(T, x, y, w, child, last):
+    """Compact nested sub-ticket row with tree guide."""
+    cid, title, st, ini, ncom, upd = child
+    s = []
+    d, tx, bg, bd = status(T, st)
+    # tree guide: elbow from the parent spine (drawn by the card) into this row
+    s.append(line(x + 34, y + 13, x + 46, y + 13, T["border"], sw=1.4))
+    s.append(dot(x + 54, y + 13, 3.5, d, pulse=(st == "claimed")))
+    s.append(text(x + 66, y + 17, cid, 10.5, T["t3"], w=600, mono=True))
+    s.append(text(x + 138, y + 17, trunc(title, 30), 11.5, T["t2"]))
+    s.append(chip(x + w - 84, y + 4, 66, 18, st, bg, bd, tx, size=9))
+    s.append(comment_glyph(T, x + w - 150, y + 13, ncom))
+    s.append(avatar(T, x + w - 108, y + 13, ini, r=8))
+    return "".join(s)
+
+
+def ticket_card(T, x, y, w, node):
+    tid, title, st, ini, ncom, upd, expanded, sel, children = node
+    has_kids = len(children) > 0
+    hdr = 62
+    body = (len(children) * 34 + 10) if (expanded and has_kids) else 0
+    h = hdr + body
     s = []
     if sel:
-        s.append(rect(x, y, w, 62, T["activebg"], rx=10, stroke=T["accent"] + "55"))
-        s.append(rect(x, y, 3, 62, T["accent"], rx=2))
+        s.append(rect(x, y, w, h, T["activebg"], rx=11, stroke=T["accent"] + "55"))
+        s.append(rect(x, y, 3, h, T["accent"], rx=2))
     else:
-        s.append(rect(x, y, w, 62, T["card"], rx=10, stroke=T["border"]))
+        s.append(rect(x, y, w, h, T["card"], rx=11, stroke=T["border"]))
     d, tx, bg, bd = status(T, st)
-    s.append(dot(x + 20, y + 22, 4, d, pulse=(st == "claimed")))
-    s.append(text(x + 34, y + 26, tid, 11.5, T["accent2"] if sel else T["t2"], w=700, mono=True))
+    # chevron (only parents) + status dot
+    if has_kids:
+        s.append(chevron(T, x + 24, y + 22, expanded, T["t2"]))
+    s.append(dot(x + 42, y + 22, 4, d, pulse=(st == "claimed")))
+    s.append(text(x + 56, y + 26, tid, 11.5, T["accent2"] if sel else T["t2"], w=700, mono=True))
+    if has_kids:
+        s.append(chip(x + 140, y + 15, 74, 18, f"{len(children)} sub-tickets", T["panel"], T["border"], T["t3"], size=9))
     s.append(chip(x + w - 92, y + 11, 78, 20, st, bg, bd, tx, size=10))
-    # updated timestamp on line 1 (keeps line 2 clear for the title)
     s.append(text(x + w - 106, y + 26, upd, 10, T["t4"], anchor="end"))
-    # title on its own line, truncated so it never reaches the meta cluster
-    s.append(text(x + 34, y + 46, trunc(title, 40), 12.5, T["t1"], w=600 if sel else 500))
-    # meta cluster (right of title line): comment count + assignee avatar
+    s.append(text(x + 56, y + 46, trunc(title, 38), 12.5, T["t1"], w=600 if sel else 500))
     s.append(avatar(T, x + w - 24, y + 42, ini, r=10))
-    s.append(f'<path d="M{x+w-96} {y+38} h11 a1.4 1.4 0 0 1 1.4 1.4 v4.5 a1.4 1.4 0 0 1 -1.4 1.4 '
-             f'h-6 l-3 2.4 v-2.4 h-2 a1.4 1.4 0 0 1 -1.4 -1.4 v-4.5 a1.4 1.4 0 0 1 1.4 -1.4 z" {_stk(T["t4"],1.3)}/>')
-    s.append(text(x + w - 76, y + 47, str(ncom), 10.5, T["t3"], mono=True))
-    return "".join(s)
+    s.append(comment_glyph(T, x + w - 96, y + 42, ncom))
+    # nested sub-tickets
+    if expanded and has_kids:
+        # vertical spine from the parent dot down through the children
+        cy0 = y + hdr
+        s.append(line(x + 34, y + 30, x + 34, cy0 + (len(children) - 1) * 34 + 13, T["border"], sw=1.4))
+        ry = cy0
+        for i, ch in enumerate(children):
+            s.append(subticket_row(T, x, ry, w, ch, i == len(children) - 1))
+            ry += 34
+    return "".join(s), h
 
 
 def comment_block(T, x, y, w, c):
@@ -163,8 +209,8 @@ def build_detail(T, x, y, w):
 
 def build_content(T):
     s = []
-    # sub-nav tab strip
-    s.append(K.build_subnav(T, 260, 74, 460, "tickets"))
+    # sub-nav tab strip (now includes Overview + Files)
+    s.append(K.build_subnav(T, 260, 74, 540, "tickets"))
     s.append(text(1416, 92, "project_id = ksquad-console · Epic 2 coordination record · read-only",
                   10.5, T["t4"], anchor="end"))
 
@@ -177,22 +223,28 @@ def build_content(T):
         s.append(pill)
         x += pw + 12
     s.append(text(x + 6, py + 22, "24 work items", 12, T["t3"], w=600))
+    # view toggle (tree active) + sort
     s.append(chip(1424 - 118, py, 118, 34, "sort: updated ▾", T["card"], T["border"], T["t3"], size=10.5))
+    s.append(chip(1424 - 118 - 140, py, 68, 34, "Tree", T["activebg"], T["accent"] + "55", T["accent2"], size=11))
+    s.append(chip(1424 - 118 - 68, py, 60, 34, "List", T["card"], T["border"], T["t3"], size=11))
 
-    # master list (left)
-    lx, lw = 260, 452
+    # master list (left) — ticket tree, cards stack by rendered height
+    lx, lw = 260, 470
     ly = py + 52
-    for i, tk in enumerate(TICKETS):
-        s.append(ticket_row(T, lx, ly + i * 72, lw, tk))
+    yy = ly
+    for node in TREE:
+        card, ch = ticket_card(T, lx, yy, lw, node)
+        s.append(card)
+        yy += ch + 12
 
     # detail (right)
-    s.append(build_detail(T, 728, ly, 696))
+    s.append(build_detail(T, 746, ly, 678))
     return "".join(s)
 
 
 def build(T):
     return (K.build_rail_ia(T, active="tickets") + K.build_header(
-        T, "ksquad-console", "Tickets", "Work items scoped to this project · status · assignee · comments · artifacts")
+        T, "ksquad-console", "Tickets", "Work-item tree — parent → sub-tickets · status · assignee · comments · artifacts")
         + build_content(T))
 
 

@@ -175,6 +175,16 @@ def ic_creds(cx, cy, c):
             f'<path d="M{cx-1.2} {cy+0.3} l6 6 M{cx+3} {cy+4.5} l1.6 -1.6 M{cx+4.8} {cy+6.3} l1.6 -1.6"/></g>')
 
 
+def ic_files(cx, cy, c):
+    # document with folded corner + content lines — the file-explorer glyph
+    return (f'<g {_stk(c,1.5)}>'
+            f'<path d="M{cx-6} {cy-7} h6 l4 4 v9.7 a1.3 1.3 0 0 1 -1.3 1.3 h-8.7 '
+            f'a1.3 1.3 0 0 1 -1.3 -1.3 v-12.4 a1.3 1.3 0 0 1 1.3 -1.3 z"/>'
+            f'<path d="M{cx} {cy-7} v4 h4"/>'
+            f'<line x1="{cx-3}" y1="{cy+1}" x2="{cx+3}" y2="{cy+1}"/>'
+            f'<line x1="{cx-3}" y1="{cy+4}" x2="{cx+3}" y2="{cy+4}"/></g>')
+
+
 # ---- rail model -------------------------------------------------------------
 # Each entry: (kind, key, label, icon_or_None)
 #   kind: 'section' | 'item' | 'selector' | 'subitem'
@@ -186,6 +196,7 @@ RAIL = [
     ("section", None, "PROJECT", None),
     ("selector", "project", "ksquad-console", ic_project),
     ("subitem", "build", "Build", ic_build),
+    ("subitem", "files", "Files", ic_files),
     ("subitem", "tickets", "Tickets", ic_tickets),
     ("subitem", "runs", "Runs", ic_runs),
     ("subitem", "discussion", "Discussion", ic_discussion),
@@ -232,13 +243,16 @@ def build_rail_ia(T, active, project_open=True):
                 s.append(chip(150, y + 5, 66, 20, "filter ▾", T["panel"], T["border"], T["t3"], size=9.5))
             y += 36
         elif kind == "selector":
-            # project context selector — a dropdown control, azure-tinted (root context)
+            # project context selector — clicking the name loads the project dashboard
+            # on the main frame; the chevron switches the active project.
             selector_cy = y + 20
-            s.append(rect(12, y, 212, 40, T["activebg"], rx=10, stroke=T["accent"] + "66"))
+            ring = T["accent"] + ("" if act else "66")
+            s.append(rect(12, y, 212, 40, T["activebg"], rx=10, stroke=ring, sw=1.6 if act else 1))
             s.append(rect(12, y, 3, 40, T["accent"], rx=2))
             s.append(icon(32, y + 20, T["accent2"]))
             s.append(text(50, y + 15, label, 13, T["t1"], w=700))
-            s.append(text(50, y + 30, "active project · switch ▾", 9.5, T["t4"]))
+            sub = "project dashboard" if act else "→ project dashboard"
+            s.append(text(50, y + 30, f"{sub} · switch ▾", 9.5, T["t4"]))
             # chevron
             s.append(f'<path d="M208 {y+16} l4 4 l4 -4" {_stk(T["t3"],1.6)}/>')
             y += 48
@@ -301,8 +315,8 @@ def build_header(T, project, section, subtitle):
 
 def build_subnav(T, x, y, w, active, tabs=None):
     """Project sub-navigation tab strip: Build · Tickets · Runs · Discussion."""
-    tabs = tabs or [("build", "Build"), ("tickets", "Tickets"),
-                    ("runs", "Runs"), ("discussion", "Discussion")]
+    tabs = tabs or [("overview", "Overview"), ("build", "Build"), ("files", "Files"),
+                    ("tickets", "Tickets"), ("runs", "Runs"), ("discussion", "Discussion")]
     s = [rect(x, y + 30, w, 1, T["border"])]
     cx = x + 4
     for key, label in tabs:

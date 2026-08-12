@@ -57,7 +57,7 @@ def selector_row(T, x, y, w):
     s.append(rect(x + 6, y + 4, 3, 44, T["accent"], rx=2))
     s.append(K.ic_project(x + 28, y + 26, T["accent2"]))
     s.append(text(x + 46, y + 22, "ksquad-console", 13.5, T["t1"], w=700))
-    s.append(text(x + 46, y + 37, "active project — scopes Build · Tickets · Runs · Discussion", 10, T["t4"]))
+    s.append(text(x + 46, y + 37, "click → project dashboard · scopes Build · Files · Tickets · Runs · Discussion", 10, T["t4"]))
     s.append(f'<path d="M{x+w-30} {y+22} l4 4 l4 -4" {_stk(T["t3"],1.6)}/>')
     s.append(chip(x + w - 172, y + 15, 118, 22, "3 projects  ▾", T["panel"], T["border"], T["t3"], size=10.5))
     return "".join(s), 56
@@ -83,7 +83,9 @@ def sample_breadcrumb(T, x, y):
 
 
 def sample_subnav(T, x, y):
-    return K.build_subnav(T, x, y - 8, 300, "tickets")
+    # 6 tabs (Overview · Build · Files · Tickets · Runs · Discussion) — scaled to fit the callout
+    inner = K.build_subnav(T, 0, 0, 460, "tickets")
+    return f'<g transform="translate({x},{y-12}) scale(0.84)">{inner}</g>'
 
 
 def build_content(T):
@@ -111,7 +113,8 @@ def build_content(T):
     py = top + h1 + 18
     p_rows = [
         (K.ic_build, "Build", "screen 8.7", "project", "build browser — checkout→review→fix→test→publish", True, 42),
-        (K.ic_tickets, "Tickets", "screen 8.14", "new", "work items — status · assignee · comments · artifacts", True, 42),
+        (K.ic_files, "Files", "screen 19", "new", "file explorer — browse & visualize project files", True, 42),
+        (K.ic_tickets, "Tickets", "screen 8.14", "new", "work-item tree — parents → sub-tickets", True, 42),
         (K.ic_runs, "Runs", "screen 8.2", "project", "run stream (SSE) + run history", True, 42),
         (K.ic_discussion, "Discussion", "screen 10.3", "project", "coordination room — threaded record", True, 42),
     ]
@@ -145,9 +148,9 @@ def build_content(T):
     ry = 140
     s.append(callout(T, rx, ry, rw, 118, "Project context selector",
                      ["Top-of-rail dropdown sets the active Project.",
-                      "Switching it re-scopes Build / Tickets / Runs /",
-                      "Discussion in place — the four sub-sections",
-                      "never leave the selected Project's context."]))
+                      "Clicking the name loads the project dashboard",
+                      "(screen 19) on the main frame; the chevron",
+                      "switches project and re-scopes every sub-section."]))
     ry += 134
     s.append(callout(T, rx, ry, rw, 118, "Breadcrumb  —  Project › section",
                      ["Always shows the Project root then the current",
@@ -155,9 +158,9 @@ def build_content(T):
                      sample_fn=sample_breadcrumb))
     ry += 134
     s.append(callout(T, rx, ry, rw, 118, "Project sub-navigation",
-                     ["The selected Project expands to a tab strip —",
-                      "Build · Tickets · Runs · Discussion — mirrored",
-                      "as indented rail sub-items."],
+                     ["Overview (dashboard) · Build · Files · Tickets ·",
+                      "Runs · Discussion — a tab strip mirrored as the",
+                      "indented rail sub-items."],
                      sample_fn=sample_subnav))
     ry += 134
     s.append(callout(T, rx, ry, rw, 96, "Scoping rule",
