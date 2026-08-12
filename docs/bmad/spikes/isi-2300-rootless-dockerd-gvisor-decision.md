@@ -7,7 +7,7 @@ parent: "ISI-2295 (§5.3.3 could not be cleanly confirmed there)"
 decision_owner: "Architect"
 execution_owner: "ProxOps (holds the observable-agentsandbox gVisor cluster)"
 gate: "NOT a v1 gate (docker:true is capability-gated + spike-tunable, arch §5.3.3 / §9.1)"
-status: "DECISION LANDED (retest-independent) + empirical rootless-dockerd confirm DELEGATED to ProxOps"
+status: "CLOSED — decision landed + ISI-2319 retest PASS folded in (rootless-dockerd confirmed for daemon-at-runtime; kaniko/buildah primary for builds)"
 ---
 
 # ISI-2300 — rootless-dockerd `docker build` on gVisor
@@ -105,16 +105,23 @@ Back it with **kaniko** (pure Dockerfile→image, fully userspace) or **buildah*
 
 ### 2b. Drive a live Docker daemon at runtime (nested `docker run`, compose, testcontainers) → daemon required
 This genuinely needs a running daemon and cannot use kaniko/buildah:
-- **rootless-dockerd on gVisor** — offered **only if ProxOps' retest (§3)
-  confirms RUN steps complete** with the production slirp4netns config; else
-- **Kata RuntimeClass** (`runtimeClassHint`) for real nested Docker — already the
-  §5.3.3 answer for "real nested Docker." The operator refuses `docker: true` on a
-  gVisor-only runtime unless one of these mechanisms is selected (§9.1 gate stands).
+- **rootless-dockerd on gVisor** — **CONFIRMED viable (ISI-2319 retest PASS, §3.1).**
+  With the production config (`--net=slirp4netns`, default bridge restored, no
+  `--network=host` on build, uid 1000, overlay2, gVisor RuntimeClass) a full
+  multi-step build completes. **Packaging constraint (retest caveat):** the
+  sidecar image **must bake in `slirp4netns`** — stock `docker:27-dind-rootless`
+  ships rootlesskit 2.3.2 + vpnkit only, so the operator's rootless-dockerd sidecar
+  image needs `slirp4netns` added (still strictly unprivileged). This is the
+  daemon-at-runtime backing.
+- **Kata RuntimeClass** (`runtimeClassHint`) for real nested Docker — remains the
+  §5.3.3 answer where a Run needs genuine nested-virt Docker beyond rootless can
+  give. The operator refuses `docker: true` on a gVisor-only runtime unless one of
+  these mechanisms is selected (§9.1 gate stands).
 
 ### 2c. What this changes
 - §5.3.3 backings become **ordered + purpose-split**, not a flat "dockerd / kaniko
   / buildah" list: *builds → kaniko/buildah primary; daemon-at-runtime →
-  rootless-dockerd (pending retest) or Kata.*
+  rootless-dockerd (**confirmed ISI-2319**) or Kata.*
 - **No v1 impact.** docker:true is capability-gated and spike-tunable (§9.1); the
   mechanism is a runtime-config choice, not a structural one. ISI-2292's LOCKED
   pool constants are unaffected.
@@ -158,7 +165,7 @@ complete (image built) with `DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns` and a
 default bridge. Capture `/tmp/dockerd.log` + the build log on failure.
 
 **Decision routing after the retest:**
-- **PASS** → §2b keeps rootless-dockerd as the daemon-at-runtime option for gVISOR;
+- **PASS** → §2b keeps rootless-dockerd as the daemon-at-runtime option for gVisor;
   §2a (kaniko/buildah primary for *builds*) still stands unchanged.
 - **FAIL (same setns EPERM)** → confirms nested libnetwork sandboxing is a genuine
   runsc gap on this cluster; rootless-dockerd is dropped for *builds* entirely,
@@ -166,14 +173,42 @@ default bridge. Capture `/tmp/dockerd.log` + the build log on failure.
   the architecture in §2 holds — the retest only decides rootless-dockerd's fate
   for the narrow daemon-at-runtime slice.
 
+### 3.1 Retest result — ISI-2319 (ProxOps, 2026-08-12): **PASS**
+
+Ran on `observable-agentsandbox` / runsc. Production-config rootless-dockerd
+(`--net=slirp4netns`, default bridge restored, no `--network=host` on build,
+uid 1000, overlay2, `runtimeClassName: gvisor`) **completed a full
+`Dockerfile.compile` multi-step build → image built.** The per-container
+`setns(CLONE_NEWNET)` that EPERM'd in ISI-2295 succeeded once rootlesskit owns a
+**fresh** netns via slirp4netns.
+
+- **A/B control confirms §1's causal attribution:** the identical-otherwise
+  `--net=host` cell (pod-netns topology = ISI-2295) *still* fails —
+  `Failed to create bridge docker0 via netlink: operation not permitted`. So the
+  causal variable is exactly *which netns the unprivileged netlink/netns op runs
+  under*, as hypothesized — not a generic gVisor "no rootless docker" verdict.
+- **Packaging caveat → folded into §2b:** `docker:27-dind-rootless` does **not**
+  ship slirp4netns (rootlesskit 2.3.2 + vpnkit only); the retest used the spec's
+  `apk add slirp4netns` fallback, daemon still strictly unprivileged. **The
+  operator's rootless-dockerd sidecar image must bake in slirp4netns.**
+- **Routing:** PASS branch → **rootless-dockerd retained as the daemon-at-runtime
+  option (§2b); §2a (kaniko/buildah primary for builds) unchanged** — even a PASS
+  leaves rootless-dockerd the fragile+slow path, so keeping it off the critical
+  build path holds.
+- Evidence: `bench/build-prod-rootless-isi2319.yaml`, `bench/results-isi2319.txt`,
+  ISI-2319 thread.
+
 ---
 
-## 4. Disposition
+## 4. Disposition — CLOSED
 
-- **§5.3.3 architecture decision: LANDED** (this doc + arch §5.3.3 / decision
-  table edits). Retest-independent by construction.
-- **Empirical rootless-dockerd confirm: DELEGATED to ProxOps** (execution owner,
-  holds the cluster) as a child issue with §3 as the spec. ISI-2300 is **blocked**
-  on that retest — unblock owner **ProxOps**, action **run the §3 harness and
-  report PASS/FAIL** — then I fold the result into §2b and close.
+- **§5.3.3 architecture decision: LANDED** (this doc + arch §5.3.3 / decision-table
+  edits). Retest-independent by construction.
+- **Empirical rootless-dockerd confirm: DONE — ISI-2319 PASS** (ProxOps), folded
+  into §2b + §3.1. Clean A/B attribution; rootless-dockerd works for
+  daemon-at-runtime on gVisor with slirp4netns; builds stay on kaniko/buildah.
+- **ISI-2300: closed `done`.** Follow-through carried by the decision (no open
+  blocker): the *slirp4netns-in-sidecar-image* packaging constraint is an
+  implementation note for the operator's docker-capability sidecar (recorded in
+  arch §5.3.3), not a spike gate.
 - **v1:** unchanged; not a gate.

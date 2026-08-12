@@ -406,8 +406,10 @@ real running service.
     gVisor in ISI-2295 (`create default sandbox: … operation not permitted`), and it avoids gVisor's syscall-heavy
     cost center (ISI-2295 §6).
   - **Drive a live Docker daemon at runtime** (nested `docker run`, compose, testcontainers) → **rootless `dockerd`**
-    on gVisor, offered **only if** the ProxOps production-config retest (slirp4netns, ISI-2300 §3) confirms RUN
-    steps complete; otherwise real nested Docker requires a **Kata** RuntimeClass.
+    on gVisor — **confirmed viable (ISI-2319 retest PASS)** with the production config (`--net=slirp4netns`,
+    default bridge, no `--network=host` on build, uid 1000, overlay2). **Packaging constraint:** the sidecar image
+    **must bake in `slirp4netns`** (stock `docker:27-dind-rootless` ships vpnkit only); the daemon stays strictly
+    unprivileged. Real nested-virt Docker beyond rootless still requires a **Kata** RuntimeClass.
   The operator refuses `docker: true` on a runtime pinned to gVisor-only unless one of these mechanisms is selected.
   The flag is the gate; the RuntimeClass decides which mechanism backs it — spike-tunable (§9.1), not structural.
 
@@ -2120,7 +2122,7 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 | Reference shim + conformance assertions | §10.1 S5/S6 claimable | **ISI-2114** | ⚠ backlog — not started |
 | Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
-| Docker-in-sandbox mechanism (rootless dockerd vs kaniko/buildah vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 / ISI-2295 / ISI-2300 | 🟢 **decided 2026-08-12** (ISI-2300): split `docker:true` into **build → daemonless kaniko/buildah/BuildKit-rootless (primary; sidesteps the per-container netns `setns` that failed under gVisor in ISI-2295)** and **daemon-at-runtime → rootless-dockerd (pending ProxOps production-config retest) or Kata `runtimeClassHint`**. Retest-independent; not a v1 gate. See `spikes/isi-2300-rootless-dockerd-gvisor-decision.md` |
+| Docker-in-sandbox mechanism (rootless dockerd vs kaniko/buildah vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 / ISI-2295 / ISI-2300 / ISI-2319 | ✅ **closed 2026-08-12** (ISI-2300): split `docker:true` into **build → daemonless kaniko/buildah/BuildKit-rootless (primary; sidesteps the per-container netns `setns` that failed under gVisor in ISI-2295)** and **daemon-at-runtime → rootless-dockerd (confirmed viable, ISI-2319 retest PASS with slirp4netns; sidecar image must bake in slirp4netns) or Kata `runtimeClassHint`**. Not a v1 gate. See `spikes/isi-2300-rootless-dockerd-gvisor-decision.md` |
 | CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | CTO Alfred (legal) | ✅ **disposed 2026-08-11** — mixed model via the `image`+`cliVersion` seam; spike lands Phase 4; **not a blocker** |
 
 **Architect recommendation to Alfred/CEO:** schedule and staff ISI-2112/2113/2114 **in parallel with
