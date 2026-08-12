@@ -22,6 +22,7 @@ depends_on_architecture: 'ISI-2119 (docs/bmad/03-architecture.md, commit 7b91079
 honors: [operator-safety-over-expressiveness, two-records-principle, secrets-never-leave-the-seam, vendor-neutral-otel, cardinality-discipline]
 revisions:
   - r1 (2026-08-12, ISI-2306 / KSquad RBAC series): added user-scoped telemetry & audit. Threads the human-user identity dimension (`ksquad.user.id` = Run `initiatedByUserId`, from ISI-2303) through every span/log/exemplar (§3), forbids it as a raw metric label (§1.2/§5.6 — it is unbounded per-actor, rolled up in the backend like §15's per-ticket cost), adds the security audit log class (§6) + auth/authz/admin metrics + RBAC security signals (new §16), alerts (§9), semconv attrs (§7), and the user-activity / per-project dashboard. Depends on ISI-2303 landing the identity model to be truthful (flagged §16.7). No cardinality-law exception introduced; no new architectural decision — instruments the RBAC decisions made in ISI-2303.
+  - r2 (2026-08-12, ISI-2325 / CEO-validated Project Dashboard): added the **Project Dashboard signal feed** (new §17 + Appendix A row). The dashboard reads mostly from the coordination record / `scm` mirror (read models, no metric); this plan feeds the **one** metrics panel — **token consumption + trend** (§17.1: the existing `ksquad.agent.tokens` §5.5 read *as a time range*, `rate()`/`increase()` — a query shape, **not** a new instrument; per-user/agent/Run stay exemplar rollups §16.5; estimated cost = §16.5 price table, degrades to tokens-only) — plus two cheap bounded **approval-queue** signals (§17.2: `ksquad.approval.pending` gauge + `ksquad.approval.decisions.total{project,outcome}` for the KPI count / stale-approval alert / trend; authoritative who-approved-what stays coord + §16.4 audit log; `user.id`/`work_item.id`/`run.id` exemplar-only). No cardinality-law exception; no new architectural decision — legibility over signals the metering spine + coordination record already carry.
 depends_on_rbac_architecture: 'ISI-2303 (Users/ProjectMemberships/Roles + auth service + initiatedByUserId + createdBy/ownedBy) — user-scoped telemetry is truthful only once this lands; see §16.7'
 ---
 
@@ -756,6 +757,55 @@ nothing to *author*; **flagged** as truthful-once-ISI-2303-lands.
 
 ---
 
+## 17. Project Dashboard signal feed (ISI-2325 — CEO-validated dashboard)
+
+The CEO-validated Project Dashboard (arch §13 r24, PRD Theme I FR-I1…I8, epics 8.8a–f) reads **mostly
+from the coordination record** (tickets-by-status, Recent Tickets, Pending Approvals, live Runs) and the
+**`scm` mirror** (PR mini-board) — those are **read models, not metrics**, so they need **no new signal**
+here. The **one** panel this plan feeds is **token consumption with a trend**, plus two cheap, bounded
+approval-queue signals for alerting. **No cardinality-law exception; no new architectural decision.**
+
+### 17.1 Token consumption + trend (FR-I2, story 8.8e)
+
+The signal already exists — `ksquad.agent.tokens{runtime, direction}` (§5.5), aligned to `gen_ai.usage.*`
+(§7). The dashboard's **"tokens consumed (with trend)"** KPI is served by:
+- **Current total + per-scope breakdown** — the metrics query seam (arch §17.2) reads `agent.tokens`
+  federated by the **bounded** scope labels (`project`, `role` — §16.2) for the at-a-glance number.
+- **Trend** — the **identical series read as a time range** (tokens/day over a selectable window). A trend
+  is a **query shape over the existing counter, not a new instrument** (ponytail) — Prometheus/OTLP
+  `rate()`/`increase()` over the window, no stored rollup.
+- **Per-user / per-agent / per-Run drill-down** — the §15/§16.5 **backend rollup over exemplars/traces**
+  on `work_item.id` / `user.id` / `run.id`; those stay **exemplars, never labels** (§1.2/§5.6). The KPI
+  and trend are label-speed; the drill-down is the exemplar join.
+- **Estimated cost** — the §16.5 price-table computation over the same series; renders where a price table
+  is configured, **degrades to tokens-only** otherwise (matches the 8.8a per-tile degradation rule).
+
+**No new metric, no billing store** (ADR-020) — the widget is a query over the metering spine the dashboard
+already rides.
+
+### 17.2 Pending-approvals signals (FR-I5, stories 8.8c / 2.12)
+
+The Pending Approvals **queue itself** is a `coord` read model (`blocked_reason=needs_approval`, arch §6) —
+rendered from the DB, no metric required. For **alerting and trend** (a growing/stale approval backlog is
+an operational signal), two cheap bounded signals — both label-safe (`project` is a bounded scope dim,
+`outcome` is a 2-value enum):
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `ksquad.approval.pending` | gauge (up/down) | `project` | work items currently in `blocked(needs_approval)` — feeds the KPI count + a **stale-approval** alert (§9) when it stays > 0 past an SLO age |
+| `ksquad.approval.decisions.total` | counter | `project`, `outcome` (approve\|reject) | human approve/reject volume — approval throughput, drives the dashboard trend and an audit cross-check against the §16.4 security audit log |
+
+**Provenance:** the *authoritative* record of who approved/rejected what is the **coordination record +
+security audit log** (§16.4, `initiated_by_user_id`) — these metrics are **aggregate legibility**, never
+the record of decision. `run.id` / `work_item.id` / `user.id` stay **exemplars** on the counter, not labels
+(§1.2). Alert on `ksquad.approval.pending` age, not on per-item labels.
+
+**Handoff → Developer (Epic 13 / with 8.8c + 2.12):** emit `ksquad.approval.pending` from the coordination
+reconciler on gate raise/resolve and `ksquad.approval.decisions.total` on each human decision; extend the
+§11 cardinality CI gate to keep `work_item.id`/`user.id`/`run.id` **off** these two instruments' labels.
+
+---
+
 ## Appendix A — Signal-to-component matrix (the §17.2 coverage the ticket asked for)
 
 | Architecture component | Metrics | Traces | Logs / Audit | Alert |
@@ -767,6 +817,7 @@ nothing to *author*; **flagged** as truthful-once-ISI-2303-lands.
 | Shim / A2A (§7) — SSE progress, capability negotiation, conformance | §5.5 | shim.execute span + traceparent | A2A lifecycle logs | conformance-regression block |
 | Build browser (design §9.4/ADR-021, ISI-2165) — reads, snapshot emit, RO-reader cost | `ksquad.buildbrowser.*` (component plan) | `buildbrowser.*` span (child live / **linked** completed) | scope-denial + emit-failure + reader logs | "no build view" coverage, RO-reader cost, scope-denial — **all ticket-grade** | see `design/build-browser-observability-plan.md` |
 | **Identity / RBAC (ISI-2303, §16)** — login, authz decisions, admin/config change, user cost | §16.3 `auth.*`/`authz.decisions`/`admin.change.*`/`run.by_role.*` (labels bounded; `user.id` on exemplars) | `ksquad.user.id` on **every** span (§16.1) | **security audit log** (§16.4, authoritative) + `user.id` on all logs | brute-force / privilege-escalation / access-probing — **security-grade** (§9) |
+| **Project Dashboard feed (ISI-2325, §17)** — token consumption+trend, pending-approvals queue | §17.1 `agent.tokens` (query as trend); §17.2 `approval.pending` gauge + `approval.decisions.total` (labels `project`/`outcome` bounded; `user.id`/`work_item.id` on exemplars) | token exemplars on the Run trace (§3); approval decision joins `initiated_by_user_id` | approve/reject in **coord + security audit log** (§16.4, authoritative) | stale-approval backlog (`approval.pending` age past SLO) |
 
 **Disposition:** this plan is the observability design for the Gate-2 architecture, ready to feed Phase-4
 epics (OBS-1..7, plus OBS-8..10 for the RBAC user-scoped layer, §16.7). It adds no architectural
