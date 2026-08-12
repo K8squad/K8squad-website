@@ -213,6 +213,10 @@ nav wrapping / routing changes (App Router nested layouts).
 |---|--------|------|---------|
 | 13 | Navigation IA — hierarchy map | `images/13-nav-ia.png` | The new rail (real) + an annotated map of the tree: which nodes are **global** vs **project-scoped**, the **context selector**, the **breadcrumb** and **sub-nav** patterns |
 | 14 | Project → Tickets | `images/14-project-tickets.png` | Work items scoped to the selected Project — master-detail: list (status · assignee · counts) + detail (provenanced comments · artifacts · checkout/holder · linked Runs 8.2 / builds 8.7) |
+| 15 | Users & Roles (admin) | `images/15-users-roles.png` | **Console-user RBAC** (ISI-2307): user list · **access-level** assignment (Admin/Operator/Viewer) · **project-membership matrix**. Admin-only. See `rbac-nav-ia-revision.md` |
+| 16 | Adaptive navigation | `images/16-adaptive-nav.png` | **Admin vs non-admin** rails side by side (Dashboard + Users&Roles are admin-only; settings read-only for non-admin) + the **authorized-projects selector** rule |
+| 17 | Login (desktop) | `images/17-login.png` | **SSO / OIDC** sign-in — brand panel + sign-in card; console stores no human password; access from directory groups |
+| 18 | Mobile — RBAC | `images/18-mobile-rbac.png` | Mobile **SSO login flow** + **role-adaptive bottom nav** (admin gets a *Manage* tab; non-admin sees authorized projects only) |
 
 **The new rail (`console_kit_ia.py`).** Three groups replace the flat list:
 - **GLOBAL** — **Dashboard** (fleet, 8.8) · **Overview** (squad, 8.1) · **Agents** (org diagram 8.10 +
