@@ -2,7 +2,7 @@
 title: Console-user RBAC & navigation IA revision — KSquad operator console
 author: System Architect (Winston)
 date: 2026-08-12
-status: proposed — pending CEO/PM scope confirmation
+status: confirmed — scope graduated to v1 (PRD Theme O r6, ISI-2302); three-access-level model ratified (PRD r7 / ISI-2310); architected in ADR-034 (03-architecture §12.3/§18)
 source_ticket: ISI-2307
 supersedes_reference: memory/ksquad-nav-ia-revision.md  # referenced by ISI-2307 but absent from repo/mempalace; this doc recreates it
 feeds: UX mocks (screens 15–18) · Architecture §12 (tenancy) / §13 (console) · Epics (console auth story)
@@ -98,17 +98,22 @@ SETTINGS                             Configuration  (read-only)
 | **17** | **Login** (desktop) — SSO/OIDC sign-in | 3 |
 | **18** | **Mobile** — SSO login flow + role-adaptive bottom nav | 4 |
 
-## 6. Scope flag (read before building on this)
+## 6. Scope flag — RESOLVED (2026-08-12)
 
-This introduces **new product scope**: console authentication and a human RBAC layer are **not** in
-the current PRD (§9.6 FR-F is about console *function*, not *auth*) or architecture. The model here is
-deliberately **thin and RBAC-reflecting** — it adds OIDC login + a group→access-role/membership mapping
-and surfaces the K8s RBAC that already exists, rather than inventing a parallel authz system. Before
-this graduates from mocks to committed architecture it needs:
+This doc originally flagged console auth + human RBAC as **new, unconfirmed scope**. That is now
+**settled** — the mocks are committed direction, not speculation:
 
-- **CEO/PM confirmation** that console auth + human RBAC is in v1 scope, and the 3-role model is right.
-- A PRD FR (console auth) + an **ADR** (OIDC + group→role/membership mapping; console reflects RBAC).
-- An Epic/story handoff (console BFF authz middleware; IdP integration).
+- **Scope confirmed v1.** The PRD graduated human authentication & RBAC to v1 as **Theme O
+  (FR-AUTH1…AUTH5)** in r6 (ISI-2302) — it was already in scope when ISI-2310 was raised.
+- **Three-access-level model ratified.** PRD r7 (ISI-2310, PM decision) adopted **Admin / Operator /
+  Viewer** — the model in §2 — resolving the FR↔UX divergence (r6 PRD had two roles; these mocks +
+  the IA proposed three). Viewer earns its place as the least-privilege read-only grant (PRD D2/R20).
+- **ADR authored.** The console-auth architecture is **ADR-033** (OIDC-ready `AuthProvider` seam, local
+  store, JWT sessions, deny-by-default middleware) **+ ADR-034** (the three-access-level granularity +
+  the OIDC `groupMapping` group→access-level/membership mapping — "console reflects RBAC"), in
+  `03-architecture.md` §12.3/§12.4/§18. The middleware treats the `operator|viewer` split as a
+  per-`Project` **read/write bit**, not a new subsystem.
+- **Remaining handoff:** Epic/story work (console BFF authz middleware + IdP integration) lives in
+  **Epic 15** (04-epics-and-stories); Story-Writer/Code-Reviewer/Observability follow-ups from the ADR.
 
-Until then these are **direction mocks**, consistent with the "delegated UX direction" posture of the
-rest of the ISI-2150 set (README author = Graphic Designer; non-blocking to the CEO gate).
+The mocks (screens 15–18) are now **committed v1 direction** aligned to ratified scope and a written ADR.

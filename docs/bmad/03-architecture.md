@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [context-analysis, backing-store-decision, crd-surface, agent-runtime-crd, tooling-model, coordination-record, knowledge-record, run-lifecycle, sandbox-runtime, shim-contract, credential-model, tenancy-isolation, console-frontend, sympozium-teardown, spine-risk, install-story, source-control-sync, dashboard-layer, discussion-room, build-browser, exposure-model, console-theming, plugin-architecture, event-bus, memory-backend-pluggability, adr-log, open-questions, traceability, validation]
+stepsCompleted: [context-analysis, backing-store-decision, crd-surface, agent-runtime-crd, tooling-model, coordination-record, knowledge-record, run-lifecycle, sandbox-runtime, shim-contract, credential-model, tenancy-isolation, console-frontend, sympozium-teardown, spine-risk, install-story, source-control-sync, dashboard-layer, discussion-room, build-browser, exposure-model, console-theming, plugin-architecture, event-bus, memory-backend-pluggability, adr-log, open-questions, traceability, validation, identity-rbac-auth]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + 7 LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis + Challenger amendments (commit aa1fbb2)
@@ -23,7 +23,12 @@ inputDocuments:
   - ISI-2161                        # Team organization diagram console screen (CEO Henrik 2026-08-11): Team→Agent→Role org-chart read model + live SSE status — folded into §13 (r10); mock = 10th screen in ISI-2150
   - ISI-2134                        # CEO/CTO question (Henrik+Alfred 2026-08-11): context injection + agent handoff — evaluated Alfred's design, adopted w/ refinements — new §8.5 (r11); threads to ISI-2131
   - ISI-2134                        # CEO clarifications (Henrik 2026-08-11): hierarchical context budget (Project/Agent CRDs) + agent↔ticket lifecycle loop — §8.5/§8.6 (r12); agent-detail console = ISI-2162
+  - ISI-2303                        # RBAC: identity provider / auth service + RBAC middleware + Users/ProjectMemberships/Roles data model + agent execution identity + ADR + CRD createdBy/ownedBy + Run identity propagation + console Users & Roles + Helm auth service — folded into §12.3/§12.4, §5.1 (createdBy annotation), §8 (initiatedByUserId propagation), §13, §16, §17.3, ADR-033 (r20); co-authored with ISI-2301
   - MemPalace (org shared memory)   # First-hand Sympozium production intel (Ensemble/Agent/Model CRDs, memory sidecar, NATS, PR#45, OTel PRs #11/#18, ISI-1406)
+  - ISI-2301                        # CEO v1 2026-08-12: user management & per-project RBAC — architecture revision (this r20); source ticket for §12.3/§12.4/ADR-033
+  - docs/bmad/02-prd.md (r6)        # PRD Theme O / FR-AUTH1…5, D9, NFR-SEC10/OBS4, OQ19/OQ20 (ISI-2302) — the requirement set this r20 architects; FR↔arch lockstep source
+  - ISI-2310                        # PM decision (r7): console access-level granularity = THREE (Admin/Operator/Viewer); scope already v1 (Theme O r6). Architect authors the console-auth ADR against the three-level model — ADR-034 (r22), refines ADR-033
+  - docs/bmad/02-prd.md (r7)        # PRD Theme O refined to three access levels (ISI-2310); FR-AUTH2/AUTH5, §9.15 scope guard — the decision this r22 architects into ADR-034
 revisions:
   - r1 (2026-08-10, ISI-2119): initial architecture synthesis from CEO-approved PRD r2
   - r2 (2026-08-11, ISI-2144): added §5.3 AgentRuntime CRD + lifecycle-split tooling model (init-staged toolchain packs, Skill.requires, service sidecars, ImageUpdater) per Henrik+Alfred decided direction; ADR-015/016/017; touchpoints §5.1/5.2/8/9.2/10.1/19/21
@@ -31,6 +36,12 @@ revisions:
   - r14 (2026-08-11, ISI-2145): elaborated §5.4 for the two ISI-2145 bullets the r3 fold named but did not spell out — **PR `review_state`** (approved/changes-requested/review-required/pending) on `scm_pr_mirror`, and **Run/branch correlation** (`scm_pr_mirror.head_sha → run.commit_sha`, nullable `run_id`, a read-model join not a custody edge); plus the **CI-failure → discussion-room auto-post** (a failed `check_run` emits an origin-marked, provenance-external `discussion_message` §7.5 **and** a `ksquad.scm.{project}.{squad}.check_run.failed` event on the r13/ADR-023 NATS bus for plugins). Both ride existing seams (`scm` schema, §7.5 discussion, event bus) — no new mechanism, no locked decision reopened; §6 fenced-claim/no-P2P untouched. Touchpoints §5.4/§7.5/§9.4/§13/§19; ADR-018 note extended
   - r15 (2026-08-11, ISI-2166): **pinned the build-browser visibility model as per-principal (not Team-legible)** — resolves ISI-2164 review B1 / the ISI-2132 F7 resurfacing. §9.4 build-browser bullet tightened: read authZ is gated by **owning-principal identity** (`Run.owningPrincipal == caller.principal`, Team scope as outer bound), NOT the cache partition (which is residue-only defense-in-depth and does not cover the git read path). Same-Team principals cannot read each other's Run build view (→404) because the browser surfaces raw worktree content bearing BYO-per-principal secrets — Team-legibility would be the exfil path around the locked §9.4/§11/§12/D7 per-principal Secret isolation. **Applies** the locked decision to the read API; does not reopen it. Lockstep: `design/build-browser-component-design.md` r2 (§5 Decision + Layer 1, AC3, §8.7 authZ check, 8.7d hint) and `05-testing-strategy.md` §6.5 (new cross-principal-same-Team read-authZ S4 case, NFR-SEC5). Unblocks Story Writer on 8.7d. No projection-core / locked decision reopened
   - r16 (2026-08-12, ISI-2151 / CEO Henrik): added the **`OTelConfig` CRD** (§5.1/§5.2/§17.2) + **console Settings page (screen 12)** (§13) for user-configurable, **opt-in** OTLP export. Every component emits OTel; the CRD reconciler routes it **per signal** (traces/metrics/logs each own endpoint + protocol grpc|http + `authSecretRef` + resource-attrs + sampling — e.g. traces→Dynatrace, metrics→Prometheus, logs→Loki); exporter creds are **Secret refs, never inline** (§11); **default = no exporter** (no telemetry egress by default, D8). Settings page is a form over the CRD via the apiserver BFF (no direct kube). ADR-029; §19/§22 updated. Feeds Epic 13 (obs reads OTelConfig) + Epic 8 (screen 12). No locked decision reopened
+  - r17 (2026-08-12, ISI-2151 / CEO Henrik): **LLM provider rate-limit detection + auto-pause/resume**. Shim normalizes throttling to a standardized **`rate_limited{retryAfter}`** A2A signal (§10.1); §8 gains **`Paused(rate_limited)`** — tracks `Retry-After`, **auto-resumes** when the window clears, **exponential backoff** per credential on repeats, and **squad-level re-route** on a persistent limit (fenced control-plane re-dispatch to an agent with a non-throttled credential, §6.3/§8, **not** P2P). **Per-credential attribution** (BYO-subscription §11) so one subscription's limit never blocks/mis-charges another; sibling to the auth-failure pause but **self-recovering**. Events → NATS (§17.4) + dashboard + Run logs (§13). §8/§10.1/§11 touched; ADR-030; §19/§22. Feeds Epic 7 + Epic 13. No locked decision reopened
+  - r18 (2026-08-12, ISI-2151 / CEO Henrik): elaborated rate-limit recovery into a **3-tier hierarchy** (§8): (1) **fallback model** — `Agent.fallbackModel?` → shim **mid-Run model switch**, no pause (§10.3/§5.1); (2) **scheduled-timer pause** — `Paused(rate_limited)` with persisted **`resume_at`** and a **single scheduled wake (RequeueAfter/durable timer), not a poll loop** → zero wasted API calls, crash-safe; **jitter-backoff** when `Retry-After` absent; (3) fenced **re-route** (r17). Added the **rate-limit/fallback metric taxonomy** (§17.2) — `ksquad.ratelimit.hits/duration_seconds` + `ksquad.fallback.activations/duration_seconds` dimensioned **per project/agent/role** (+provider/model), on the OTelConfig export path + NATS + dashboard (ISI-2146). ADR-031; §5.1 Agent `fallbackModel?`; §19/§22; §20 Story-Writer handoff (Epic 2/5/7/8/13 story threading — that amendment is 04-epics-and-stories.md, Story-Writer-owned). No locked decision reopened
+  - r19 (2026-08-12, ISI-2151 / CEO Henrik): **zero-touch Claude credential lifecycle** (§11.1) — supersedes the ISI-2112 "manual `setup-token` every 8h" rec. **One-time OAuth** (console "Connect Claude" / CLI `ksquad auth login`) → per-user Secret; a **leader-elected credential controller** (§5.2, one owner, no race) auto-refreshes the ~8h access token before expiry and writes back to the **same Secret**; agent pods just **mount** it (concurrent Runs proven by Paperclip prod); **re-login only on ~9-day** refresh-window expiry. **Console Credentials page (screen 05, §13)** shows per-agent health (connected/refreshing/expired), never token strings. §21 ISI-2112 row → **largely resolved, not a gate** (controller tuning only). ADR-032; §11 Claude row + caveat rewritten; §5.2 controller; §19/§22; §20 Epic-7 story handoff. No locked decision reopened
+  - r20 (2026-08-12, ISI-2301 / ISI-2303 / CEO Henrik): **user management & per-project RBAC as v1** — closes the PRD↔architecture gap the PRD r6 (ISI-2302, Theme O / FR-AUTH1…5) opened. New **§12.3** (identity, users & per-project RBAC) + **§12.4** (agent execution identity): a **`pkg/auth` package inside the apiserver** (no new binary; §17.3) owns a **local username/password store** (new Postgres **`auth` schema** — users/project_memberships/sessions, argon2id; ADR-001 intact, third app-data schema in one Postgres) behind an **`AuthProvider` seam** so OIDC/SSO is a pluggable fast-follow (the ≤4h air-gapped S1 install never hard-depends on an external IdP). **Edge = opaque HttpOnly session cookie (server-side, instantly revocable), internal = short-lived signed JWT** for BFF→apiserver + Run identity propagation. **Deny-by-default RBAC middleware on every endpoint** (server-filtered project selector) is the single authorization wall — **admin** = full; **user** = project-scoped (viewer/contributor/maintainer). Runs carry a **non-forgeable control-plane-stamped `initiatedByUserId`** (§12.4, §8, §6.1); an agent inherits the caller's scope (effective = Agent `Role` ∩ initiating user's membership — **confused-deputy closed**); per-principal metering (§11/§17.2) falls out. **`ksquad.io/created-by` annotation** on `Project`/`Team`/`Agent`/`Skill`/`Role` CRDs (§5.1, immutable-after-create, CEL/webhook). UI nav adaptation is **defense-in-depth, not the boundary**. **Console Users & Roles screen (admin-only, §13) + adaptive project selector** (server-filtered to user's memberships). Auth schema migrated by apiserver on startup; signing-key Secret auto-generated by Helm (§16). **RESOLVES OQ19** (session/token + OIDC seam) and **OQ20** (single enforcement point + caller propagation); satisfies **D9/NFR-SEC10/NFR-OBS4**. ADR-033; touchpoints §1/§3.1/§5.1/§8/§8.6/§13/§16/§17.3/§19/§22; **feeds Epic 15** (04-epics). No locked decision reopened (ADR-001 one-Postgres, per-principal §11, no-P2P §6 all intact).
+  - r21 (2026-08-12, ISI-2309): closed the three FR-AUTH sub-gaps r20 named but did not spell out in the §12.3 body (design-neutral to the auth-service packaging still being reconciled by ISI-2301/ISI-2303). (1) **First-run admin bootstrap (OQ19, R20)** — no baked default credential; Helm generates a random initial-admin password into a release Secret (`ksquad-bootstrap-admin`) surfaced via `NOTES.txt`, the auth service **idempotently seeds** one `admin` iff `auth.users` is empty with **`must_change_password=true`** (forced rotation → install-Secret value is never durable), fully offline (no IdP/callback) so the ≤4h S1 install holds; OIDC installs promote the first `admin.bootstrapSubject` login behind the same empty-table guard. `auth.users` gains `must_change_password`. (2) **One enforcement point, every surface (OQ20)** — made explicit that console read models, discussion room (§7.5), dashboards (§13/§17.2), and build browser (§9.4) all pass the *same* deny-by-default middleware check (build-browser per-principal gate = that check specialized, not a 2nd authz path) → no per-surface drift. (3) **Authn/authz audit trail (NFR-OBS4)** — login success/failure, session issue/refresh/revoke, user/membership changes, and every 403 captured in the queryable audit trail + OTel `ksquad.auth.*`/`ksquad.rbac.*`, joined to `initiated_by_user_id` (§12.4) for who-did-what-on-whose-behalf. Broken-access-control S4 test already present (05-testing-strategy §6.7.3 I1/I2, ISI-2305) — referenced, not duplicated. No new decision; ADR-033 intact. All three additions are **packaging-neutral** — they hold whether the auth service ships as a `pkg/auth` package in the apiserver or a standalone `ksquad-auth` Deployment; that topology reconciliation (§12.3 body ↔ epics 15.1/15.4/9.5) is owned by the in-progress ISI-2301, not ISI-2309.
+  - r22 (2026-08-12, ISI-2310): **console access-level granularity — three levels (Admin / Operator / Viewer)**, the ADR the PM (John, r7) reassigned to the Architect after confirming scope was already v1 (Theme O, r6). Authored **ADR-034** *refining* ADR-033's role model: the r20 `global_role{admin,user}` is unchanged, but the per-`Project` `role` enum drops the 3-way `viewer/contributor/maintainer` grade to the single **`operator|viewer` read/write bit** the PRD names — Operator = per-`Project` read/write, Viewer = per-`Project` read-only, Admin = global. Middleware gates writes on `level==operator`; a `viewer` membership passes reads and **403s writes**. Levels are held **per membership** (Operator on one `Project`, Viewer on another — resolved from the `project_memberships` row, never a global label). Spelled out the **OIDC group→access-level/membership mapping** the ticket named (`auth.oidc.groupMapping`: group claim → `admin` | `(Project, level)`) so the console **reflects** the IdP's group→role RBAC through the *same* middleware — **no OIDC-specific authz path** (OQ20 single-wall intact). Net effect is **less code than r20** (a bounded-enum simplification), no new table, no new subsystem — the finer per-`Project` grade remains the ADR-033 custom-role upgrade path. Touchpoints §12.3/§12.4/§13/§18/§19 + summary; ADR-034; FR-AUTH2/AUTH5, D2/R20. No locked decision reopened (ADR-033 mechanism, ADR-001 one-Postgres, no-P2P §6 all intact).
   - r4 (2026-08-11, ISI-2154): lockstep with PRD r3. Adopted the PRD's formal numbering (Themes H/I/J/K/L, FR-F7) across §5.4/§7.5/§9.4/§11/§13/§16, and RESOLVED the five Architecture-owned mechanism questions the PRD routed here — OQ13 sync conflict/loop model (§5.4, field-ownership split + origin-tagged echo suppression), OQ14 metering provenance (§11/§17.2, anchored to Run lifecycle + kubelet, not forgeable self-report), OQ15 room storage/distinctness (§7.5), OQ16 Gateway-less fallback (§16.1, degrade to Service/Ingress so ≤4h install holds), OQ17 build-browser source + per-principal scoping (§9.4). Reflected the new security bar: D8 (external integrations untrusted+authenticated), NFR-SEC7 (room scope), NFR-SEC8 (sync auth), NFR-OBS3 (metering provenance). ADR-018/020/022 extended; §19/§22 updated. No locked decision reopened; content unchanged, numbering + two mechanism gaps (OQ13 loop model, OQ16 fallback) filled
   - r5 (2026-08-11, ISI-2151): folded two further CEO-review requirements (comment fad6cf02) in behind existing seams — §17.4 plugin architecture + event bus (internal event bus generalizes the SSE progress bus; in-process plugin subscribers v1, out-of-process delivery seam fast-follow; plugins are observers/integrators, best-effort post-commit, NEVER a coordination path — the §7.3/§7.5 no-P2P argument applied a third time; ADR-023) and §7.6 memory backend pluggability (`MemoryBackend` seam, pgvector default, GRAIL/ISI-2142 as a memory-SDK plugin + its own Phase 4 story; trust model enforced above the backend, backend-independent; ADR-024). Touchpoints §1/§7.1/§17.3/§19/§22. No locked decision reopened; ADR-001 one-Postgres + F16 trust boundary intact
   - r6 (2026-08-11, ISI-2151 / ISI-2156): refined the plugin architecture to the CEO's precise design (ISI-2156). Event seam is now a **transactional Postgres `outbox`** (events append-only in the state-change txn → at-least-once), delivered by **async workers with dead-letter + per-plugin circuit breaker** so a failing plugin can never block reconcile/coordination; plugins are **out-of-process** (sidecar/service) per Project/squad with BYO-Secret outbound creds; **versioned event catalog** under §10.2 drift discipline; **read-only consumption — plugins cannot claim/handoff/mutate**. Reframed GRAIL (§7.6): pgvector is **source-of-truth**, GRAIL is the seam's **first consumer** (memory writes stream via OTLP/SmartScape/DQL), not a backend swap. Rewrote §17.4, §7.6; added §6.6 (coord events); ADR-023/024 revised; §1/§17.3/§19/§20/§22 updated. Internal outbox over external broker per §4 single-stateful-dependency (CEO-named trade). No locked decision reopened
@@ -127,6 +138,24 @@ while **`pgvector` remains source-of-truth** and the §7.3 trust model is enforc
 before fan-out. **Postgres stays the single source-of-truth**; **NATS/JetStream is a second stateful
 dependency for event transport only** (§4 amended — CEO-named trade) — no locked decision reopened.
 
+**Identity & per-project RBAC (r20, CEO v1 2026-08-12, ISI-2301).** User management with RBAC is a
+**v1** requirement. It lands behind existing seams, no new binary and no new datastore: a **`pkg/auth`
+package inside the apiserver** (short-lived access JWT + rotated, revocable refresh tokens) owns a
+**local username/password store** (a new `auth` schema in the *same* one Postgres — ADR-001 intact)
+behind an **`AuthProvider` seam** that keeps **OIDC/SSO a pluggable fast-follow** (so the ≤4h
+air-gapped S1 install never hard-depends on an external IdP). A
+**deny-by-default RBAC middleware** on **every** apiserver endpoint is the single authorization wall.
+Authorization is **three access levels** (UI term, to avoid the `Role` CRD collision; ADR-034, r22):
+**Admin** = global full control; **Operator** = read/write within an authorized `Project`; **Viewer** =
+read-only within an authorized `Project` — Operator vs Viewer is a per-`Project` **read/write bit**, not a
+new authz subsystem — with the **project selector server-filtered** to their memberships. Runs carry a **non-forgeable, control-plane-stamped
+`initiatedByUserId`** (§12.4), and an **agent inherits the caller's project scope** (effective scope =
+Agent `Role` grants ∩ the initiating user's membership) — closing the confused-deputy hole so an agent
+is never a privilege-escalation path around RBAC. Per-principal metering (§11/§17.2) falls out because
+credentials are already BYO-per-principal. UI nav adaptation is **defense-in-depth, not the boundary**
+— the middleware enforces server-side. §12.3/§12.4, ADR-033; **feeds Epic 15.** No locked decision
+reopened.
+
 > **Honesty note carried throughout.** ISI-2112 (setup-token longevity), ISI-2113 (sandbox claim
 > latency), and ISI-2114 (shim contract) are **still `backlog` and unassigned** as of this writing —
 > the "evidence" the wake asked me to consume **does not exist yet**. This architecture is therefore
@@ -169,6 +198,7 @@ Epics and Code Review inherit the *reasoning*, not just the outcome.
    kubectl / CRDs ─────────►│  ksquad-apiserver (Go)                        │
                             │   • coordination record: work items / comments │
                             │     / checkout / lease / artifacts (Postgres)  │
+                            │   • pkg/auth: users/session/JWT + RBAC mw (§12) │
                             │   • audit query API   • SSE progress bus        │
                             └───┬───────────────┬───────────────┬────────────┘
                                 │               │               │
@@ -176,7 +206,7 @@ Epics and Code Review inherit the *reasoning*, not just the outcome.
         │ ksquad-operator (Go)     │   │ ksquad-memory (Go)│   │ Postgres (single    │
         │  controller-runtime      │   │  MCP server       │   │ stateful dependency)│
         │  reconcilers:            │   │  pgvector + diary │   │  • coord schema     │
-        │  Team/Agent/Project/Run  │   │  + KG (fast-follow)│  │  • memory schema    │
+        │  Team/Agent/Project/Run  │   │  + KG (fast-follow)│  │  • memory + auth    │
         │  + SandboxPool           │   └────────┬──────────┘   │  (logically split,  │
         └───────────┬──────────────┘            │              │  distinct trust)    │
                     │ creates/tears down         │ MCP tools    └─────────────────────┘
@@ -195,8 +225,8 @@ Epics and Code Review inherit the *reasoning*, not just the outcome.
 
 ### 3.2 Plane split
 
-- **Control plane** (namespace `ksquad-system`): operator, apiserver, memory service, console,
-  Postgres. Stateful, cluster-privileged (scoped), one install.
+- **Control plane** (namespace `ksquad-system`): operator, apiserver (**incl. `pkg/auth` identity +
+  RBAC, §12.3**), memory service, console, Postgres. Stateful, cluster-privileged (scoped), one install.
 - **Data plane** (per-`Team` namespace): sandbox pods, shims, agent runtimes, workspace PVCs, the
   Team's Secrets. Untrusted, least-privilege, blast-radius-bounded.
 
@@ -260,7 +290,7 @@ bus as dependency #2, event-flow only).
 | CRD | Purpose | Key spec | Reconciled by |
 |-----|---------|----------|---------------|
 | `Team` | Squad = tenancy boundary | `projects[]`, `agents[]` (refs), `namespaceStrategy` | Team reconciler → ensures namespace, RBAC, NetworkPolicy, quota |
-| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model`, `contextBudgetOverride?` (§8.5) | Agent reconciler → validates Secret + runtime, publishes Agent Card |
+| `Agent` | One agent instance in a squad | `runtimeRef` (→`AgentRuntime`), `credentialSecretRef`, `capabilityOverrides`, `model`, `contextBudgetOverride?` (§8.5), `fallbackModel?` (§8/§10.3 rate-limit fallback) | Agent reconciler → validates Secret + runtime, publishes Agent Card |
 | `AgentRuntime` | Pluggable coding-agent flavor + CLI version policy | `type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}` | AgentRuntime reconciler + `ImageUpdater` (§5.3) |
 | `Role` | Reusable behavior profile | `promptRef`, `defaultSkills[]`, `runtimeClassHint` | (data only; validated) |
 | `Skill` | Granted tool/capability | `source{inline\|git}` (§5.3.6), `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}` | (data only; validated → drives §5.3.4 pod assembly; git-sourced body staged at claim) |
@@ -273,12 +303,22 @@ bus as dependency #2, event-flow only).
 > rows behind the apiserver/memory APIs (§4). The `Run` CRD *references* work items via
 > `workItemSelector`; it does not embed them.
 
+> **`createdBy` annotation (r20, ISI-2303).** `Project`, `Team`, `Agent`, `Skill`, and `Role` CRDs
+> gain a **`metadata.annotations[ksquad.io/created-by]`** annotation (the `user_id` from the `auth`
+> schema, §12.3) set by the apiserver BFF at CRD-create time. It is **immutable after creation**
+> (CEL/webhook enforces this), so the origin of a CRD is always auditable. Runs also carry
+> `metadata.annotations[ksquad.io/initiated-by]` for the triggering human actor (§8, §12.4). Both are
+> consumed by the `pkg/auth` RBAC middleware and surfaced in the audit log (§6.5) and OTel labels
+> (§17.2).
+
 ### 5.2 Operator
 
 - **controller-runtime / Kubebuilder**, one manager, one reconciler per CRD, leader-elected. The
   `AgentRuntime` reconciler validates the runtime + owns the `ImageUpdater` control loop (§5.3.5); the
   Run reconciler runs the pod-assembly algorithm (§5.3.4) at `Claiming`; the **`OTelConfig` reconciler**
-  reads OTLP export config → configures every component's OTLP exporter (§17.2, opt-in, ADR-029).
+  reads OTLP export config → configures every component's OTLP exporter (§17.2, opt-in, ADR-029); the
+  **credential controller** (leader-elected, one owner) auto-refreshes Claude OAuth tokens before expiry
+  and writes them back to the per-user Secret (§11.1, zero-touch, ADR-032).
 - Reconcilers are **idempotent and level-triggered**; each writes `status.observedGeneration` and
   conditions. Run reconciler additionally coordinates with the apiserver's claim service via fencing
   tokens (§6.3, §8) so a controller restart never double-drives a Run.
@@ -880,7 +920,9 @@ heartbeat orchestration (F1–F4, R4).
     ▲          │           │     ├─► Failed ──(retryPolicy, backoff)──► Claiming
     │          │           │     └─► Cancelled (operator kill, FR-A6/F4)
     │          │           ▼
-    │          │        Paused ──(credential expiry, §11)──► Running (on Secret refresh)
+    │          │        Paused ──(credential expiry, §11)──────► Running (on Secret refresh)
+    │          │        Paused(rate_limited) ──(Retry-After elapsed)──► Claiming (auto-resume)
+    │          │                            └──(persistent)──► re-route to agent w/ other credential
     └──────────┴── retry/backoff (sandbox or agent failure, FR-A5) ──┘
 ```
 
@@ -898,9 +940,39 @@ heartbeat orchestration (F1–F4, R4).
   releases claims, marks `Cancelled`. Sandbox teardown is prompt because the pod is disposable (§9.3).
 - **Pause (§11):** an auth-failure signal from the shim transitions the Run to `Paused` with a clear
   operator condition (FR-F6/S10), resuming on credential refresh — never an opaque failure.
+- **Human-identity propagation (r20, §12.3/§12.4):** when a user triggers a Run via the console or
+  BFF, the `pkg/auth` RBAC middleware validates the session JWT and the apiserver stamps
+  `metadata.annotations[ksquad.io/initiated-by] = user_id` on the `Run` CRD. The reconciler copies
+  this into the `coord` claim row (`initiated_by_user_id`, §12.4) and OTel span attributes, making
+  consumption attributable to the triggering human principal (§17.2 `{user}` label). The Run does
+  **not** inherit the user's session token; the sandbox continues using only the agent's BYO credential
+  Secret (§11). Reconciler-driven Runs (auto-retry, scheduled) carry a `system` sentinel, never a user
+  id. Full semantics: §12.4.
+- **Rate-limit recovery — a 3-tier hierarchy (CEO 2026-08-12):** the shim surfaces a **standardized
+  `rate_limited` A2A signal** (§10.1) — with the provider's **`Retry-After`** where given — when the LLM
+  provider throttles; the reconciler records the **rate-limited credential/principal** (per-credential
+  attribution, BYO-subscription §11) and recovers in priority order:
+  1. **Fallback model (if configured, §10.3/§11) — no pause.** If the Agent/Project declares a
+     **fallback model**, the shim performs a **mid-Run model switch** to it and continues; the Run never
+     leaves `Running`. A `ksquad.fallback.activations` event/metric is emitted (§17.2).
+  2. **Scheduled-timer pause + auto-resume (no fallback configured).** The Run → **`Paused(rate_limited)`**
+     with **`resume_at = now + Retry-After`** persisted on the Run. The control plane **schedules a single
+     timed wake at `resume_at`** — a **`RequeueAfter`/durable timer, NOT a poll loop** — so **zero API
+     calls are wasted** during the wait; when it fires the Run auto-resumes (→ `Claiming`). `resume_at`
+     is persisted, so an operator restart re-reads it and re-schedules (crash-safe, §6). **If `Retry-After`
+     is absent**, fall back to **exponential backoff with jitter**, keyed per credential.
+  3. **Squad-level re-route (persistent limit).** Rather than idle indefinitely, the reconciler may
+     **release the fenced claim (§6.3) and re-dispatch the work item to another eligible agent whose
+     credential is *not* rate-limited** — **control-plane re-dispatch, not agent-to-agent handoff**
+     (fenced release→re-dispatch→claim, §6/§8.6, no-P2P preserved).
+  Every transition emits a domain event to **NATS (§17.4)** and surfaces on the **dashboard +
+  agent-detail Run logs (§13)**; metrics per §17.2. Attribution is per-credential so one BYO
+  subscription's limit never silently charges or blocks another's.
 
-*Satisfies:* FR-A4/A5/A6, NFR-REL1/REL2, S8. *Trade recorded:* ADR-005 (reconcile state machine vs
-job/heartbeat).
+*Satisfies:* FR-A4/A5/A6, FR-F6/S10, NFR-REL1/REL2, S8; rate-limit auto-pause/resume + fallback (CEO
+2026-08-12). *Trade recorded:* ADR-005 (reconcile state machine vs job/heartbeat), ADR-030 (rate-limit
+pause/auto-resume/backoff/re-route, §10.1/§11), ADR-031 (scheduled-timer resume + fallback-model tier +
+per-dimension metrics, §17.2).
 
 ### 8.5 Context Injection & Agent Handoff (CEO/CTO question 2026-08-11)
 
@@ -982,7 +1054,9 @@ tiers), §10.1/§10.3 (shim contract + model `contextWindow`), §5.1 (`Project.c
 coordination record is Postgres §6, *not* CRDs — CRDs stay desired-state per ADR-001/002). The loop, in
 terms of mechanisms already specified:
 1. **Claim** — the agent claims a work item through the coordination spine (§6.2: checkout/claim/lease +
-   fencing token; at-most-one-holder, §6.1).
+   fencing token; at-most-one-holder, §6.1). The claim row records **`initiated_by_user_id`** (§12.4) —
+   the Run carries the initiating caller's identity, and the agent's effective scope is bounded by that
+   user's per-project membership (confused-deputy closed).
 2. **Contextualize** — the Run reads its **context envelope** (§8.5), assembled by the control plane.
 3. **Work** — executes in the sandbox (§9), reads/writes the workspace and memory (§7), and **streams
    progress** — progress comments + SSE (§6.5 audit, §8 `Running` → console FR-F2).
@@ -1140,6 +1214,13 @@ Runs or principals.**
   credential-type / **model-endpoint override (`byoModelEndpoint`, §10.3)** are negotiated on the Agent
   Card; the core treats gaps as declared capabilities, never as special-cased hacks. A runtime with no
   interactive-prompt support advertises that; the core routes around it.
+- **Standardized control signals over A2A (runtime-agnostic).** The shim normalizes provider/runtime
+  conditions into a fixed signal set the core acts on without vendor special-casing: **`auth_failure`**
+  (→ `Paused`, §11), and **`rate_limited{retryAfter?, scope}`** (→ `Paused(rate_limited)`, §8; CEO
+  2026-08-12) — the shim maps a provider 429 / throttle to this signal, carrying `Retry-After` when the
+  provider gives it. Normalizing rate-limit detection *in the shim* is what keeps it runtime-agnostic
+  (each CLI/provider expresses throttling differently; the core sees one signal). Conformance (ISI-2114)
+  asserts the signal set.
 - **v1 shims: OpenClaw + Hermes** (FR-D3/S6); Claude Code + OpenCode follow (Phase 2).
 - **Conformance suite (FR-D5, owned by ISI-2114):** a vendor runs it independently; passing ⇒ the
   runtime drops into any squad with **zero core changes** (S5/NFR-EXT1). **ISI-2114 has not been
@@ -1179,6 +1260,11 @@ Runs or principals.**
 - **Credential shape (§11, third story).** The endpoint URL (+ optional token) is a **per-user Secret
   ref**; the model is `Agent.spec.model`. No interactive OAuth, no shared master credential — the same
   BYO-Secret discipline as the other two stories, so the lock holds.
+- **Fallback model & mid-Run switch (rate-limit recovery, §8 tier 1).** `Agent.spec.fallbackModel?`
+  (optionally its own endpoint/credential) names a secondary model. On a `rate_limited` signal (§10.1)
+  the shim performs a **mid-Run model switch** to the fallback and continues the Run — the same
+  model-endpoint-override machinery, just re-resolved live. Absent a fallback, recovery falls to the
+  §8 scheduled-timer pause. Fallback activations/duration are metered per §17.2.
 - **Egress (§12.2).** A BYO Ollama endpoint (in-cluster Service or a LAN/remote host) is an
   **allowlisted egress target** on the Team NetworkPolicy — default-deny still holds; the endpoint joins
   the model-endpoint allowlist like any other provider.
@@ -1207,7 +1293,7 @@ auth flow. Three distinct stories ship at v1 (S6):
 
 | Runtime family | Acquisition | Lifecycle | Secret shape |
 |----------------|-------------|-----------|--------------|
-| **Claude-family** | `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` | subscription-OAuth; refresh + graceful pause | per-user Secret ref (OAuth token) |
+| **Claude-family** | **one-time OAuth** — console "Connect Claude" (browser) or CLI `ksquad auth login` | **zero-touch:** centralized controller auto-refreshes the ~8h access token; re-login only after ~9-day refresh-window expiry (§11.1) | per-user Secret ref (OAuth access+refresh token) |
 | **Second runtime (OpenClaw/Hermes — non-Claude)** | long-lived **API key / provider token** supplied directly | static (no interactive OAuth step); refresh only if the provider rotates | per-user Secret ref (API key) |
 | **BYO model endpoint (Ollama / OpenAI-compatible)** (§10.3, ISI-2157) | user supplies an **endpoint URL** (their Ollama / local server) + optional token; model is `Agent.spec.model` | static; no vendor OAuth — a BYO local model, no paid credits | per-user Secret ref (endpoint URL [+ token]) |
 
@@ -1217,11 +1303,52 @@ condition (FR-F6), **not** an opaque failure. Resume triggers on the referenced 
 (operator rotates the token) — the operator watches the Secret and re-drives the Run. This holds for
 both OAuth-refresh (Claude) and static-key (second runtime) models.
 
-**ISI-2112 has not run** (§21). The *structure* (per-user Secret ref, pause-on-auth-failure, resume-
-on-refresh) is spike-independent; ISI-2112's evidence sets the **exact OAuth refresh cadence, token
-longevity, and concurrency-on-one-subscription limits**, and — per PRD §13 watch item / R1 — if
-setup-token lifecycle proves unworkable at scale, that is a **CEO-gate conversation** owned by Alfred,
-not an architecture reopening. OQ11's exact second-runtime token type/refresh is pinned per that
+### 11.1 Zero-touch Claude credential lifecycle (CEO 2026-08-12 — supersedes the ISI-2112 manual-setup-token recommendation)
+
+> **Real-world finding (Henrik):** Paperclip already runs many concurrent `claude -p` processes on one
+> host against a **single `claude login` credential** with **no manual refresh** — the ISI-2112 spike's
+> `.credentials.json`-sharing concern was over-cautious for concurrent use. KSquad extends this to
+> multi-pod Kubernetes with **one refresher, many mounters**, unchanged UX.
+
+- **One-time login (§13 screen 05 / CLI).** The user connects Claude **once** — console **"Connect
+  Claude"** (browser OAuth) or CLI **`ksquad auth login`**. The resulting **access + refresh tokens** are
+  written to a **per-user Kubernetes Secret** (§11). The user never handles token strings again.
+- **Centralized auto-refresh controller (the key mechanism).** A **credential controller** (operator-
+  internal, **leader-elected — one owner, no race**), *not* each agent pod, watches token expiry and,
+  **before the ~8h access token expires, refreshes via the refresh token and writes the new token back to
+  the SAME Secret**. All agents mounting that Secret benefit at once. This is a new reconcile loop (§5.2).
+- **Agent pods just mount the Secret** (env var or file) — multiple pods, same Secret, same token →
+  **concurrent Runs work** (proven by Paperclip's real-world deployment). **Agents never refresh**; the
+  auth-failure pause path (above) remains only a backstop.
+- **Refresh-window expiry (~9-day inactivity) → one-click re-login.** If the subscription goes unused
+  long enough that the **refresh token** itself expires, the controller marks the Secret `expired` and
+  the console (screen 05) surfaces **"credential expired — click to re-login"** — a single OAuth click,
+  **not** a periodic manual task.
+- **Security discipline unchanged:** tokens live only in the per-user Secret (never logged/echoed, §17.1),
+  the controller holds no shared master credential (each principal's Secret is its own), and refresh
+  events publish to NATS (§17.4, `credential refresh` event) + surface on screen 05.
+
+*Satisfies:* FR-G1…G3, NFR-SEC3, S10; zero-touch credential UX (CEO 2026-08-12). *Trade recorded:*
+ADR-032. *Touchpoints:* §5.2 (controller), §13 (screen 05 Credentials page), §17.4 (refresh events),
+§21 (supersedes the ISI-2112 manual-setup-token caveat).
+
+**Rate-limit handling — per-credential, auto-recovering (CEO 2026-08-12).** Because each credential is a
+per-user Secret (BYO-subscription), provider throttling is a **per-credential** condition, attributed to
+the owning principal — one subscription hitting its limit never blocks or mis-charges another. On the
+shim's `rate_limited` signal (§10.1) the Run goes to **`Paused(rate_limited)`** with the tracked
+`Retry-After`, **auto-resumes** when the window clears, applies **exponential backoff** per credential on
+repeats, and — on a persistent limit — the coordinator may **re-route the work item to another eligible
+agent whose credential is not throttled** (fenced control-plane re-dispatch, §8/§6.3, not P2P). This is
+the auth-failure pause path's sibling: same `Paused`-with-legible-condition discipline, but
+**self-recovering** rather than waiting on an operator Secret rotation. Full lifecycle in §8.
+
+**ISI-2112 — largely resolved by the CEO real-world finding (2026-08-12), no longer a blocker.** The
+spike's core worry (concurrency-on-one-subscription; whether shared `.credentials.json` is safe) is
+**answered in production**: Paperclip runs many concurrent `claude -p` on one credential without manual
+refresh (§11.1). The **structure is settled** — one-time OAuth, centralized auto-refresh controller,
+shared-Secret mount, re-login only on ~9-day window expiry. What remains is **controller *tuning*, not a
+gate**: the exact pre-expiry refresh lead-time and the observed refresh-window length are controller
+config behind the §11.1 seam. OQ11's exact second-runtime token type/refresh is still pinned per that
 runtime's auth model as the shim lands.
 
 **Consumption attribution & metering provenance (Theme I, FR-I2/I3, NFR-OBS3, OQ14 — resolved).**
@@ -1282,6 +1409,182 @@ an optional egress proxy for corporate networks.** Two shipped mechanisms, one d
 *Satisfies:* NFR-SEC1/SEC3/SEC4, NFR-SCALE1, D2/D5. *Trade recorded:* ADR-011 (namespace-per-Team),
 ADR-012 (NetworkPolicy + optional proxy).
 
+### 12.3 Identity, Users & Per-Project RBAC (Theme O, FR-AUTH1…5; ISI-2301 — CEO v1 2026-08-12)
+
+**Directive (Henrik, 2026-08-12): user management with per-project RBAC is a *v1* requirement, not
+Lot 2.** This closes the PRD↔architecture gap the PRD r6 opened (Theme O / FR-AUTH1…5 had no
+architecture home; all prior "auth" here is agent-credential OAuth §11, all prior "RBAC" is K8s
+workload RBAC §12.1). It is the **third, distinct identity plane** the PRD names **D9** — human
+identity, separate from (a) K8s workload RBAC and (b) BYO model credentials — and it **RESOLVES** the
+two Architecture-owned questions the PRD routed here: **OQ19** (session/token mechanism + OIDC seam)
+and **OQ20** (single enforcement point + caller-identity propagation). **Three access levels** (the UI
+term-of-art — labeled "Access level", never bare "Role", to avoid the `Role` CRD collision; ADR-034,
+ISI-2310 r22), one authorization choke point:
+
+- **Admin** (global) — full control: defines Agents/Teams/Projects, CRUDs users, assigns users to
+  projects, manages credentials/plugins/settings, sees the fleet-wide dashboard and *Users & Roles*.
+- **Operator** — **project-scoped read/write**: within the `Project`s they are a member of, may
+  compose/mutate (create/edit CRDs, start/kill Runs) and read everything; **no** user administration
+  and **no** cross-`Project` reach.
+- **Viewer** — **project-scoped read-only**: within their authorized `Project`s, may read (dashboards,
+  Runs, discussion, build browser) but **not** mutate; the least-privilege grant for auditors /
+  stakeholders / watchers so read-only access is possible without over-granting Operator (PRD D2, R20).
+
+The ISI-2307 "admin vs non-admin" split is **Admin** vs **{Operator, Viewer}**; the **Operator-vs-Viewer**
+split is the per-`Project` **read/write bit**. Operator/Viewer are held **per membership** — a user can be
+Operator on one `Project` and Viewer on another; authorization always resolves from the specific
+`project_memberships` row, never a single global label. Agent execution inherits the caller's scope
+(§12.4). *(Refines the r20 two-global-role + `viewer/contributor/maintainer` per-project model to the
+PRD r7 three-access-level model; ADR-034 — a role-granularity refinement, not a new mechanism.)*
+
+**Auth service — a `pkg/auth` library package inside the existing apiserver, not a new deployment**
+(ponytail rung 2 — reuse the trusted control-plane service; do not add a fourth Go binary). It owns
+the user store, session management, token issuance, and the **deny-by-default RBAC middleware** — the
+middleware must sit on the apiserver request path anyway, so colocating issuance avoids a second
+signing-key distribution and a network hop on every request. The default is a **local username/
+password store**; an **`AuthProvider` seam** (mirroring the §10.3 BYO-model and §5.4 `pkg/scm`
+provider-seam discipline) keeps **OIDC/SSO a pluggable fast-follow** without reopening the shape — the
+CEO's "extensible to OIDC/SSO" requirement lands behind a seam, not as v1 scope. *Rationale:* the S1
+"≤4h air-gapped install" acceptance test (§16) **cannot** hard-depend on an external IdP; a local
+store ships that day, an OIDC provider drops in later. *(**Lockstep note:** epics ISI-2304 stories
+15.1/15.4/9.5 currently spec a **standalone `ksquad-auth` Deployment**; topology is an
+architecture-owned decision and this architecture consolidates it into the apiserver per ADR-033 —
+flagged to the epics owner to reconcile 15.1/9.5. Both are viable; the in-apiserver choice keeps §1's
+"one API service" framing and one fewer deployment for S1.)*
+
+**Data model — a new `auth` schema in the *same* one Postgres** (ADR-001 intact; a third app-data
+schema alongside `coord`/`memory`/`discussion`/`scm`). Users and memberships are **high-churn durable
+app state, not CRDs** — consistent with the two-records split (desired-state → CRDs; durable app
+state → Postgres). No new datastore.
+
+```
+auth.users              (id, username UNIQUE, password_hash /* argon2id */, global_role ENUM{admin,user},
+                         status ENUM{active,disabled}, must_change_password /* bootstrap admin = true */,
+                         created_at, updated_at, last_login_at)
+auth.project_memberships(id, user_id → users.id, project_id, role ENUM{operator,viewer} /* rw|ro bit, ADR-034 */,
+                         created_at, UNIQUE(user_id, project_id))
+auth.sessions           (id, user_id → users.id, issued_at, expires_at, revoked_at,
+                         user_agent, ip)      -- server-side, revocable
+```
+
+**Access levels** are a **bounded enum + a code-level level→capability matrix** — `admin` is the only
+global elevation; within an authorized `Project`, **`operator` ⊃ `viewer`** (operator = read + write,
+viewer = read-only). This is the PRD r7 (ISI-2310) three-access-level model: it **refines** the r20
+per-project `viewer/contributor/maintainer` triple down to the single **read/write bit** the PRD names
+(contributor + maintainer, both write, collapse to `operator`; `viewer` stays read-only), so it is
+*less* code, not a new subsystem (ADR-034). *Trade (ponytail):* a full `auth.roles` /
+`auth.role_capabilities` table (and any finer per-`Project` grades) is the **named upgrade path** if
+custom roles ever become a requirement — we do **not** build the table until they do (`ponytail:`
+enum-not-table; a custom-role requirement is the upgrade trigger).
+
+**First-run admin bootstrap (OQ19, R20 — keeps the ≤4h air-gapped S1 install intact).** The chart
+ships **no baked-in default credential** (shipped default passwords are the archetypal broken-access
+finding). Instead, on install Helm generates a **random initial admin password** into a release-scoped
+Secret (`ksquad-bootstrap-admin`, the Argo CD / Grafana pattern) and prints its retrieval command in
+`NOTES.txt`. On startup the auth service runs an **idempotent seed**: *if and only if* `auth.users` has
+**zero rows**, it creates a single `admin` user (`global_role=admin`) whose `password_hash` is the
+argon2id hash of that Secret value, with **`must_change_password=true`**. The operator reads the
+password from `NOTES.txt`, logs in once, and is **forced to rotate** before any other action — so the
+install-Secret value is never a durable credential, and a re-run (users already present) is a no-op.
+This is **fully offline**: no external IdP, no network callback, one extra step the ≤4h S1 acceptance
+test (§16) already accommodates. OIDC/SSO installs skip the seed — the first user to authenticate
+through the configured IdP with the install-time `admin.bootstrapSubject` claim is promoted to `admin`
+(same one-time, empty-table guard), so the bootstrap story is identical behind the `AuthProvider` seam.
+
+**Session strategy & token format (ADR-033).** The apiserver's `pkg/auth` issues a **short-lived,
+signed access JWT** (`{userId, global_role}`, default ~1h) plus a **long-lived refresh token, rotated
+on use** (opaque row in the `auth` schema, default ~7d). **Revocation is real, not cosmetic:**
+refresh-token rows are server-side and **revoked instantly** on logout / user-disable / membership
+change, so a compromised or offboarded user loses access within one short access-token TTL — the
+gain over a pure stateless-JWT scheme. The Next.js BFF keeps the tokens in an **HttpOnly + Secure +
+SameSite cookie** (browser never holds a bearer token in JS) and re-validates on every proxied call —
+this **extends the §13 "one authorization choke point, browser never touches kube/Postgres" BFF
+rule** to be **identity-aware**. Passwords use a **strong slow hash (argon2id preferred; bcrypt cost
+≥12 acceptable)**, never logged, never returned. Login is **rate-limited** (brute-force lockout).
+*Note: v1 login identifier is **username** per FR-AUTH1 / the CEO directive (an `email` field is an
+optional profile attribute, not the login key) — flagged to epics ISI-2304 (15.1/15.2 use `email`) to
+reconcile.*
+
+**RBAC middleware — deny-by-default, on every apiserver endpoint (FR-AUTH2/3/5, NFR-SEC10).** Each
+endpoint declares `(resource, action, scope)`. The middleware resolves the caller's
+`global_role` + `project_memberships` and authorizes: **admin** passes globally; a non-admin passes
+**only** for a `Project` they are a member of, and a **write** action (`action ∈ {create,update,delete,
+run,kill}`) additionally requires that membership's level be **`operator`** — a **`viewer`** membership
+passes reads and **403s every write** (the read/write bit, ADR-034); everything else **403s**. The
+**project selector is server-filtered** — the apiserver returns
+`projects WHERE membership(user) OR admin`, so a user **never receives a project id they cannot
+access** (FR-AUTH3). Admin-only surfaces (user CRUD, membership assignment, and the global
+Agent/Team/Skill registries) are gated by `global_role == admin` (FR-AUTH2).
+
+**OIDC/SSO group → access-level & membership mapping (the `AuthProvider` fast-follow, ADR-034).** The
+middleware authorizes off a single internal shape — `(global_role, {(project_id, level)})` — regardless
+of *how* that shape was produced, so the provider seam only has to **project the IdP's claims into it**.
+The local store reads it straight from `auth.users` / `auth.project_memberships`. An OIDC provider
+resolves it at login from **group claims** via an **install-configured, declarative `auth.oidc.groupMapping`**
+(Helm values, §16): each entry maps an IdP group → either the global **`admin`** elevation or a
+`(Project, level)` grant — e.g. `ksquad-admins → admin`, `proj-alpha-ops → (alpha, operator)`,
+`proj-alpha-audit → (alpha, viewer)`. The provider resolves the claim set into the same
+`(global_role, memberships)` tuple and hands it to the **identical** middleware — **no OIDC-specific
+authorization path**, so the enforcement wall (OQ20) is provider-agnostic and the console **reflects the
+externally-governed group→role mapping** rather than owning a parallel one. This is the "console reflects
+RBAC" property the mocks assume: an operator manages access **in their IdP** (the K8s/enterprise RBAC
+source of truth), and KSquad **surfaces** it. Groups that match no mapping entry grant **nothing**
+(deny-by-default holds through the seam); a user in several mapped groups gets the **union** of grants,
+with `admin` dominating. Mapping changes take effect on next login / token refresh — bounded by the
+short access-JWT TTL, the same revocation window as the local path.
+
+**Non-admin UI adaptation is defense-in-depth, *not* the security boundary.** The console hides the
+Agents/Teams/Skills/Users management surfaces for non-admins (FR-AUTH5) and the `Settings → Users &
+Roles` screen is admin-only (§13) — but **enforcement is server-side in the middleware**: a forged
+or hand-crafted request from a non-admin still 403s. UI adaptation is UX + attack-surface reduction;
+the middleware is the wall. *(Same discipline as the no-P2P console read models §13 — the client is
+never trusted to enforce authz.)*
+
+**One enforcement point, every surface (OQ20 — no per-surface drift).** The deny-by-default middleware
+is not per-screen: **all** `Project`-scoped surfaces are the *same* apiserver/BFF and pass the *same*
+`(resource, action, scope)` check before returning a row — the console read models, the **discussion
+room** (§7.5), the **dashboards / consumption attribution** (§13/§17.2), and the **build browser**
+(§9.4, whose per-principal `Run.owningPrincipal == caller` gate is this same check specialized, not a
+second authz path). There is no surface that reaches Postgres or kube around the middleware, so a new
+screen cannot silently ship an unguarded read.
+
+**Authn/authz audit trail (NFR-OBS4).** Every identity event is captured in the queryable audit trail
+(D4, NFR-OBS1) and emitted as OTel (`ksquad.auth.*` / `ksquad.rbac.*`, §17.2): **login success/failure**
+(with source ip / user-agent, never the password), **session issue/refresh/revoke**, **user-account
+and membership changes** (FR-AUTH2 — who granted/revoked which role on which project), and every
+**deny (403)**. Combined with the `initiated_by_user_id` on the coord claim (§12.4), the trail answers
+*"who did this, and on whose behalf"* end to end — human action and the agent Run it triggered.
+
+### 12.4 Agent Execution Identity — Runs carry the caller (FR-AUTH4; ISI-2301)
+
+**Every Run carries `initiatedByUserId`.** It is **stamped by the control plane** at claim/dispatch
+and lives in the **authoritative tier** of the §8.5 context envelope — **non-forgeable**, never
+self-declared by the agent (the F16 provenance discipline applied to identity). The `coord` claim
+row (§6.1) gains `initiated_by_user_id`; it is written on the **fenced** claim (§6.2), **audited**
+(§6.5), and flows on the domain event (§6.6) — the same conditional-write discipline as every coord
+mutation, so a zombie writer cannot rewrite it after lease loss.
+
+**The agent inherits the caller's project scope — the human's authz is the ceiling.** A Run's
+effective capability set = **(the Agent's `Role` grants) ∩ (the initiating user's membership + role
+on the Run's Project)**. An agent **cannot act on a project the initiating user cannot access**, and
+cannot exceed the initiating user's per-project role. This closes the **confused-deputy** hole: the
+agent is never a privilege-escalation path around per-project RBAC (§12.3). Enforcement rides the
+**same middleware** — an agent's apiserver calls carry the propagated identity JWT (§12.3) and hit
+the identical deny-by-default check.
+
+**Credential binding falls out for free.** Because credentials are **BYO-per-principal** (§11), the
+Run uses the **initiating user's** credential, so `initiatedByUserId` **is** the metering principal —
+per-principal attribution (§11 / §17.2 metering, NFR-OBS3) is already correct by construction, no new
+axis.
+
+*Satisfies:* FR-AUTH1…5, NFR-SEC10; the CEO v1 user-management + RBAC directive. *Trade recorded:*
+ADR-033 (local user store + `AuthProvider` seam; edge session cookie + internal short-lived JWT).
+*Depends on:* §5.1 `Project` (project id), §6 coord (claim gains `initiated_by_user_id`), §8.5
+envelope (authoritative-tier identity), §11 per-principal creds, §13 console (login, Users & Roles,
+adaptive nav). *Threads into:* **Epic 15** (04-epics-and-stories) — auth service, user CRUD, membership
++ per-project enforcement, API middleware, agent identity propagation, Users & Roles screen, adaptive
+nav. No locked decision reopened (ADR-001 one-Postgres, per-principal §11, no-P2P §6 all intact).
+
 ---
 
 ## 13. Operator Console — Node Frontend Approach (Theme F, NFR-USE2)
@@ -1294,7 +1597,21 @@ approach the kickoff required.
   direction (PRD §11.4) drops onto a coherent token system.
 - **BFF, not direct kube.** The browser never talks to the Kubernetes API or Postgres directly; the
   Next.js server proxies/aggregates the **Go apiserver** (REST + SSE). This keeps one authorization
-  choke point and one source of truth.
+  choke point and one source of truth — **now identity-aware** (§12.3): the BFF holds the HttpOnly
+  session cookie, the apiserver mints the internal identity JWT, and the deny-by-default RBAC
+  middleware is the single wall.
+- **Login + Users & Roles (Settings → Users & Roles, admin-only; screen 15 — FR-AUTH1/2/5, §12.3):**
+  username/password **login** (extensible to OIDC/SSO behind the `AuthProvider` seam), and an
+  **admin-only** console to **CRUD users and assign per-`Project` memberships at an access level**
+  (**Operator** = read/write, **Viewer** = read-only; Admin is the global elevation — ADR-034). The
+  screen labels the axis **"Access level"**, never bare "Role", to keep it distinct from the `Role` CRD.
+  Non-admins never see this screen. Reads/writes go through the apiserver BFF; passwords
+  and tokens are **never displayed or echoed** (same discipline as the Credentials page).
+- **Adaptive, role-based navigation (FR-AUTH3/5, §12.3):** the **project selector is server-filtered**
+  to the caller's memberships (a user never sees a project they can't access), and the nav **hides the
+  global Agents/Teams/Skills/Users management** surfaces for non-admins. This is **defense-in-depth /
+  UX — not the security boundary**; the RBAC middleware (§12.3) enforces server-side, so a forged
+  request from a non-admin still 403s.
 - **Live Run progress via SSE** (FR-F2/NFR-PERF2): the apiserver publishes an SSE progress bus fed by
   shim A2A-SSE; the console consumes `EventSource` (native — ponytail). Human-imperceptible lag under
   normal load.
@@ -1329,6 +1646,11 @@ approach the kickoff required.
   through the **apiserver BFF → operator reconciles** (no direct kube, §13 BFF rule); exporter
   credentials are entered as **Secret refs, never inline** (§11) and never echoed back. Default remains
   **no exporter (opt-in)**. Additional install/general settings live here as they arise.
+- **Credentials page (Settings → Credentials, console screen 05; CEO 2026-08-12):** the **"Connect
+  Claude"** one-time-OAuth entry point plus **per-agent credential health** — `connected` / `refreshing`
+  / `expired` (§11.1). The user sees *status*, **never token strings**; on `expired` (post ~9-day window)
+  a **one-click re-login**. Health derives from the credential controller's Secret state (§5.2) over the
+  BFF; refresh transitions stream via SSE. Read/act surface only — no raw token display or entry.
 - **Dark + light theme is a v1 requirement (FR-F7, NFR-USE2; ISI-2150, mocks revision).** The console ships **both**
   themes at v1, implemented on the design-token system (Tailwind + CSS variables / `next-themes`),
   honoring `prefers-color-scheme` with a user toggle and meeting **WCAG AA contrast in both modes**
@@ -1419,11 +1741,13 @@ Restated for Epics so it is staffed, not assumed:
 
 The architecture is shaped by the S1 acceptance test (design partner: Paperclip platform team).
 
-- **One `helm install`** brings up `ksquad-system`: CRDs, operator, apiserver, memory service,
-  console, Postgres (CNPG dependency, single-instance default profile; HA is a values toggle), and
-  **NATS/JetStream** (CEO 2026-08-11, ISI-2156/ADR-023 — the plugin event bus; Helm subchart,
-  JetStream enabled, **single-replica default with a JetStream PVC**, HA via values toggle — same
-  packaging pattern as CNPG).
+- **One `helm install`** brings up `ksquad-system`: CRDs, operator, apiserver (incl. `pkg/auth` local
+  user store + RBAC middleware, r20/§12.3 — `auth` Postgres schema migrated by the apiserver on
+  startup; a Helm-generated signing-key Secret is created on first install; OIDC opt-in via
+  `auth.oidc.*` values; **no new binary** — ADR-033), memory service, console, Postgres (CNPG
+  dependency, single-instance default profile; HA is a values toggle), and **NATS/JetStream** (CEO
+  2026-08-11, ISI-2156/ADR-023 — the plugin event bus; Helm subchart, JetStream enabled, **single-
+  replica default with a JetStream PVC**, HA via values toggle — same packaging pattern as CNPG).
 - **Sane defaults, docs alone:** default RuntimeClass (gVisor if present, else a clearly-flagged
   fallback), default warm-pool policy, default egress NetworkPolicy, bundled OpenClaw + Hermes shims.
 - **First-squad quickstart:** create a `Project` (repo + workspace), define 2–3 `Agent`s from the two
@@ -1497,6 +1821,17 @@ metrics (ISI-2146)** — per-Run token counts, run-minutes, sandbox resource, an
 feed the console consumption dashboard (§13) through the pluggable metrics-backend query seam; they add
 no datastore.
 
+**Rate-limit & fallback metrics (CEO 2026-08-12; §8 recovery hierarchy).** Named signals in the same
+taxonomy, dimensioned **per project / agent / role** (plus provider/model) so throttling is attributable
+at every granularity:
+- `ksquad.ratelimit.hits` — counter `{project, agent, role, provider, model}`.
+- `ksquad.ratelimit.duration_seconds` — histogram: time Runs spent `Paused(rate_limited)`.
+- `ksquad.fallback.activations` — counter `{project, agent, role, primary_model, fallback_model}`.
+- `ksquad.fallback.duration_seconds` — histogram: time spent on the fallback model.
+
+They ride the **OTelConfig** export path (below), feed the **dashboard (ISI-2146) per-project/agent/role
+panels (§13)**, and their transitions publish **NATS events (§17.4) for alerting**.
+
 **OTLP export is CRD-configured and opt-in (`OTelConfig` CRD, CEO 2026-08-12).** All KSquad components
 (operator, apiserver, memory, console, shims) emit OTel via the SDK; **where that telemetry goes is a
 dedicated `OTelConfig` CRD (§5.1), not hardcoded.** It supports **per-signal routing** — e.g.
@@ -1513,17 +1848,19 @@ Settings page (screen 12, §13)** via the apiserver BFF — no direct kube. *Tra
 
 `ksquad-operator` (controllers, incl. the **repo-sync reconciler** §5.4 and `ImageUpdater` §5.3.5) ·
 `ksquad-apiserver` (coordination record + audit + SSE + **SCM webhook ingress** §5.4 + SCM-mirror /
-discussion / dashboard read APIs, one binary) · `ksquad-memory` (MCP server + pgvector, indexes the
-`discussion` schema §7.5). Shared `pkg/a2a`, `pkg/mcp` (pinned adapter seams, §10.2), `pkg/coord`
-(claim/lease/fencing), `pkg/scm` (**source-control provider seam** §5.4, GitHub first), `pkg/events`
-(**versioned event catalog + outbox capture + NATS relay/reconciliation publisher** §17.4), `pkg/apis`
-(CRD types). The `ksquad-apiserver` additionally runs the **outbox→NATS relay + reconciliation worker**
-(§17.4); **out-of-process plugins** subscribe to **NATS** subjects, registered per Project/squad, with
-**GRAIL (ISI-2142) the first such subscriber** (§7.6); `ksquad-memory` keeps **pgvector as
-source-of-truth** behind a `MemoryBackend` seam (§7.1/§7.6). **Postgres is the sole store of record**
-(`coord`/`memory`/`discussion`/`scm` schemas + the `event_log` outbox marker, one database, ADR-001
-intact); **NATS/JetStream is stateful dependency #2 — event flow only, no state of record** (CEO
-decision 2026-08-11, ADR-023, §4).
+discussion / dashboard read APIs + **`pkg/auth` RBAC middleware** §12.3, one binary) · `ksquad-memory`
+(MCP server + pgvector, indexes the `discussion` schema §7.5). Shared `pkg/a2a`, `pkg/mcp` (pinned
+adapter seams, §10.2), `pkg/coord` (claim/lease/fencing), `pkg/auth` (**local user store + session
+mgmt + deny-by-default RBAC middleware + `AuthProvider` seam** §12.3; a library package inside
+`ksquad-apiserver` — no separate binary, ADR-033), `pkg/scm` (**source-control provider seam** §5.4,
+GitHub first), `pkg/events` (**versioned event catalog + outbox capture + NATS relay/reconciliation
+publisher** §17.4), `pkg/apis` (CRD types). The `ksquad-apiserver` additionally runs the
+**outbox→NATS relay + reconciliation worker** (§17.4); **out-of-process plugins** subscribe to **NATS**
+subjects, registered per Project/squad, with **GRAIL (ISI-2142) the first such subscriber** (§7.6);
+`ksquad-memory` keeps **pgvector as source-of-truth** behind a `MemoryBackend` seam (§7.1/§7.6).
+**Postgres is the sole store of record** (`coord`/`memory`/`discussion`/`scm`/`auth` schemas + the
+`event_log` outbox marker, one database, ADR-001 intact); **NATS/JetStream is stateful dependency
+#2 — event flow only, no state of record** (CEO decision 2026-08-11, ADR-023, §4).
 
 ### 17.4 Plugin Architecture & Event Seam (ISI-2155/2156; CEO NATS decision 2026-08-11) — Postgres stores, **NATS flows**, plugins observe
 
@@ -1642,6 +1979,11 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | 027 | Git-sourced skills (CEO 2026-08-11, kagent-parity) | **`Skill.spec.source` = inline \| git; git-sourced body fetched via the existing `pkg/scm` seam (§5.4) + init-container staging (§5.3.4), pinned to a commit SHA; fetched body is untrusted (D8) but the `permissions`/`mcpToolRefs` capability envelope stays CRD/operator-authorized, never self-declared by the repo; private repos via BYO read-only Secret** | New skill-registry subsystem (reinvents `pkg/scm`); floating branch ref (non-reproducible, force-push alters in-flight Runs); let the fetched repo self-declare its own permissions (privilege escalation — a malicious repo grants itself tools); shared KSquad token for private skill repos (breaks per-user Secret-ref lock, ADR-010) |
 | 028 | Context injection & agent handoff (CEO/CTO 2026-08-11, §8.5/§8.6) | **Control-plane Context Assembler builds a per-Run envelope at Claiming→Running, passed via the shim (§10); envelope is provenance-tiered (authoritative vs untrusted-recall vs untrusted-external, F16/§7.3); token budget is HIERARCHICAL + operator-tunable — `Project.contextBudget` default → `Agent.contextBudgetOverride` → Run-level dynamic trim (work-item size + memory relevance), all clamped by the resolved model `contextWindow` (§10.1/§10.3), must-include never truncated, fail-closed on overflow; handoff artifact `{did,decisions,next,blockers}` is knowledge transfer only — custody stays the fenced §6.2/6.3 release→re-dispatch→claim; goals versioned via Project CRD revision; resolved envelope snapshotted on the Run for audit + re-entrant reuse (§6.4/6.5). Agent↔work-item loop (§8.6) = Paperclip ergonomics on fenced Postgres coord (§6), not CRDs** | Agent self-assembles its own context (no budget control, untrusted content sets its own framing); flat untiered prompt blob (prompt-injection); single global budget (one-size-fits-all context-wall — CEO rejected); budget keyed to runtime CLI not model (misbudgets BYO Ollama's ~8K); `contextBudgetOverride` above the model window (silent overflow — rejected as validation error); handoff artifact that authorizes/transfers custody (reintroduces P2P back-channel); self-declared/unfenced status transitions (zombie-writer + no-P2P violations); re-query context on resume (non-reproducible) |
 | 029 | OTLP export config (`OTelConfig` CRD; CEO 2026-08-12) | **Dedicated `OTelConfig` CRD, operator-reconciled → configures every component's OTLP exporter; per-signal routing (traces/metrics/logs each own endpoint + protocol + `authSecretRef` + resource-attrs + sampling); exporter creds are Secret refs (never inline/logged, §11); default = no exporter (opt-in, no telemetry egress by default, D8); edited from the console Settings page (screen 12) via the apiserver BFF** | Hardcode OTLP endpoints in component config (not user-configurable, no per-signal routing); env-var-only config (no live re-reconcile, no console surface); default-on export to a fixed endpoint (privacy/egress surprise); inline exporter tokens (secret sprawl) |
+| 030 | LLM rate-limit auto-pause/resume (CEO 2026-08-12) | **Shim normalizes provider throttling to a standardized `rate_limited{retryAfter}` A2A signal (§10.1); Run → `Paused(rate_limited)`, tracks `Retry-After`, **auto-resumes** when the window clears; exponential backoff per credential on repeats; per-credential attribution (BYO-subscription §11); persistent limit → fenced control-plane **re-route** to an agent with a non-throttled credential (§8/§6.3, not P2P); events to NATS (§17.4) + dashboard + Run logs (§13)** | Hard-fail the Run on 429 (loses work, no recovery); block/idle the whole squad on one credential's limit (no re-route); detect rate-limits in the core per-provider (not runtime-agnostic — belongs in the shim); shared-credential accounting (wrong attribution, breaks BYO-subscription) |
+| 031 | Rate-limit recovery hierarchy + metrics (CEO 2026-08-12) | **3-tier recovery: (1) fallback model → mid-Run switch if `Agent.fallbackModel` set; (2) else `Paused(rate_limited)` with `resume_at` + a **single scheduled wake** (RequeueAfter/durable timer, crash-safe via persisted `resume_at`) — no poll loop, zero wasted API calls; jitter-backoff when `Retry-After` absent; (3) persistent → fenced re-route. Metrics `ksquad.ratelimit.hits/duration` + `ksquad.fallback.activations/duration` dimensioned per project/agent/role, on the OTelConfig export path + NATS + dashboard** | Blind poll loop until the window clears (wastes API calls / rate-limit-worsening); pause-only with no fallback (idle when a fallback model exists); non-durable timer (lost on operator restart); metrics without role/agent dimensions (can't attribute at the right granularity) |
+| 032 | Zero-touch Claude credential lifecycle (CEO 2026-08-12; supersedes ISI-2112 manual-setup-token) | **One-time OAuth (console "Connect Claude" / CLI `ksquad auth login`) → per-user Secret; a **leader-elected credential controller** (one owner, no race) auto-refreshes the ~8h access token before expiry and writes back to the SAME Secret; agent pods just mount it (concurrent Runs proven by Paperclip prod); re-login only on ~9-day refresh-window expiry; console screen 05 shows per-agent health, never token strings** | Manual `claude setup-token` every ~8h per seat (ISI-2112 rec — poor UX, doesn't scale); each pod refreshes its own token (races on the shared Secret, thundering refresh); static non-refreshing bearer (breaks at 8h); console exposes/edits raw token strings (secret-handling burden + leak surface) |
+| 033 | Identity, users & per-project RBAC (Theme O, FR-AUTH*; CEO v1 2026-08-12, ISI-2301) | **Local username/password user store in a new Postgres `auth` schema (argon2id / bcrypt≥12), behind an `AuthProvider` seam so OIDC/SSO is a pluggable fast-follow; auth is a `pkg/auth` library **inside the apiserver** (no separate binary — the RBAC middleware sits on the request path anyway); **short-lived signed access JWT + rotated, server-side-revocable refresh token**, BFF holds them in an HttpOnly cookie and re-validates each proxied call; global role admin\|user + per-project access level (**role granularity refined by ADR-034** — three access levels Admin\|Operator\|Viewer, per-project `operator`\|`viewer` read/write bit) via `project_memberships`; roles = bounded enum + code capability matrix (custom-role table is the named upgrade path, not built yet); **deny-by-default RBAC middleware on every endpoint** + **server-filtered project selector**; Runs carry non-forgeable control-plane-stamped `initiatedByUserId`, agent scope = Agent Role grants ∩ initiating user's project membership (confused-deputy closed); UI adaptation is defense-in-depth, middleware is the wall** | External IdP as a v1 hard dependency (breaks the ≤4h air-gapped S1 install); users/memberships as CRDs (wrong store — high-churn app data belongs in Postgres per ADR-001, and puts human accounts in the cluster desired-state API); a **separate `ksquad-auth` binary** (needless 4th deployment + signing-key distribution + per-request network hop — the middleware must live in the apiserver regardless; *epics ISI-2304 15.1/9.5 spec standalone — flagged to reconcile*); non-revocable stateless-JWT-only sessions (no instant revocation on logout/disable — refresh-token rows give it); client-side-only nav hiding as the authz boundary (trivially bypassed — a forged request must 403 server-side); agent self-declares its own caller identity/scope (forgeable — privilege-escalation/confused-deputy); build the custom-role table up front (YAGNI until custom roles are required) |
+| 034 | Console access-level granularity (Theme O, FR-AUTH2/AUTH5; PRD r7, ISI-2310) — *refines ADR-033's role model* | **Three access levels, one axis labeled "Access level" in the UI (never bare "Role" — `Role` CRD collision): `Admin` (global full control) / `Operator` (per-`Project` read/write) / `Viewer` (per-`Project` read-only). Mechanically it is the r20 primitives *simplified*: `global_role{admin,user}` unchanged; the per-project `role` enum drops `viewer/contributor/maintainer` (a 3-way grade) to `operator|viewer` — the single read/write bit the PRD names. Middleware gates writes on `level==operator`; `viewer` passes reads, 403s writes. Operator/Viewer held per membership (a user may be Operator on one Project, Viewer on another; resolved from the `project_memberships` row, not a global label). Same shape for OIDC via `auth.oidc.groupMapping` (group claim → `admin` \| `(Project, level)`), so the console reflects the IdP's group→role RBAC with no OIDC-specific authz path. No new mechanism, no new table — a bounded-enum refinement (less code than r20)** | Keep the r20 three-value per-project grade `viewer/contributor/maintainer` (over-models v1 — PRD r7 wants only a read/write bit; the finer grades are the ADR-033 custom-role upgrade path if ever needed); binary admin/non-admin only, no Viewer (can't grant read-only without over-granting write — loses the auditor/stakeholder least-privilege case, PRD D2/R20); a separate `access_level` enum parallel to `role` (two names for one axis — drift); a new authz subsystem for the third level (the PRD explicitly calls it a bit, not a subsystem — ponytail YAGNI); an OIDC-specific authorization branch (second enforcement path — breaks the OQ20 single-wall invariant) |
 ---
 
 ## 19. Traceability (PRD → Architecture)
@@ -1663,6 +2005,11 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | FR-G1…G3 (LOCKED) | §11 credentials, two stories, pause/resume |
 | NFR-SEC1…6 | §12 tenancy/egress; §9.3/9.4 hygiene; §7.3 memory; §17.1 threat model |
 | NFR-SEC7 (room scope, r3) | §7.5 `Project`-scoped, attributed, no-coordination-path (FR-J4) |
+| FR-AUTH1…5 (identity & RBAC, r20; access-level granularity r22) | §12.3 `pkg/auth` local user store + `AuthProvider` seam (OIDC `groupMapping`), `auth` schema (users/memberships/sessions), edge session cookie + internal JWT, deny-by-default RBAC middleware, server-filtered project selector; **three access levels Admin/Operator/Viewer** (per-`Project` read/write bit, ADR-034); §12.4 agent execution identity (`initiatedByUserId`, scope = Role ∩ membership); §13 login + Users & Roles (access-level assignment) + adaptive nav; ADR-033 + **ADR-034** |
+| NFR-SEC10 (authn/authz, r20) | §12.3 deny-by-default middleware on every endpoint, argon2id, revocable sessions; §12.4 non-forgeable control-plane-stamped caller identity; UI adaptation = defense-in-depth only |
+| D9 (human identity = third trust plane, r20) | §12.3 `auth` schema + `pkg/auth` kept distinct from K8s workload RBAC (§12.1) and BYO model creds (§11); §12.4 human-identity↔agent-action bridge (`initiatedByUserId`, scope = Role ∩ membership) |
+| NFR-OBS4 (auth audit, r20) | §12.3 login success/failure + user/membership changes audited via §6.5 coord audit + §17.2 OTel (`ksquad.auth.*`/`ksquad.rbac.*`, epics 13.10); §12.4 caller principal on every coord/memory/metering write (FR-B4/E6/I3) |
+| OQ19/OQ20 (r20, Architecture-owned) | **RESOLVED** — OQ19 §12.3 edge HttpOnly session cookie (revocable) + internal short-lived JWT, argon2id, `AuthProvider` OIDC/SSO seam; OQ20 §12.3 single deny-by-default RBAC middleware (one enforcement point, no per-surface drift) + §12.4 caller-identity propagation dispatch→shim→coord/memory/metering |
 | NFR-SEC8 (sync auth, r3) | §5.4 HMAC verify + BYO Secret-ref creds, never logged/exposed to Run |
 | NFR-OBS3 (metering provenance, r3) | §11/§17.2 anchored to Run lifecycle + kubelet, not agent self-report |
 | D8 (external integrations untrusted+authenticated, r3) | §5.4 untrusted-input + signature verify; §17.1 threat model |
@@ -1691,6 +2038,10 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
 | NATS event bus for plugins (CEO 2026-08-11, supersedes ADR-023 r6; r13) | §17.4 Postgres outbox (durability) → relay → **NATS/JetStream** subjects, plugins `nats_sub` read-only; §4/§16 **NATS = stateful dep #2** (event-flow-only, §4 relaxed for plugin seam); §6.6 event journal→NATS; §7.6 GRAIL via NATS; ADR-023 rewritten, ADR-024 touched; no-P2P preserved (one-way outbox→NATS) |
 | ISI-2157 Ollama / BYO model endpoint (r8) | §10.3 model-provider seam (`byoModelEndpoint`, Secret-ref endpoint + per-Agent model); §11 third credential story; §12.2 egress allowlist; free CI/e2e + conformance lane (§10.1, ISI-2114 Ollama lane); ADR-026 |
 | OTLP export config + Settings page (CEO 2026-08-12; r16) | §5.1/§5.2 `OTelConfig` CRD + reconciler; §17.2 per-signal OTLP routing (Secret-ref auth, opt-in default); §13 Settings page (screen 12) via BFF; ADR-029; feeds Epic 13 (obs) + Epic 8 (screen 12) |
+| LLM rate-limit auto-pause/resume (CEO 2026-08-12; r17) | §8 `Paused(rate_limited)` + Retry-After auto-resume + backoff + fenced re-route; §10.1 standardized `rate_limited` shim signal; §11 per-credential attribution (BYO-subscription); events→NATS §17.4 + dashboard/logs §13; ADR-030; feeds Epic 7 + Epic 13 |
+| Rate-limit recovery hierarchy + metrics (CEO 2026-08-12; r18) | §8 3-tier (fallback-model switch → scheduled-timer `resume_at` pause, no poll → fenced re-route); §5.1/§10.3 `Agent.fallbackModel?`; §17.2 `ksquad.ratelimit.*`/`ksquad.fallback.*` per project/agent/role; ADR-031; feeds Epic 2/5/7/8/13 (Story Writer amends 04-epics) |
+| Zero-touch Claude credential lifecycle (CEO 2026-08-12; r19) | §11.1 one-time OAuth → credential controller auto-refresh (§5.2, leader-elected) → shared-Secret mount (concurrent Runs); re-login only on ~9-day window; §13 Credentials page (screen 05); §21 ISI-2112 resolved; ADR-032; feeds Epic 7 (credential controller story) |
+| User management & per-project RBAC (CEO v1 2026-08-12, ISI-2301; r20) | §12.3 identity/users/RBAC (Theme O, FR-AUTH1…5) — `pkg/auth` local store + `AuthProvider` OIDC/SSO seam, `auth` Postgres schema (users/project_memberships/sessions), edge session cookie + internal short-lived JWT, deny-by-default RBAC middleware, server-filtered project selector; §12.4 agent execution identity — control-plane-stamped `initiatedByUserId`, agent scope = Agent Role ∩ initiating user's project membership (confused-deputy closed), per-principal metering falls out; §3.1 component map (auth + `auth` schema); §8.6 Run carries caller; §13 login + Users & Roles screen (admin) + adaptive nav (FR-AUTH5); NFR-SEC10; ADR-033; feeds **Epic 15** (User Management & RBAC). No locked decision reopened |
 
 ---
 
@@ -1703,6 +2054,16 @@ discipline), §7.6 (GRAIL subscribes NATS), §10.2 (event-catalog drift), §16 (
     coordination-spine epic sequencing, shim contract, memory trust model). **r3 adds:** SCM sync
     (§5.4), discussion room (§7.5), dashboards/consumption (§13/§11), build browser (§9.4/§13), Gateway
     API + StorageClass exposure (§16.1/§16.2), dark+light theme (§13) — new stories / Epic touchpoints.
+    **r18 adds (CEO directive 2026-08-12, explicit):** thread the rate-limit/fallback stories into
+    `04-epics-and-stories.md` — **Epic 2** scheduled-resume timer for `Paused(rate_limited)` (§8 tier 2),
+    **Epic 5** fallback-model resolution + mid-Run switch (§10.3), **Epic 7** per-credential rate-limit
+    tracking (§11), **Epic 8** dashboard rate-limit/fallback indicators (§13), **Epic 13** the
+    `ksquad.ratelimit.*`/`ksquad.fallback.*` metrics per project/agent/role (§17.2). No orphan
+    requirements. (Architecture side = §8/§10.3/§17.2/ADR-030/031; stories are Story-Writer-owned.)
+    **r19 adds:** an **Epic 7** story for the **credential controller** — one-time OAuth, leader-elected
+    auto-refresh writing back to the per-user Secret, shared-Secret mount for concurrent Runs, ~9-day
+    re-login, and the console **Credentials page (screen 05)** health surface (Epic 8). Architecture side
+    = §11.1/§5.2/§13/ADR-032, supersedes the ISI-2112 manual-setup-token path.
   - **Code Reviewer** — review architecture for implementation feasibility (fencing correctness, ADR
     trades, spike-gated seams). **r3 adds:** verify the discussion room stays coordination-free (§7.5
     argument), the SCM mirror never becomes a custody store (§5.4), and the build browser stays strictly
@@ -1734,7 +2095,7 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 |------|------|-------|--------|
 | Sandbox RuntimeClass default + LLM-bound overhead | §9.1 default (gVisor **recommended**, evidence-based) | **ISI-2113** | 🟡 **decision delivered** (`spikes/isi-2113-...md`): gVisor default / Kata opt-in / runc trusted-dev-only — isolation-decisive, overhead masked for LLM-bound Runs; **ms numbers pending harness on a gVisor-enabled cluster** |
 | Warm-pool sizing/autoscale numbers + warm/cold routing | §9.2 policy defaults | **ISI-2113** | 🟡 **policy delivered** (base-stock formula §9.2 + `bench/pool_sizing.py`); default curve ships; **R/λ constants pending harness** |
-| OAuth token longevity, refresh cadence, concurrency-on-one-subscription | §11 Claude-family lifecycle | **ISI-2112** | ⚠ backlog — not started |
+| OAuth token longevity, refresh cadence, concurrency-on-one-subscription | §11.1 zero-touch lifecycle (controller) | ISI-2112 | ✅ **largely resolved 2026-08-12** (CEO real-world finding + credential-controller design, ADR-032); only refresh lead-time/window are controller tuning — **not a gate** |
 | Reference shim + conformance assertions | §10.1 S5/S6 claimable | **ISI-2114** | ⚠ backlog — not started |
 | Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
@@ -1830,3 +2191,37 @@ a surprise.
       creds are **Secret refs, never inline** (§11); **default = no exporter (opt-in)**, no telemetry
       egress by default (D8); console writes it via the apiserver BFF (no direct kube). ADR-029; feeds
       Epic 13 (observability) + Epic 8 (screen 12). No locked decision reopened.
+- [x] r17 LLM rate-limit auto-pause/resume folded in (CEO 2026-08-12) — §8 `Paused(rate_limited)` with
+      `Retry-After` **auto-resume** + per-credential **exponential backoff** + fenced **squad-level
+      re-route** (control-plane re-dispatch, not P2P — §6.3/§8); §10.1 standardized `rate_limited{retryAfter}`
+      shim signal (rate-limit detection normalized in the shim → runtime-agnostic); §11 **per-credential
+      attribution** (BYO-subscription — one limit never blocks/mis-charges another); events → NATS (§17.4)
+      + dashboard + Run logs (§13); ADR-030. Sibling to auth-failure pause but self-recovering. No locked
+      decision reopened.
+- [x] r18 rate-limit recovery hierarchy + metrics folded in (CEO 2026-08-12) — §8 **3-tier**: (1)
+      **fallback model** (`Agent.fallbackModel?`, §5.1/§10.3) → shim **mid-Run switch**, no pause; (2)
+      **scheduled-timer pause** (`resume_at` + a **single durable wake, not a poll loop** → zero wasted
+      API calls, crash-safe; **jitter-backoff** if `Retry-After` absent); (3) fenced re-route (r17). §17.2
+      metrics `ksquad.ratelimit.hits/duration_seconds` + `ksquad.fallback.activations/duration_seconds`
+      **per project/agent/role** (+provider/model) on the OTelConfig path + NATS + dashboard. ADR-031.
+      Story coverage (Epic 2/5/7/8/13) delegated to Story Writer (04-epics-and-stories.md). No locked
+      decision reopened.
+- [x] r19 zero-touch Claude credential lifecycle folded in (CEO 2026-08-12) — **supersedes ISI-2112
+      manual-setup-token**: §11.1 one-time OAuth (console "Connect Claude" / CLI `ksquad auth login`) →
+      per-user Secret; **leader-elected credential controller** (§5.2) auto-refreshes ~8h token → same
+      Secret (one owner, no race); pods **mount** it → concurrent Runs (Paperclip-proven); re-login only
+      on ~9-day window; §13 **Credentials page (screen 05)** shows health, never tokens; §21 ISI-2112
+      **resolved, not a gate**. ADR-032. Epic 7 story (credential controller) → Story Writer. No locked
+      decision reopened.
+- [x] r20 human identity & RBAC folded in (CEO v1 2026-08-12, ISI-2301/ISI-2303) — **closes PRD Theme
+      O / FR-AUTH1…5 + RESOLVES OQ19/OQ20**: new **§12.3** (`pkg/auth` local user store + `AuthProvider`
+      OIDC/SSO seam inside apiserver — no new binary; `auth` Postgres schema = `users`/
+      `project_memberships`/`sessions`; argon2id; ADR-001 intact, third app-data schema) + **§12.4**
+      (agent execution identity — control-plane-stamped `initiatedByUserId`, scope = Agent Role ∩
+      initiating user's membership, confused-deputy closed); **`ksquad.io/created-by` CRD annotation**
+      (§5.1, ISI-2303); **§8 human-identity propagation bullet**; **§13 login + Users & Roles screen +
+      adaptive nav**; **§16 `auth` schema migrated on apiserver startup, signing-key Secret by Helm**;
+      **§17.3 `pkg/auth` in backend layout**; **ADR-033**; **§19 traceability rows** (FR-AUTH/NFR-SEC10/
+      D9/NFR-OBS4/OQ19-20); **feeds Epic 15**. The three trust planes (K8s workload RBAC §12.1, agent
+      BYO-creds §11, human identity §12.3) remain distinct and non-overlapping. No locked decision
+      reopened.
