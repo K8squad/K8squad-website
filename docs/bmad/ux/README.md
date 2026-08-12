@@ -200,6 +200,45 @@ OTelConfig` via apiserver BFF) depends on the CRD (ISI-2289); the mock proceeds 
 
 ---
 
+## 0g. Revision v8 — Project-rooted navigation IA (ISI-2291, CEO 2026-08-12 · Stories 8.13 + 8.14)
+
+CEO directive (Henrik, 2026-08-12): *"the console must present a **Project-rooted navigation IA**, not a
+flat screen list."* The nav rail is **re-architected from a flat 8-item list into a grouped hierarchy** —
+the **Project** is the scoping root because it already is in the `project_id`-scoped data model (Runs,
+tickets, discussion, builds all sit under the `Project` CRD, §6.1/§5.1). Two screens ship in **dark +
+light** on the same locked system. Existing screens (`00`–`12`) are **re-parented unchanged** — only the
+nav wrapping / routing changes (App Router nested layouts).
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 13 | Navigation IA — hierarchy map | `images/13-nav-ia.png` | The new rail (real) + an annotated map of the tree: which nodes are **global** vs **project-scoped**, the **context selector**, the **breadcrumb** and **sub-nav** patterns |
+| 14 | Project → Tickets | `images/14-project-tickets.png` | Work items scoped to the selected Project — master-detail: list (status · assignee · counts) + detail (provenanced comments · artifacts · checkout/holder · linked Runs 8.2 / builds 8.7) |
+
+**The new rail (`console_kit_ia.py`).** Three groups replace the flat list:
+- **GLOBAL** — **Dashboard** (fleet, 8.8) · **Overview** (squad, 8.1) · **Agents** (org diagram 8.10 +
+  agent detail 8.11, with an inline **`filter ▾`** chip — filterable by squad / project). These read
+  **across the fleet** and are **not** project-scoped.
+- **PROJECT** — a **context selector** (azure-tinted dropdown, `active project · switch ▾`) sets the
+  active Project; its node **expands** to indented sub-items joined by a connector spine: **Build** (8.7)
+  · **Tickets** (8.14) · **Runs** (8.2) · **Discussion** (10.3) — **all scoped to the selected Project**.
+- **SETTINGS** — **Configuration** (OTelConfig, 8.12) · **Credentials** (8.6).
+
+**Breadcrumb + sub-nav.** The top bar always shows `📁 project ▾ › section` (the Project chip is a
+quick-switch). The selected Project's four sub-sections are also surfaced as a **tab strip**
+(Build · Tickets · Runs · Discussion) at the top of the content area, mirroring the indented rail
+sub-items. Both patterns are documented as live callouts on screen 13.
+
+**Project → Tickets (8.14, new content screen).** Fills the one Project sub-item without an existing
+screen. **Read + navigate only** — CRD compose/edit stays in Compose (8.5); **claim / coordination stay
+server-side (R6)**. The detail pane reads the **Epic 2 coordination record** (§6.1): append-only
+**provenanced comments** (human / agent / **SCM** — the SCM post carries a violet commit-provenance
+chip, mirroring the two-records / memory tag), **artifacts**, **checkout/holder + lease** state, and
+**links to each ticket's Runs (8.2) and build outputs (8.7)**. Source: `gen-13-nav-ia.py` +
+`gen-14-project-tickets.py` (both import `console_kit_ia.py`, the hierarchical-rail kit; token-mirrored
+dark/light).
+
+---
+
 ## 1. Design principles
 
 The console is an **operator surface**, not a marketing site or a playground. Five rules, applied to
