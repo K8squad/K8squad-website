@@ -7,10 +7,12 @@ system as the flat-rail kit (console_kit.py): dark canvas #0B1220 + single azure
 accent #3D7DFF; reserved status hues; v2 8-Crest rail lockup; light mode mirrors
 token roles. Screens 13 (nav-IA map) and 14 (Project Tickets) import this.
 
-The rail is NO LONGER a flat screen list. It groups:
-  GLOBAL   → Dashboard (fleet) · Overview (squad) · Agents (filterable)
-  PROJECT  → [context selector] → Build · Tickets · Runs · Discussion  (scoped)
-  SETTINGS → Configuration · Credentials
+The rail is NO LONGER a flat screen list. Per the CEO 2026-08-12 nav-IA
+revision (ISI-2321) it groups:
+  (top)    → Mailbox (global inbox — approvals + messages, badge count)
+  PROJECT  → [context selector] → Issues · Discussion · Project Board · File Explorer  (scoped)
+  GLOBAL   → Overview · Agents (dual org views) · Teams · Skills
+  SETTINGS → OpenTelemetry · Credentials · Plugins · Users & Roles
 """
 
 # --- token maps: dark / light (mirror the 00 visual-system sheet) ------------
@@ -185,24 +187,90 @@ def ic_files(cx, cy, c):
             f'<line x1="{cx-3}" y1="{cy+4}" x2="{cx+3}" y2="{cy+4}"/></g>')
 
 
-# ---- rail model -------------------------------------------------------------
+# ---- ISI-2321 CEO nav-IA revision glyphs ------------------------------------
+def ic_mailbox(cx, cy, c):
+    # envelope — global inbox (approvals + messages), carries a badge count
+    return (f'<g {_stk(c,1.5)}>'
+            f'<rect x="{cx-8}" y="{cy-6}" width="16" height="12" rx="2"/>'
+            f'<path d="M{cx-8} {cy-4.5} l8 5.5 l8 -5.5"/></g>')
+
+
+def ic_board(cx, cy, c):
+    # kanban — three lanes with card strokes (Project Board)
+    return (f'<g {_stk(c,1.5)}>'
+            f'<rect x="{cx-8}" y="{cy-7}" width="16" height="14" rx="2"/>'
+            f'<line x1="{cx-2.7}" y1="{cy-7}" x2="{cx-2.7}" y2="{cy+7}"/>'
+            f'<line x1="{cx+2.7}" y1="{cy-7}" x2="{cx+2.7}" y2="{cy+7}"/>'
+            f'<line x1="{cx-5.3}" y1="{cy-3}" x2="{cx-5.3}" y2="{cy+1}"/>'
+            f'<line x1="{cx}" y1="{cy-3}" x2="{cx}" y2="{cy+3.5}"/>'
+            f'<line x1="{cx+5.3}" y1="{cy-3}" x2="{cx+5.3}" y2="{cy-0.5}"/></g>')
+
+
+def ic_teams(cx, cy, c):
+    # two people — squad grouping (Teams, global)
+    return (f'<g {_stk(c,1.5)}>'
+            f'<circle cx="{cx-4.5}" cy="{cy-3}" r="2.4"/>'
+            f'<path d="M{cx-8.5} {cy+6} a4 4 0 0 1 8 0"/>'
+            f'<circle cx="{cx+4.5}" cy="{cy-3}" r="2.4"/>'
+            f'<path d="M{cx+0.5} {cy+6} a4 4 0 0 1 8 0"/></g>')
+
+
+def ic_skills(cx, cy, c):
+    # puzzle piece — skills registry (global)
+    return (f'<g {_stk(c,1.5)}>'
+            f'<path d="M{cx-6} {cy-6} h3.6 a2 2 0 1 1 4.8 0 h3.6 v3.6 '
+            f'a2 2 0 1 0 0 4.8 v3.6 h-12 z"/></g>')
+
+
+def ic_otel(cx, cy, c):
+    # telemetry waves — OpenTelemetry settings
+    return (f'<g {_stk(c,1.5)}>'
+            f'<circle cx="{cx-5}" cy="{cy+5}" r="1.4" fill="{c}"/>'
+            f'<path d="M{cx-5} {cy+1} a6 6 0 0 1 6 6"/>'
+            f'<path d="M{cx-5} {cy-3} a10 10 0 0 1 10 10"/></g>')
+
+
+def ic_plugins(cx, cy, c):
+    # plug — Plugins settings
+    return (f'<g {_stk(c,1.5)}>'
+            f'<line x1="{cx-3}" y1="{cy-7}" x2="{cx-3}" y2="{cy-3.5}"/>'
+            f'<line x1="{cx+3}" y1="{cy-7}" x2="{cx+3}" y2="{cy-3.5}"/>'
+            f'<path d="M{cx-6} {cy-3.5} h12 v2.5 a6 6 0 0 1 -12 0 z"/>'
+            f'<line x1="{cx}" y1="{cy+4.5}" x2="{cx}" y2="{cy+7.5}"/></g>')
+
+
+def ic_users(cx, cy, c):
+    # person + shield — Users & Roles (human RBAC admin)
+    return (f'<g {_stk(c,1.5)}>'
+            f'<circle cx="{cx-2.5}" cy="{cy-3.5}" r="2.6"/>'
+            f'<path d="M{cx-8} {cy+6.5} a5.5 5.5 0 0 1 11 0"/>'
+            f'<path d="M{cx+4.5} {cy-6} l3.2 1 v2.6 a3.2 3.2 0 0 1 -3.2 3 '
+            f'a3.2 3.2 0 0 1 -3.2 -3 v-2.6 z"/></g>')
+
+
+# ---- rail model (ISI-2321 CEO 2026-08-12 nav-IA revision) -------------------
 # Each entry: (kind, key, label, icon_or_None)
 #   kind: 'section' | 'item' | 'selector' | 'subitem'
+# Order mirrors the CEO hierarchy: Mailbox (top) · PROJECT (selector + 4 scoped
+# sub-items) · GLOBAL (Overview/Agents/Teams/Skills) · SETTINGS (4).
 RAIL = [
-    ("section", None, "GLOBAL", None),
-    ("item", "dashboard", "Dashboard", ic_dashboard),
-    ("item", "overview", "Overview", ic_overview),
-    ("item", "agents", "Agents", ic_agents),
+    ("item", "mailbox", "Mailbox", ic_mailbox),
     ("section", None, "PROJECT", None),
     ("selector", "project", "ksquad-console", ic_project),
-    ("subitem", "build", "Build", ic_build),
-    ("subitem", "files", "Files", ic_files),
-    ("subitem", "tickets", "Tickets", ic_tickets),
-    ("subitem", "runs", "Runs", ic_runs),
+    ("subitem", "issues", "Issues", ic_tickets),
     ("subitem", "discussion", "Discussion", ic_discussion),
+    ("subitem", "board", "Project Board", ic_board),
+    ("subitem", "files", "File Explorer", ic_files),
+    ("section", None, "GLOBAL", None),
+    ("item", "overview", "Overview", ic_overview),
+    ("item", "agents", "Agents", ic_agents),
+    ("item", "teams", "Teams", ic_teams),
+    ("item", "skills", "Skills", ic_skills),
     ("section", None, "SETTINGS", None),
-    ("item", "configuration", "Configuration", ic_config),
+    ("item", "otel", "OpenTelemetry", ic_otel),
     ("item", "credentials", "Credentials", ic_creds),
+    ("item", "plugins", "Plugins", ic_plugins),
+    ("item", "users", "Users & Roles", ic_users),
 ]
 
 RAIL_W = 236
@@ -239,8 +307,12 @@ def build_rail_ia(T, active, project_open=True):
             c = T["accent2"] if act else T["t3"]
             s.append(icon(30, cy, c))
             s.append(text(52, cy + 4.5, label, 13.5, T["t1"] if act else T["t2"], w=600 if act else 500))
-            if key == "agents":
-                s.append(chip(150, y + 5, 66, 20, "filter ▾", T["panel"], T["border"], T["t3"], size=9.5))
+            if key == "mailbox":
+                # pending approvals + messages badge
+                s.append(rect(192, y + 4, 24, 20, T["r_dot"], rx=10))
+                s.append(text(204, y + 18, "3", 11.5, "#fff", w=700, anchor="middle"))
+            elif key == "agents":
+                s.append(chip(158, y + 5, 58, 20, "2 orgs", T["panel"], T["border"], T["t3"], size=9.5))
             y += 36
         elif kind == "selector":
             # project context selector — clicking the name loads the project dashboard
@@ -314,9 +386,9 @@ def build_header(T, project, section, subtitle):
 
 
 def build_subnav(T, x, y, w, active, tabs=None):
-    """Project sub-navigation tab strip: Build · Tickets · Runs · Discussion."""
-    tabs = tabs or [("overview", "Overview"), ("build", "Build"), ("files", "Files"),
-                    ("tickets", "Tickets"), ("runs", "Runs"), ("discussion", "Discussion")]
+    """Project sub-navigation tab strip: Issues · Discussion · Project Board · File Explorer."""
+    tabs = tabs or [("issues", "Issues"), ("discussion", "Discussion"),
+                    ("board", "Project Board"), ("files", "File Explorer")]
     s = [rect(x, y + 30, w, 1, T["border"])]
     cx = x + 4
     for key, label in tabs:

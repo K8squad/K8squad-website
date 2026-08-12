@@ -57,7 +57,7 @@ def selector_row(T, x, y, w):
     s.append(rect(x + 6, y + 4, 3, 44, T["accent"], rx=2))
     s.append(K.ic_project(x + 28, y + 26, T["accent2"]))
     s.append(text(x + 46, y + 22, "ksquad-console", 13.5, T["t1"], w=700))
-    s.append(text(x + 46, y + 37, "click → project dashboard · scopes Build · Files · Tickets · Runs · Discussion", 10, T["t4"]))
+    s.append(text(x + 46, y + 37, "click → project dashboard · scopes Issues · Discussion · Project Board · File Explorer", 10, T["t4"]))
     s.append(f'<path d="M{x+w-30} {y+22} l4 4 l4 -4" {_stk(T["t3"],1.6)}/>')
     s.append(chip(x + w - 172, y + 15, 118, 22, "3 projects  ▾", T["panel"], T["border"], T["t3"], size=10.5))
     return "".join(s), 56
@@ -78,47 +78,65 @@ def callout(T, x, y, w, h, title, body_lines, sample_fn=None):
 
 
 def sample_breadcrumb(T, x, y):
-    cr, _ = K.crumb(T, x + 8, y + 16, "ksquad-console", "Tickets")
+    cr, _ = K.crumb(T, x + 8, y + 16, "ksquad-console", "Issues")
     return cr
 
 
 def sample_subnav(T, x, y):
-    # 6 tabs (Overview · Build · Files · Tickets · Runs · Discussion) — scaled to fit the callout
-    inner = K.build_subnav(T, 0, 0, 460, "tickets")
+    # 4 project tabs (Issues · Discussion · Project Board · File Explorer) — scaled to fit
+    inner = K.build_subnav(T, 0, 0, 460, "issues")
     return f'<g transform="translate({x},{y-12}) scale(0.84)">{inner}</g>'
+
+
+def mailbox_banner(T, x, y, w):
+    """Top-of-rail global inbox row with a live pending-count badge."""
+    s = [rect(x, y, w, 52, T["card"], rx=13, stroke=T["accent"] + "44")]
+    s.append(rect(x, y, 3, 52, T["accent"], rx=2))
+    s.append(K.ic_mailbox(x + 30, y + 27, T["accent2"]))
+    s.append(text(x + 52, y + 24, "Mailbox", 14, T["t1"], w=700))
+    s.append(text(x + 52, y + 40, "global inbox — pending approvals + agent messages · top of rail", 10.5, T["t3"]))
+    # pending badge
+    s.append(rect(x + w - 210, y + 15, 88, 22, T["r_dot"] + "22", rx=11, stroke=T["r_dot"] + "66"))
+    s.append(dot(x + w - 196, y + 26, 3.4, T["r_dot"]))
+    s.append(text(x + w - 186, y + 30, "3 pending", 11, T["r_txt"], w=700))
+    s.append(scope_badge(T, x + w - 118, y + 16, "new"))
+    return "".join(s)
 
 
 def build_content(T):
     s = []
     # title band
-    s.append(text(260, 90, "Navigation IA — Project-rooted hierarchy", 20, T["t1"], w=700))
-    s.append(text(260, 110, "The console is organized by a selected Project, not a flat screen list. "
-                            "Dashboard + Overview stay global; everything under Project is scoped to it.",
+    s.append(text(260, 90, "Navigation IA — CEO 2026-08-12 revision (ISI-2321)", 20, T["t1"], w=700))
+    s.append(text(260, 110, "Mailbox tops the rail; Project scopes Issues · Discussion · Project Board · File Explorer; "
+                            "Overview/Agents/Teams/Skills stay global; Settings expands to four.",
                   12, T["t3"]))
     s.append(rect(260, 122, 1164, 1, T["border"]))
 
     lx, lw = 260, 700
-    top = 140
+    top = 134
 
-    # GLOBAL group
+    # Mailbox — global inbox, top of rail
+    s.append(mailbox_banner(T, lx, top, lw))
+
+    # GLOBAL group (Overview · Agents · Teams · Skills)
+    gy = top + 52 + 16
     g_rows = [
-        (K.ic_dashboard, "Dashboard", "screen 8.8", "global", "fleet health · consumption · live agent↔task↔project map", False, 46),
-        (K.ic_overview, "Overview", "screen 8.1", "global", "squad status · active agents · recent activity", False, 46),
-        (K.ic_agents, "Agents", "8.10 / 8.11", "global", "org diagram + agent detail — filterable by squad / project", False, 46),
+        (K.ic_overview, "Overview", "screen 8.1", "global", "squad status · active agents · recent activity", False, 44),
+        (K.ic_agents, "Agents", "20 / 21", "new", "dual org views — Role-Based swimlanes ⇄ Leadership tree", False, 44),
+        (K.ic_teams, "Teams", "screen 09", "new", "squad organization — Team → Agent → Role", False, 44),
+        (K.ic_skills, "Skills", "screen —", "new", "skills registry — bind runtime + skills to roles", False, 44),
     ]
-    c1, h1 = group_card(T, lx, top, lw, "GLOBAL", "fleet & squad — not project-scoped", g_rows)
+    c1, h1 = group_card(T, lx, gy, lw, "GLOBAL", "fleet & squad — not project-scoped", g_rows)
     s.append(c1)
 
-    # PROJECT group (root context) — selector then sub-items
-    py = top + h1 + 18
+    # PROJECT group (root context) — selector then renamed sub-items
+    py = gy + h1 + 16
     p_rows = [
-        (K.ic_build, "Build", "screen 8.7", "project", "build browser — checkout→review→fix→test→publish", True, 42),
-        (K.ic_files, "Files", "screen 19", "new", "file explorer — browse & visualize project files", True, 42),
-        (K.ic_tickets, "Tickets", "screen 8.14", "new", "work-item tree — parents → sub-tickets", True, 42),
-        (K.ic_runs, "Runs", "screen 8.2", "project", "run stream (SSE) + run history", True, 42),
+        (K.ic_tickets, "Issues", "screen 8.14", "new", "work-item tree — parents → sub-issues", True, 42),
         (K.ic_discussion, "Discussion", "screen 10.3", "project", "coordination room — threaded record", True, 42),
+        (K.ic_board, "Project Board", "screen —", "new", "kanban lanes — todo · in-progress · review · done", True, 42),
+        (K.ic_files, "File Explorer", "screen 19", "new", "browse & visualize project files", True, 42),
     ]
-    # custom card so we can put the selector at the top
     pbody = sum(r[6] for r in p_rows)
     ph = 48 + 56 + pbody + 12
     s.append(rect(lx, py, lw, ph, T["card"], rx=13, stroke=T["accent"] + "44"))
@@ -128,49 +146,46 @@ def build_content(T):
     sel, selh = selector_row(T, lx + 6, py + 48, lw - 12)
     s.append(sel)
     ry = py + 48 + selh
-    # spine down the sub-items
     s.append(line(lx + 22, ry + 4, lx + 22, ry + len(p_rows) * 42 - 20, T["accent"] + "66", sw=1.5))
     for icon, label, screen, scope, note, indent, rh in p_rows:
         s.append(node_row(T, lx + 6, ry, lw - 12, icon, label, screen, scope, note, indent))
         ry += rh
 
-    # SETTINGS group
-    sy = py + ph + 18
-    st_rows = [
-        (K.ic_config, "Configuration", "screen 8.12", "global", "OTelConfig CRD + platform settings", False, 46),
-        (K.ic_creds, "Credentials", "screen 8.6", "global", "credential / auth state per runtime", False, 46),
-    ]
-    c3, h3 = group_card(T, lx, sy, lw, "SETTINGS", "platform configuration", st_rows)
-    s.append(c3)
-
-    # ---- right column: pattern callouts -------------------------------------
+    # ---- right column: pattern callouts + SETTINGS ---------------------------
     rx, rw = 992, 432
-    ry = 140
-    s.append(callout(T, rx, ry, rw, 118, "Project context selector",
+    s.append(callout(T, rx, 140, rw, 112, "Project context selector",
                      ["Top-of-rail dropdown sets the active Project.",
-                      "Clicking the name loads the project dashboard",
-                      "(screen 19) on the main frame; the chevron",
-                      "switches project and re-scopes every sub-section."]))
-    ry += 134
-    s.append(callout(T, rx, ry, rw, 118, "Breadcrumb  —  Project › section",
+                      "Clicking the name loads the project dashboard;",
+                      "the chevron switches project & re-scopes the four",
+                      "sub-sections (Issues · Discussion · Board · Files)."]))
+    s.append(callout(T, rx, 264, rw, 112, "Breadcrumb  —  Project › section",
                      ["Always shows the Project root then the current",
                       "section. The Project chip is a quick-switch."],
                      sample_fn=sample_breadcrumb))
-    ry += 134
-    s.append(callout(T, rx, ry, rw, 118, "Project sub-navigation",
-                     ["Overview (dashboard) · Build · Files · Tickets ·",
-                      "Runs · Discussion — a tab strip mirrored as the",
-                      "indented rail sub-items."],
+    s.append(callout(T, rx, 388, rw, 118, "Project sub-navigation",
+                     ["Issues · Discussion · Project Board · File",
+                      "Explorer — a tab strip mirrored as the indented",
+                      "rail sub-items."],
                      sample_fn=sample_subnav))
-    ry += 134
-    s.append(callout(T, rx, ry, rw, 96, "Scoping rule",
-                     ["Global (Dashboard, Overview, Agents, Settings)",
-                      "read across the fleet. Everything under Project",
-                      "is filtered to project_id — mirrors the CRD model."]))
+
+    # SETTINGS group (expanded per ISI-2321)
+    st_rows = [
+        (K.ic_otel, "OpenTelemetry", "8.12", "global", "OTelConfig — traces·metrics·logs", False, 40),
+        (K.ic_creds, "Credentials", "8.6", "global", "auth state per runtime", False, 40),
+        (K.ic_plugins, "Plugins", "new", "new", "adapter / plugin registry", False, 40),
+        (K.ic_users, "Users & Roles", "15", "new", "access levels + membership", False, 40),
+    ]
+    c3, h3 = group_card(T, rx, 520, rw, "SETTINGS", "platform config", st_rows)
+    s.append(c3)
+
+    s.append(callout(T, rx, 520 + h3 + 14, rw, 92, "Scoping rule",
+                     ["Global (Mailbox, Overview, Agents, Teams, Skills,",
+                      "Settings) read across the fleet. Everything under",
+                      "Project is filtered to project_id — CRD model."]))
 
     # footer
-    s.append(text(260, 884, "IA / nav only — existing screen content (8.1–8.12) is unchanged; App Router nested layouts re-wrap it.  "
-                            "Realizes CEO 2026-08-12 directive · Stories 8.13 + 8.14.", 11, T["t4"]))
+    s.append(text(260, 878, "IA / nav only — screen content is re-wrapped by App Router nested layouts.  "
+                            "Realizes CEO 2026-08-12 nav-IA revision · ISI-2321 (Mailbox · Teams · Skills · Settings tree · Project sub-items).", 11, T["t4"]))
     return "".join(s)
 
 
