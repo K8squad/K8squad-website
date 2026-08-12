@@ -9,6 +9,8 @@ inputDocuments:
   - ISI-2303                          # RBAC arch (identity provider, RBAC middleware, Users/ProjectMemberships/Roles data model, Runs carry initiatedByUserId, CRD createdBy/ownedBy) — the identity model this revision instruments
   - ISI-2302                          # RBAC PRD FR-AUTH1..5 (login, admin user CRUD, project-scoped visibility, caller-identity propagation, adaptive UI)
   - ISI-2304                          # RBAC epics — Epic 13 "user-scoped telemetry dimensions" is the story this plan specs
+  - ISI-2327                          # Responsive console — arch §13.1 + ADR-038 (CSS-first single SSR tree; canonical breakpoints; commit b2c01e4, branch arch/isi-2327-responsive-console). This revision instruments the breakpoint usage the decision makes observable
+  - ISI-2333                          # This revision: viewport/device-class dimension on console RUM (the observability deliverable of ISI-2327)
 workflowType: 'observability-plan'
 authoringMode: 'O11y-engineer-led synthesis over the CEO-approved PRD + Architect Gate-2 architecture; reuses org OTel prior art'
 project_name: 'KSquad'
@@ -23,6 +25,7 @@ honors: [operator-safety-over-expressiveness, two-records-principle, secrets-nev
 revisions:
   - r1 (2026-08-12, ISI-2306 / KSquad RBAC series): added user-scoped telemetry & audit. Threads the human-user identity dimension (`ksquad.user.id` = Run `initiatedByUserId`, from ISI-2303) through every span/log/exemplar (§3), forbids it as a raw metric label (§1.2/§5.6 — it is unbounded per-actor, rolled up in the backend like §15's per-ticket cost), adds the security audit log class (§6) + auth/authz/admin metrics + RBAC security signals (new §16), alerts (§9), semconv attrs (§7), and the user-activity / per-project dashboard. Depends on ISI-2303 landing the identity model to be truthful (flagged §16.7). No cardinality-law exception introduced; no new architectural decision — instruments the RBAC decisions made in ISI-2303.
   - r2 (2026-08-12, ISI-2325 / CEO-validated Project Dashboard): added the **Project Dashboard signal feed** (new §17 + Appendix A row). The dashboard reads mostly from the coordination record / `scm` mirror (read models, no metric); this plan feeds the **one** metrics panel — **token consumption + trend** (§17.1: the existing `ksquad.agent.tokens` §5.5 read *as a time range*, `rate()`/`increase()` — a query shape, **not** a new instrument; per-user/agent/Run stay exemplar rollups §16.5; estimated cost = §16.5 price table, degrades to tokens-only) — plus two cheap bounded **approval-queue** signals (§17.2: `ksquad.approval.pending` gauge + `ksquad.approval.decisions.total{project,outcome}` for the KPI count / stale-approval alert / trend; authoritative who-approved-what stays coord + §16.4 audit log; `user.id`/`work_item.id`/`run.id` exemplar-only). No cardinality-law exception; no new architectural decision — legibility over signals the metering spine + coordination record already carry.
+  - r3 (2026-08-12, ISI-2333 / ISI-2327 responsive console — arch §13.1 + ADR-038): added the **console RUM viewport / device-class dimension** (new **§18** + Appendix A row + §5.6/§7/§11 threading). Tags console page-view / interaction / web-vital signals with the active **breakpoint bucket** (`mobile`\|`tablet`\|`desktop`), a **bucketed** viewport-width band, and **orientation** so real breakpoint usage is observable and responsive regressions (layout shift / errors concentrated at one width) surface. **Cardinality-safe:** breakpoint/orientation/width-bucket/route-class are bounded enums → allowed labels (§5.6); **raw pixel width, UA strings, device model are never emitted** (privacy-light — bucketed, not fingerprinting; aligns ADR-038's *never user-agent sniffing*). **Opt-in-consistent:** rides the existing OTelConfig export path (ADR-029, D8 default = no exporter) via a same-origin BFF ingest → collector, no new browser→vendor egress. No cardinality-law exception; no new architectural decision — instruments the CSS-first responsive tree ADR-038 already locked.
 depends_on_rbac_architecture: 'ISI-2303 (Users/ProjectMemberships/Roles + auth service + initiatedByUserId + createdBy/ownedBy) — user-scoped telemetry is truthful only once this lands; see §16.7'
 ---
 
@@ -301,12 +304,17 @@ adding a runtime cannot inflate cardinality because the check set is fixed by th
 `provenance_class`, `signal`, `endpoint`, `source`, `cache_hit`, `live` (build browser, ISI-2165),
 **`role`** (curated RBAC enum — `admin`\|`project_user`\|…, §16.2), **`auth_result`**
 (success\|failure\|locked), **`target_kind`** (user\|role\|membership\|team\|agent\|skill\|project\|config),
-**`action`** (create\|update\|delete\|grant\|revoke\|login\|logout\|refresh) — the RBAC additions (§16).
+**`action`** (create\|update\|delete\|grant\|revoke\|login\|logout\|refresh) — the RBAC additions (§16),
+**`breakpoint`** (mobile\|tablet\|desktop), **`viewport_bucket`** (curated width band, 5 values),
+**`orientation`** (portrait\|landscape), **`route_class`** (curated screen enum), **`interaction_kind`**
+(curated touch/pointer enum), **`web_vital`** (LCP\|INP\|CLS) — the console-RUM additions (§18).
 Total series per instrument stays in the low hundreds.
 
 **Forbidden as metric labels (trace/log/exemplar only):** `run.id`, `work_item.id`, `principal.id`,
 **`user.id` (= `initiatedByUserId`)**, `sandbox.pod`, `trace_id`, `team`/`project` names, **usernames /
-emails / session tokens (never emitted at all — PII/secret, §1.4)**. Scope names (`team`, `project`) ride
+emails / session tokens (never emitted at all — PII/secret, §1.4)**, **raw viewport pixel width, User-Agent
+strings, and any device-model/fingerprint (never emitted at all — privacy, §18: bucketed not fingerprinted)**.
+Scope names (`team`, `project`) ride
 as **resource attributes** (Prometheus federates them without per-series explosion) or as exemplars;
 `user.id` rides as an exemplar/span/log dimension and is rolled up per-user in the backend (§16.2/§16.5).
 A CI check (§11) greps the instrumentation for label keys outside the allowlist and fails the build —
@@ -381,6 +389,11 @@ the schema and telemetry is validated against it in CI.
 | `ksquad.admin.target_kind` | string | user\|role\|membership\|team\|agent\|skill\|project\|config | what an admin mutation touched (§16.4) |
 | `ksquad.admin.action` | string | create\|update\|delete\|grant\|revoke | admin mutation verb (§16.4) |
 | `ksquad.fence.epoch` | int | monotonic | lease-epoch/fence token (§6.2) |
+| `ksquad.console.breakpoint` | string | `mobile`\|`tablet`\|`desktop` | active responsive breakpoint bucket (arch §13.1/ADR-038 canonical tokens: `<768`\|`768–1024`\|`>1024`); bounded (3) → allowed metric label (§18) |
+| `ksquad.console.viewport_bucket` | string | `w360`\|`w768`\|`w1024`\|`w1440`\|`w1440p` | **bucketed** viewport-width band (matches the §05 test matrix 360/768/1024/1440), finer than breakpoint but still bounded → allowed label. **Raw pixel width is never emitted** (privacy/cardinality, §18) |
+| `ksquad.console.orientation` | string | `portrait`\|`landscape` | viewport orientation where the browser exposes it; bounded (2) → allowed label |
+| `ksquad.console.route_class` | string | curated screen enum (`dashboard`\|`list`\|`detail`\|`settings`\|`search`\|`build_browser`\|`discussion`\|`agents`) | the **screen class**, never the raw URL/path (which is unbounded + can carry ids) — bounded → allowed label (§18) |
+| `ksquad.console.interaction_kind` | string | `tap`\|`click`\|`nav`\|`pull_refresh`\|`pinch_zoom`\|`drawer_toggle`\|`row_expand` | touch/pointer interaction class — observes the §13.1 touch-parity bar; bounded → allowed label (§18) |
 
 **Reuse & alignment:** OTel resource semconv for `k8s.*`, `service.*`; OTel `gen_ai.*` where the shim can
 surface model/token data (aligns `ksquad.agent.tokens` to `gen_ai.usage.*`); MemOS memory-semconv v0.1.0
@@ -512,11 +525,14 @@ capability) is the path — noted as a fast-follow, not an MVP need.
 | `ksquad-memory` | OTel Go SDK; MCP-server span per tool call; MemOS semconv | P0 |
 | `shims/openclaw`, `shims/hermes` | OTel Go SDK in-sandbox; A2A `traceparent` propagation; token surfacing | P0 metrics / **P1 cross-boundary trace** |
 | `console` (Node BFF) | `@opentelemetry/sdk-node` + `pino`; propagate `run.id` into SSE proxy | P1 |
+| `console` (browser RUM) | `@opentelemetry/sdk-web` + `web-vitals`; page-view / interaction / web-vital events tagged with the §18 breakpoint/viewport/orientation dimension; posts OTLP/HTTP to a **same-origin BFF ingest** (`/v1/rum`) → collector — **no direct browser→vendor egress**, export gated by OTelConfig (ADR-029, default none) | P1 (§18) |
 | Collector + semconv registry + dashboards + alerts | in-repo config, Weaver registry | P0 |
 
 **CI gates (observability-as-code):**
 1. **Cardinality lint** — grep instrumentation for metric label keys outside the §5.6 allowlist → fail.
-   Explicitly fails on `user.id`/`initiatedByUserId`/username/email as a metric label (RBAC, §16.2 — OBS-9).
+   Explicitly fails on `user.id`/`initiatedByUserId`/username/email as a metric label (RBAC, §16.2 — OBS-9),
+   and on **raw viewport width / User-Agent / device-fingerprint** as a console-RUM label or attribute
+   (§18 — OBS-11): only the bucketed `breakpoint`/`viewport_bucket`/`orientation` may be emitted.
 2. **Semconv validation** — Weaver validates the registry; `validate-telemetry-data` runs emitted
    telemetry from an envtest/e2e Run against the schema.
 3. **Secret-leak scan** — the isolation suite (§4.3 arch) asserts no credential appears in any span/log
@@ -806,6 +822,96 @@ reconciler on gate raise/resolve and `ksquad.approval.decisions.total` on each h
 
 ---
 
+## 18. Console RUM — viewport / device-class dimension (ISI-2333 ← ISI-2327, arch §13.1 / ADR-038)
+
+**Decision instrumented, not made.** ADR-038 makes the console **one responsive SSR tree** — layout keys
+off **viewport / container width** via Tailwind breakpoints + container queries, **never user-agent
+sniffing**, same BFF payloads, same RBAC wall (§12.3), one SSE bus (arch §13.1). That decision is invisible
+in production unless we can *see which breakpoints operators actually use* and *catch regressions that
+concentrate at one width*. This section adds a **viewport / device-class dimension** to the console RUM so
+the responsive tree is observable. It adds **no new architectural decision and no data/authz path** — it is
+a presentation-layer signal riding the existing OTel export seam.
+
+### 18.1 The dimension (bounded, privacy-light, aligned to the design tokens)
+
+Every console **page-view**, **interaction**, and **web-vital** sample is tagged with:
+
+| Dimension | Domain | Source | Why bounded / privacy-safe |
+|-----------|--------|--------|-----------------------------|
+| `ksquad.console.breakpoint` | `mobile`\|`tablet`\|`desktop` | the **same CSS breakpoint token** that drives layout (`<768`\|`768–1024`\|`>1024`, arch §13.1) — read from the active container query, **not** from the UA | 3 values — the canonical shared tokens; a label, not a fingerprint |
+| `ksquad.console.viewport_bucket` | `w360`\|`w768`\|`w1024`\|`w1440`\|`w1440p` | `innerWidth` **bucketed** into the §05-testing viewport bands (360/768/1024/1440) at the SDK before emit | 5 fixed bands; **raw pixel width is dropped at source** — bucketing is the privacy control, not the backend |
+| `ksquad.console.orientation` | `portrait`\|`landscape` | `matchMedia('(orientation: …)')` where exposed | 2 values |
+| `ksquad.console.route_class` | curated screen enum (§7) | the **route template**, resolved client-side to a screen class (never the raw path — paths carry ids/PII) | ~8 screens; matches the per-screen reflow table in arch §13.1 |
+
+**Device-class is derived from viewport width, never sniffed.** We do **not** parse the User-Agent for a
+device model, and we do **not** collect screen DPI, GPU, font list, or any high-entropy client signal — that
+would be fingerprinting and it would also contradict ADR-038 (layout is width-driven, so width is the only
+honest signal). Combined only with the opaque `ksquad.user.id` (exemplar-only, §16.1), the dimension stays
+**privacy-light**: bucketed, low-entropy, and non-identifying.
+
+### 18.2 Signals
+
+Three cheap instruments — all labels drawn from the §18.1 bounded domains (`breakpoint × orientation ×
+viewport_bucket × route_class × interaction_kind ≈` low hundreds of series, well inside the §5.6 budget):
+
+| Metric | Type | Labels (bounded) | Why |
+|--------|------|------------------|-----|
+| `ksquad.console.page_view.total` | counter | `breakpoint`, `viewport_bucket`, `orientation`, `route_class` | **which breakpoints operators actually use, per screen** — the primary question ISI-2327 asks; drives a usage heatmap (breakpoint × screen) |
+| `ksquad.console.interaction.total` | counter | `breakpoint`, `route_class`, `interaction_kind` | **touch-parity in the wild** — confirms `pull_refresh`/`pinch_zoom`/`drawer_toggle` are actually exercised on `mobile`/`tablet` (the §13.1 v1 touch bar), not just shipped |
+| `ksquad.console.web_vital` | histogram | `breakpoint`, `route_class`, `web_vital` (LCP\|INP\|CLS) | **responsive-regression detector** — **CLS bucketed by `breakpoint`** is the exact "layout errors concentrated at one width" signal the ticket names; INP/LCP by breakpoint catch a slow reflow on one device class |
+
+`web_vital` is the standard Core Web Vitals triad via the `web-vitals` lib; **CLS split by breakpoint** is
+the load-bearing series — a layout shift that spikes only at `mobile` is a responsive bug the desktop-only
+view never shows. `run.id`/`work_item.id`/`user.id` stay **exemplars** on these instruments, never labels
+(§1.2/§5.6) — the aggregate is label-speed, the drill-down is the exemplar join.
+
+**No client-error firehose.** Uncaught client errors ride the existing diagnostic log class (§6.3), tagged
+with the same `breakpoint`/`route_class` attributes so an error cluster at one width is queryable — we do
+**not** add a per-error metric label (unbounded error strings would breach §5.6).
+
+### 18.3 Export posture — opt-in-consistent (D8 / ADR-029)
+
+The browser SDK emits to a **same-origin BFF ingest endpoint** (`/v1/rum`, served by the console Node BFF
+that already fronts every read model) which forwards to the collector. This keeps three invariants intact:
+
+1. **No new egress path.** The browser never talks to a vendor directly — RUM routes **through** the same
+   collector pipeline (§10) as every other signal, so the redaction/PII processor and the OTelConfig export
+   gate apply unchanged. **Default = no exporter (D8): with no `OTelConfig` exporter configured, RUM is
+   collected and dropped at the collector, never egressed** — identical to the rest of the plan's posture.
+2. **Same RBAC wall.** `/v1/rum` sits behind the §12.3 deny-by-default middleware like every BFF route — an
+   unauthenticated browser cannot post RUM; `user.id` is stamped server-side from the session, never sent by
+   the client (so the client can't forge identity, and the session token never rides the RUM payload).
+3. **No responsive data/authz path.** Consistent with ADR-038 — this is presentation telemetry, not a
+   viewport-conditioned API. The server still sends one SSR tree to every device.
+
+### 18.4 Handoffs
+
+**→ Developer (Amelia) — Epic 8 (console), pairs with the responsive-console stories (ISI-2327):**
+- **OBS-11 (P1):** Add `@opentelemetry/sdk-web` + `web-vitals` to the console client; a small
+  `breakpoint`-resolver reads the **active CSS breakpoint token** (shared with the Tailwind config — single
+  source of truth, no duplicated thresholds) and buckets `innerWidth`/orientation **at the SDK before
+  emit** (raw width never leaves the browser). Tag `page_view`/`interaction`/`web_vital` per §18.2.
+- **OBS-12 (P1):** Add the `/v1/rum` BFF ingest route behind the §12.3 middleware; stamp `user.id`
+  server-side; forward OTLP/HTTP to the collector. **Reuse** the existing collector — no new receiver
+  topology beyond an OTLP/HTTP path.
+- **CI (extends OBS-7):** the §11 cardinality lint gains the **OBS-11 rule** — fail the build if raw
+  viewport width, a User-Agent string, or any device-fingerprint key appears as a RUM label **or**
+  attribute; only the bucketed `breakpoint`/`viewport_bucket`/`orientation` are permitted.
+
+**→ Testing Architect — validation KPIs (lockstep with the §05 viewport matrix):**
+- The **viewport test matrix** (360/768/1024/1440 × iOS Safari / Android Chrome / desktop Chrome+Firefox,
+  a v1 gate in 05-testing-strategy) and this RUM dimension **share the same bucket boundaries** — an e2e
+  run at each matrix width should emit exactly one `viewport_bucket`/`breakpoint` pair; the test asserts the
+  tag, closing the loop between the synthetic matrix and real-user telemetry.
+- **`ksquad.console.web_vital{web_vital="CLS"}` by breakpoint** is the responsive-regression KPI: a CI/prod
+  guard can flag a CLS regression isolated to one `breakpoint` — the "layout error at one width" case.
+
+**→ Architect (Winston) / Alfred (CTO):** No architectural change requested. Confirmation only that this
+honors ADR-038 (width-driven, no UA sniffing) and the D8 no-exporter-by-default posture — the dimension is
+bounded, privacy-light, and rides the existing OTelConfig seam.
+
+---
+
 ## Appendix A — Signal-to-component matrix (the §17.2 coverage the ticket asked for)
 
 | Architecture component | Metrics | Traces | Logs / Audit | Alert |
@@ -818,11 +924,16 @@ reconciler on gate raise/resolve and `ksquad.approval.decisions.total` on each h
 | Build browser (design §9.4/ADR-021, ISI-2165) — reads, snapshot emit, RO-reader cost | `ksquad.buildbrowser.*` (component plan) | `buildbrowser.*` span (child live / **linked** completed) | scope-denial + emit-failure + reader logs | "no build view" coverage, RO-reader cost, scope-denial — **all ticket-grade** | see `design/build-browser-observability-plan.md` |
 | **Identity / RBAC (ISI-2303, §16)** — login, authz decisions, admin/config change, user cost | §16.3 `auth.*`/`authz.decisions`/`admin.change.*`/`run.by_role.*` (labels bounded; `user.id` on exemplars) | `ksquad.user.id` on **every** span (§16.1) | **security audit log** (§16.4, authoritative) + `user.id` on all logs | brute-force / privilege-escalation / access-probing — **security-grade** (§9) |
 | **Project Dashboard feed (ISI-2325, §17)** — token consumption+trend, pending-approvals queue | §17.1 `agent.tokens` (query as trend); §17.2 `approval.pending` gauge + `approval.decisions.total` (labels `project`/`outcome` bounded; `user.id`/`work_item.id` on exemplars) | token exemplars on the Run trace (§3); approval decision joins `initiated_by_user_id` | approve/reject in **coord + security audit log** (§16.4, authoritative) | stale-approval backlog (`approval.pending` age past SLO) |
+| **Console RUM viewport/device-class (ISI-2333 ← ISI-2327, §18, arch §13.1/ADR-038)** — breakpoint usage, touch-parity, responsive regressions | §18.2 `console.page_view.total` + `console.interaction.total` + `console.web_vital` (labels `breakpoint`/`viewport_bucket`/`orientation`/`route_class`/`interaction_kind`/`web_vital` **all bounded**; raw width/UA/fingerprint **never emitted**; `user.id`/`run.id` on exemplars) | client errors on the diagnostic log class (§6.3) tagged `breakpoint`/`route_class` | **CLS-by-breakpoint** responsive-regression guard (layout error at one width); shares boundaries with the §05 viewport test matrix | opt-in via OTelConfig (D8 default none), same-origin BFF ingest — no browser→vendor egress |
 
 **Disposition:** this plan is the observability design for the Gate-2 architecture, ready to feed Phase-4
 epics (OBS-1..7, plus OBS-8..10 for the RBAC user-scoped layer, §16.7). It adds no architectural
 decisions, honors the arch's tracing phasing, and reuses the org's Sympozium/MemOS OTel taxonomy. **RBAC
 revision r1 (ISI-2306)** layers user-scoped telemetry & audit (§16) with **no cardinality-law exception** —
 `user.id` on spans/logs/exemplars, per-user rollups in the backend, bounded `role`/`project` labels for the
-dashboards, and an authoritative security audit log — flagged truthful-once-ISI-2303-lands. Ready for
-Architect/CTO review alongside the architecture at Gate 2.
+dashboards, and an authoritative security audit log — flagged truthful-once-ISI-2303-lands. **Revision r3
+(ISI-2333 ← ISI-2327)** adds the **console RUM viewport / device-class dimension** (§18) so ADR-038's
+responsive tree is observable — bounded breakpoint/viewport-bucket/orientation/route-class labels,
+**privacy-light** (bucketed width, no UA sniffing or fingerprint), opt-in via the OTelConfig seam (D8
+default none), CLS-by-breakpoint as the responsive-regression guard — again **no cardinality-law exception,
+no new architectural decision**. Ready for Architect/CTO review alongside the architecture at Gate 2.
