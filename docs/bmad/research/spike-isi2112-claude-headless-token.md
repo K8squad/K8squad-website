@@ -4,11 +4,28 @@ author: Winston (Architect)
 date: 2026-08-12
 issue: ISI-2112
 status: complete
-decision: GO (with credential-model constraint)
+decision: GO — credential-model recommendation SUPERSEDED 2026-08-12 (see banner)
 gates_unblocked: [Epic 3, Epic 4, Epic 5, Epic 7]
+supersedes_note: "The 'static bearer per seat / NO-GO on shared .credentials.json' recommendation is superseded by the CEO field finding + controller model in arch §11.1 / ADR-032 / Epic 7 Story 7.7."
 ---
 
 # Spike ISI-2112 — Headless Claude Code on a Pro/Max subscription
+
+> ## ⚠️ REVISION 2026-08-12 — credential-model recommendation SUPERSEDED
+> **The core GO stands** (headless Claude Code on a subscription works — verified below).
+> **What changed:** this spike recommended *"one static `setup-token` bearer per seat, NO-GO on
+> sharing `.credentials.json` across replicas"* out of a refresh-token-rotation-race concern.
+> **CEO field finding (Henrik, 2026-08-12):** Paperclip already runs **many concurrent `claude -p`
+> processes on one host against a single `claude login` credential with no manual refresh** — the
+> sharing concern was **over-cautious**. The refresh race is eliminated not by avoiding sharing but by
+> **centralizing refresh in one owner**.
+> **Adopted model (authoritative):** connect-once OAuth → tokens in one per-user K8s Secret → a
+> **leader-elected credential controller** auto-refreshes the ~8h access token before expiry and writes
+> back to the *same* Secret → agent pods are **read-only mounters** (concurrent Runs share one token) →
+> re-login only if the ~9-day refresh window lapses (one-click, console screen 05). See
+> **arch `03-architecture.md` §11.1 / ADR-032** and **Epic 7 Story 7.7** — those are the source of truth.
+> The empirical measurements and failure-mode analysis below remain valid *as data*; only the
+> **§"GO / NO-GO" recommendation** is overridden by the controller model.
 
 ## Question
 Can Claude Code run **headless in a container** on a Pro/Max subscription via
@@ -121,6 +138,12 @@ Headless **requires** `--permission-mode`, an allow-list, or
 ---
 
 ## GO / NO-GO
+> **⚠️ SUPERSEDED 2026-08-12 (see top banner).** The Model-B "static bearer per seat" pick and the
+> "never share `.credentials.json`" rule below were overridden by the CEO field finding + the
+> controller model in **arch §11.1 / ADR-032 / Epic 7 Story 7.7**. The adopted design *does* share one
+> Secret across pods, made safe by a single-writer refresh controller (not by per-seat static tokens).
+> Read the items below as the *original* analysis, not current guidance.
+
 **GO** for BYO-subscription headless Claude Code using **Model B
 (`CLAUDE_CODE_OAUTH_TOKEN` from `setup-token`)**. Model A is a single-pod fallback
 only. Ship dependent Epics 3/4/5/7 against Model B.
