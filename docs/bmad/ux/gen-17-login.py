@@ -17,7 +17,7 @@ def build(T):
     s.append(rect(0, 0, lw, 900, T["rail"]))
     s.append(rect(lw - 1, 0, 1, 900, T["border"]))
     s.append(big_logo(T, 120, 150, scale=0.9))
-    s.append(text(190, 138, "KSquad", 30, T["t1"], w=700, ls="0.3"))
+    s.append(R.logotype(190, 138, 30, T, ls="0.3"))
     s.append(text(190, 168, "operator console", 14, T["t4"], ls="0.6"))
     s.append(text(80, 300, "Run squads of agents", 30, T["t1"], w=700))
     s.append(text(80, 338, "on your own cluster.", 30, T["accent2"], w=700))

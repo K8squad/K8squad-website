@@ -276,14 +276,41 @@ RAIL = [
 RAIL_W = 236
 
 
+# --- official v2 8-Crest mark + K8squad logotype (ISI-2324) ------------------
+# Source of truth: docs/bmad/branding/assets/mark-8crest-on-dark.svg (ISI-2137).
+# svg_open() injects LOGO_DEFS so the gradient ring strokes resolve. After any
+# re-render, run apply-official-8crest.py — the idempotent branding enforcement
+# pass that also covers the older gens (09/11/12) which duplicate the lockup.
+LOGO_DEFS = (
+    '<defs>'
+    '<linearGradient id="ringTop" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#3D7DFF"/></linearGradient>'
+    '<linearGradient id="ringBot" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0" stop-color="#3D7DFF"/><stop offset="1" stop-color="#2E4E8C"/></linearGradient>'
+    '</defs>'
+)
+
+
+def mark_8crest(cx, cy, scale):
+    """Official v2 8-Crest inner geometry centred at (cx,cy). Needs LOGO_DEFS."""
+    return (f'<g transform="translate({cx},{cy}) scale({scale}) translate(-50,-50)">'
+            '<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="url(#ringBot)" stroke-width="9"/>'
+            '<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="url(#ringTop)" stroke-width="9"/>'
+            '<rect x="41" y="41" width="18" height="18" rx="5" fill="#93B7FF"/>'
+            '<rect x="44.5" y="9.5" width="11" height="11" rx="3" fill="#93B7FF"/>'
+            '<rect x="44.5" y="79.5" width="11" height="11" rx="3" fill="#2E4E8C"/></g>')
+
+
+def logotype(x, y, size, T, anchor="start", ls="0.2"):
+    """Official 'K8squad' logotype — azure numeral 8 (the k8s pun)."""
+    return (f'<text x="{x}" y="{y}" {F} font-size="{size}" fill="{T["t1"]}" '
+            f'font-weight="700" text-anchor="{anchor}" letter-spacing="{ls}">'
+            f'K<tspan fill="{T["accent"]}">8</tspan>squad</text>')
+
+
 def build_logo(T):
-    return (f'<g transform="translate(30,34) scale(0.33735) translate(-50,-50)">'
-            f'<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-            f'<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-            f'<rect x="45" y="25.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-            f'<rect x="45" y="64.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-            f'<rect x="42.5" y="42.5" width="15" height="15" rx="4.2" fill="{T["logodot"]}"/></g>'
-            + text(52, 32, "KSquad", 17, T["t1"], w=700, ls="0.2")
+    return (mark_8crest(30, 34, 0.33735)
+            + logotype(52, 32, 17, T)
             + text(52, 46, "operator console", 10, T["t4"], ls="0.4"))
 
 
@@ -404,7 +431,7 @@ def build_subnav(T, x, y, w, active, tabs=None):
 
 def svg_open(T):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" '
-            f'viewBox="0 0 1440 900" {F}>' + rect(0, 0, 1440, 900, T["bg"]))
+            f'viewBox="0 0 1440 900" {F}>' + LOGO_DEFS + rect(0, 0, 1440, 900, T["bg"]))
 
 
 def write_pair(basename, build_fn):

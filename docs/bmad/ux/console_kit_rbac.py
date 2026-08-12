@@ -20,7 +20,8 @@ from console_kit_ia import (DARK, LIGHT, text, rect, line, dot, chip, _stk,
                             F, FM, esc, svg_open,
                             ic_dashboard, ic_overview, ic_agents, ic_project,
                             ic_build, ic_tickets, ic_runs, ic_discussion,
-                            ic_config, ic_creds, build_logo, RAIL_W)
+                            ic_config, ic_creds, build_logo, RAIL_W,
+                            LOGO_DEFS, mark_8crest, logotype)
 
 # ---- extra glyphs -----------------------------------------------------------
 
@@ -170,14 +171,9 @@ def build_header_rbac(T, section, subtitle, user="Priya Nair", initials="PN", le
 # ---- login primitives -------------------------------------------------------
 
 def big_logo(T, cx, cy, scale=0.62):
-    """Centred 8-Crest mark + wordmark for the login/mobile splash."""
-    g = (f'<g transform="translate({cx},{cy}) scale({scale}) translate(-50,-50)">'
-         f'<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-         f'<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-         f'<rect x="45" y="25.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-         f'<rect x="45" y="64.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-         f'<rect x="42.5" y="42.5" width="15" height="15" rx="4.2" fill="{T["logodot"]}"/></g>')
-    return g
+    """Centred official v2 8-Crest mark for the login/mobile splash.
+    The login/mobile gens append the K8squad logotype next to it via logotype()."""
+    return mark_8crest(cx, cy, scale)
 
 
 def input_field(T, x, y, w, label, value, placeholder=False, icon=None):
@@ -261,7 +257,7 @@ def write_pair(basename, build_fn, w=1440, h=900):
     out = os.path.join(os.path.dirname(__file__), "images")
     for suffix, T in [("", DARK), ("-light", LIGHT)]:
         head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
-                f'viewBox="0 0 {w} {h}" {F}>' + rect(0, 0, w, h, T["bg"]))
+                f'viewBox="0 0 {w} {h}" {F}>' + LOGO_DEFS + rect(0, 0, w, h, T["bg"]))
         path = os.path.join(out, f"{basename}{suffix}.svg")
         with open(path, "w") as f:
             f.write(head + build_fn(T) + "</svg>")

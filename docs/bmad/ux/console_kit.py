@@ -69,6 +69,36 @@ def rect(x, y, w, h, fill, rx=0, stroke="none", sw=1):
             f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"/>')
 
 
+# --- official v2 8-Crest mark + K8squad logotype (ISI-2324) -------------------
+# Kept in sync with console_kit_ia.py. svg_open() injects LOGO_DEFS. After any
+# re-render, run apply-official-8crest.py (idempotent branding enforcement pass).
+LOGO_DEFS = (
+    '<defs>'
+    '<linearGradient id="ringTop" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#3D7DFF"/></linearGradient>'
+    '<linearGradient id="ringBot" x1="0" y1="0" x2="0" y2="1">'
+    '<stop offset="0" stop-color="#3D7DFF"/><stop offset="1" stop-color="#2E4E8C"/></linearGradient>'
+    '</defs>'
+)
+
+
+def mark_8crest(cx, cy, scale):
+    """Official v2 8-Crest inner geometry centred at (cx,cy). Needs LOGO_DEFS."""
+    return (f'<g transform="translate({cx},{cy}) scale({scale}) translate(-50,-50)">'
+            '<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="url(#ringBot)" stroke-width="9"/>'
+            '<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="url(#ringTop)" stroke-width="9"/>'
+            '<rect x="41" y="41" width="18" height="18" rx="5" fill="#93B7FF"/>'
+            '<rect x="44.5" y="9.5" width="11" height="11" rx="3" fill="#93B7FF"/>'
+            '<rect x="44.5" y="79.5" width="11" height="11" rx="3" fill="#2E4E8C"/></g>')
+
+
+def logotype(x, y, size, T, anchor="start", ls="0.2"):
+    """Official 'K8squad' logotype — azure numeral 8 (the k8s pun)."""
+    return (f'<text x="{x}" y="{y}" {F} font-size="{size}" fill="{T["t1"]}" '
+            f'font-weight="700" text-anchor="{anchor}" letter-spacing="{ls}">'
+            f'K<tspan fill="{T["accent"]}">8</tspan>squad</text>')
+
+
 def dot(cx, cy, rr, fill, pulse=False):
     s = f'<circle cx="{cx}" cy="{cy}" r="{rr}" fill="{fill}"/>'
     if pulse:
@@ -114,14 +144,9 @@ def build_rail(T, active):
     s = []
     s.append(rect(0, 0, 236, 900, T["rail"]))
     s.append(rect(235, 0, 1, 900, T["border"]))
-    # v2 8-Crest logo mark
-    s.append(f'<g transform="translate(30,34) scale(0.33735) translate(-50,-50)">'
-             f'<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-             f'<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="{T["accent"]}" stroke-width="9"/>'
-             f'<rect x="45" y="25.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-             f'<rect x="45" y="64.5" width="10" height="10" rx="2.8" fill="{T["logodot"]}"/>'
-             f'<rect x="42.5" y="42.5" width="15" height="15" rx="4.2" fill="{T["logodot"]}"/></g>')
-    s.append(text(52, 32, "KSquad", 17, T["t1"], w=700, ls="0.2"))
+    # official v2 8-Crest logo mark + K8squad logotype (ISI-2324)
+    s.append(mark_8crest(30, 34, 0.33735))
+    s.append(logotype(52, 32, 17, T))
     s.append(text(52, 46, "operator console", 10, T["t4"], ls="0.4"))
     for label, ty, icon, key in NAV:
         act = key == active
@@ -163,7 +188,7 @@ def build_header(T, title, subtitle):
 
 def svg_open(T):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" '
-            f'viewBox="0 0 1440 900" {F}>' + rect(0, 0, 1440, 900, T["bg"]))
+            f'viewBox="0 0 1440 900" {F}>' + LOGO_DEFS + rect(0, 0, 1440, 900, T["bg"]))
 
 
 def write_pair(basename, build_fn):

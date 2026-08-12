@@ -27,6 +27,24 @@ Primary personas (PRD §5): **Priya — Platform Engineer** (operator; needs leg
 
 ---
 
+## 0j. Revision v10 — official v2 8-Crest branding (ISI-2324, CEO directive 2026-08-12)
+
+All mocks now embed the **official** K8squad logo (the v2 8-Crest mark from the
+Graphic Designer's asset set, ISI-2137) in place of the earlier hand-drawn
+placeholder glyph, and the rail/splash lockup wordmark is the official **K8squad**
+logotype (azure numeral 8). Shared kit entry points (`build_logo`, inline flat
+rail, `big_logo`) emit the mark via `mark_8crest()` + `logotype()`; `svg_open`/
+`head` inject the gradient `LOGO_DEFS`.
+
+**Enforcement:** after any re-render, run
+`python3 apply-official-8crest.py` — an idempotent, generator-agnostic pass that
+swaps any leftover placeholder for the official mark, upgrades the lockup
+wordmark, and injects the defs. It is the mandatory final render step (the early
+screens 00–07 have no generator; gens 09/11/12 still duplicate the lockup inline).
+Assets + full usage rules: `docs/bmad/branding/` (`branding-guidelines.md`).
+
+---
+
 ## 0. Revision v2 — logo + light mode (ISI-2150, CEO feedback 2026-08-11)
 
 Two CEO changes are applied here:

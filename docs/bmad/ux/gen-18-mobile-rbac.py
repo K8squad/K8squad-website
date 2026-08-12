@@ -19,7 +19,7 @@ from console_kit_rbac import (text, rect, line, dot, chip, _stk, access_badge,
 def screen_login(T, ox, oy):
     s = []
     s.append(big_logo(T, PHONE_W / 2, 200, scale=0.95))
-    s.append(text(PHONE_W / 2, 300, "KSquad", 26, T["t1"], w=700, anchor="middle", ls="0.3"))
+    s.append(R.logotype(PHONE_W / 2, 300, 26, T, anchor="middle", ls="0.3"))
     s.append(text(PHONE_W / 2, 324, "operator console", 12, T["t4"], anchor="middle", ls="0.5"))
     s.append(text(PHONE_W / 2, 400, "Run squads on your cluster,", 13, T["t3"], anchor="middle"))
     s.append(text(PHONE_W / 2, 420, "from anywhere.", 13, T["t3"], anchor="middle"))
