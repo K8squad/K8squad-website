@@ -9,6 +9,13 @@
 > [Traceability](#traceability--coverage-requirement--epic--story) section — nothing dropped; anything that
 > does not map cleanly is flagged there.**
 >
+> **CEO VALIDATION COMPLETE — Henrik, 2026-08-12 (all 5 review items resolved):** opencode-in-v1 (5.8) ✅ ·
+> context-envelope trust tiers (3.6) ✅ · handoff **enriched** — Story 2.8 artifact schema extended with
+> `{findings, recommended_next, artifacts_for_downstream}` + **new Story 2.9 coordinator dispatch pattern**
+> (delegation-with-feedback over the coordination record, no P2P) · spikes ISI-2112/2113/2114 **kicked off →
+> `todo`** (parallel with Epics 1–2) · Epic 12 plugin/NATS sequencing confirmed. **Phase 4 validated — ready
+> for implementation-issue spawning (Alfred).**
+>
 > **CEO directive 2026-08-11 (Henrik):** the Helm chart must not assume cluster defaults — it
 > **creates** the `Gateway` + `HTTPRoute` resources (console + apiserver SSE; `gatewayClassName` a
 > required values input, TLS/listeners via values) and **parameterizes `storageClassName`** on all
@@ -77,7 +84,7 @@ correctness-critical piece of v1 and everything downstream records state through
 | 14 | **Testing, CI & supply chain** | §14/§15, ISI-2135/2157/2158 | NFR-REL/SEC/PERF (tested), S4 | ISI-2113/2114/2158 | Absorbs 2.7 + Epic X + 5.6; adds L3–L5 + SBOM/CVE/CI; standalone per checklist #13 |
 
 **Spike-gate posture (03-architecture §14, §21 in the issue framing):** ISI-2112 / ISI-2113 / ISI-2114
-are **still `backlog`** and run **in parallel with the foundational track** (Epics 1–2, which depend
+are **kicked off to `todo` (CEO 2026-08-12)** and run **in parallel with the foundational track** (Epics 1–2, which depend
 on none of them). Stories that consume their *defaults* carry them as **explicit blocking or tuning
 dependencies** below — a story may start against the provisional default but cannot **close** until the
 gate result confirms/refutes it where marked `[GATE-BLOCKING]`.
@@ -121,7 +128,8 @@ references work items). **No spike-gate dependency** — starts in parallel with
 | 2.5 | As an agent, I want to record progress and hand off **only** via work items / comments / artifacts — never direct agent chat. | **Given** the coordination API, **When** an agent hands off work, **Then** the handoff is a comment/state change on a work item; **there is no** agent-to-agent chat channel in the API surface. **And** memory is **not** usable as a handoff channel (enforced in Epic 6, FR-B3 ↔ FR-E). | Arch §6.1, §8.4 (memory ≠ back-channel). FR-B3. |
 | 2.6 | As an operator, I want the coordination record queryable as an **audit trail**. | **Given** activity across Runs, **When** I query by work item / actor / time, **Then** every checkout, comment, and artifact is a durable, queryable row (who/what/when/result). | Arch §6.1 (this **is** the audit trail), D4, NFR-OBS1. |
 | 2.7 | **[first-class CI artifact]** As the team, I want a **concurrency/chaos test harness** proving the spine's guarantees. | **Given** the spine, **When** the suite runs in CI, **Then** it exercises: (a) **parallel claimers** (no double-claim), (b) **crash-mid-claim** (item reclaimed after lease expiry), (c) **stale-holder completion** (fenced write rejected), (d) **idempotent reconcile** (re-entrant claim/complete is safe). **And** the suite is a **required** CI gate, not optional. | Arch §6.2 (final paragraph), PRD §9.2. **Correctness is tested, not assumed.** This story is non-negotiable for Epic 2 closure. |
-| 2.8 | **[CEO/CTO 2026-08-11]** As an agent finishing work, I want to write a **structured handoff artifact** so the next agent inherits what I did, decided, what's next, and blockers — **without** ever handing off custody. | **Given** a Run completing/pausing on a work item, **When** the agent hands off, **Then** it writes a standardized `{did, decisions, next, blockers}` artifact to the coordination record via the A2A artifact channel (§6.5), provenance-tagged; **And** the artifact is **advisory context only** — custody stays the fenced release→re-dispatch→claim path (2.2–2.4, §6.2/§6.3): A **releases** its claim, the control plane **re-dispatches**, B **claims**; A never hands the claim/lease to B. **And** the artifact is mirrored as a provenanced memory write (Epic 6.6) for later recall. | Arch §8.5, §6.5, ADR-028. **Handoff = knowledge transfer, NOT custody transfer (no-P2P lock, FR-B3).** If the artifact could authorize/transfer custody it would reintroduce the forbidden P2P back-channel — this is the scope-guard. Feeds the next Run's envelope (3.6). |
+| 2.8 | **[CEO/CTO 2026-08-11]** As an agent finishing work, I want to write a **structured handoff artifact** so the next agent inherits what I did, decided, what's next, and blockers — **without** ever handing off custody. | **Given** a Run completing/pausing on a work item, **When** the agent hands off, **Then** it writes a standardized `{did, decisions, next, blockers, findings, recommended_next, artifacts_for_downstream}` artifact to the coordination record via the A2A artifact channel (§6.5), provenance-tagged — the `{findings, recommended_next, artifacts_for_downstream}` fields (**CEO 2026-08-12**) let a **coordinator** read a completed Run's results via the coordination record and inform its next dispatch (Story 2.9), **not** a message back to the dispatcher; **And** the artifact is **advisory context only** — custody stays the fenced release→re-dispatch→claim path (2.2–2.4, §6.2/§6.3): A **releases** its claim, the control plane **re-dispatches**, B **claims**; A never hands the claim/lease to B. **And** the artifact is mirrored as a provenanced memory write (Epic 6.6) for later recall. | Arch §8.5, §6.5, ADR-028. **Handoff = knowledge transfer, NOT custody transfer (no-P2P lock, FR-B3).** If the artifact could authorize/transfer custody it would reintroduce the forbidden P2P back-channel — this is the scope-guard. Feeds the next Run's envelope (3.6). Extended per **CEO 2026-08-12** for the coordinator feedback loop (2.9). |
+| 2.9 | **[CEO 2026-08-12]** As a **coordinator** (squad-lead Agent designated via `Role`), I want to define dependent work items and, when one completes, have the control plane surface its results to my next claim decision — so I can dispatch downstream work (C/D) informed by B's findings, the **KSquad-native BigBoss→Alfred→team pattern**. | **Given** a coordinator Agent whose `Role` marks it a squad lead, **When** it creates dependent work items (with `blockedBy`/ordering) and a dependency completes, **Then** the completing Run's handoff artifact (`findings, recommended_next, artifacts_for_downstream`, 2.8) is **surfaced to the coordinator via the coordination record / scoped memory recall (6.6)** — **not** a message from B to A — and the coordinator's next claim/dispatch reads it as context. **And** the coordinator **defines and prioritizes** the next work item; it never receives custody from B — dispatch is still open-item → fenced claim (2.2). **And** there is **no** agent-to-agent channel: the entire loop rides shared work items + comments + artifacts (FR-B3, §6.1); a review-time covert-channel check (Epic 14 L4) proves the coordinator cannot be driven by a back-channel. | **[locked-decision guardrail]** Coordination stays shared-work-item + fencing; the feedback loop is **read-of-record → coordinator decides → new fenced dispatch**, never P2P. Depends on 2.8 (extended artifact), 2.2 (claim), 6.6 (recall), `Role` CRD (Epic 1). This is delegation-with-feedback, not custody transfer. |
 
 ---
 
@@ -476,9 +484,9 @@ E2E lane. The four architecture-review findings **F1–F4 (ISI-2135)** become **
 
 | Spike | Status | Stories that depend on it | Blocking nature |
 |-------|--------|---------------------------|-----------------|
-| **ISI-2112** (OAuth refresh cadence / subscription-token lifecycle headless) | backlog | 7.2 (Claude-family cred), 7.4 (pause/resume OAuth path) | **GATE-BLOCKING** on the Claude-family refresh path; failure → CEO-gate conversation on BYO-subscription (watch item, Arch §10/§14) |
-| **ISI-2113** (RuntimeClass isolation + warm-pool sizing benchmark) | backlog | 3.5 (pool-sizing tuning), 4.2 (RuntimeClass pick), 4.5 (reset-vs-replace), X.1 (hostile-Run) | **GATE-BLOCKING** on the RuntimeClass pick (hostile-Run containment = hard gate; isolation > latency per §1 tiebreaker); tuning-blocking on sizing curve |
-| **ISI-2114** (shim spec + reference shim + conformance assertions, **incl. Ollama lane**) | backlog | 5.6 (conformance suite + Ollama lane), 5.7 (Ollama model backend), and shapes 5.1–5.5 | **GATE-BLOCKING** on the conformance suite; §7 is the architecture-altitude input ISI-2114 formalizes |
+| **ISI-2112** (OAuth refresh cadence / subscription-token lifecycle headless) | **todo (kicked off 2026-08-12)** | 7.2 (Claude-family cred), 7.4 (pause/resume OAuth path) | **GATE-BLOCKING** on the Claude-family refresh path; failure → CEO-gate conversation on BYO-subscription (watch item, Arch §10/§14) |
+| **ISI-2113** (RuntimeClass isolation + warm-pool sizing benchmark) | **todo (kicked off 2026-08-12)** | 3.5 (pool-sizing tuning), 4.2 (RuntimeClass pick), 4.5 (reset-vs-replace), X.1 (hostile-Run) | **GATE-BLOCKING** on the RuntimeClass pick (hostile-Run containment = hard gate; isolation > latency per §1 tiebreaker); tuning-blocking on sizing curve |
+| **ISI-2114** (shim spec + reference shim + conformance assertions, **incl. Ollama lane**) | **todo (kicked off 2026-08-12)** | 5.6 (conformance suite + Ollama lane), 5.7 (Ollama model backend), and shapes 5.1–5.5 | **GATE-BLOCKING** on the conformance suite; §7 is the architecture-altitude input ISI-2114 formalizes |
 | **ISI-2157** (CI free-testing lane: Ollama service container / self-hosted GPU runner) | backlog (high) | 5.7, 7.5, Epic X CI lane | **Not a spike** — a CI enabler; not release-blocking, but unblocks $0 smoke + e2e squad testing. Owned by CI/DevEx, not architecture. |
 
 **Parallelization:** Epics 1–2 (CRD foundation + coordination spine) depend on **no** spike and start
@@ -497,7 +505,7 @@ Epic 11 · theming/logo → 8.9 · plugin architecture (event seam **Postgres ou
 **Ollama model backend + $0 CI lane → 5.7 + 7.5 (extend FR-D/FR-G via the model/credential seam) +
 ISI-2114 Ollama conformance lane + ISI-2157 CI lane** · **team-org diagram → 8.10 · agent detail w/
 Run history+logs → 8.11 (both extend FR-F; 10th + 11th console screens, ISI-2150)** · **context
-injection & agent handoff (§8.5/ADR-028) → 2.8 (handoff artifact) + 3.6 (Context Assembler) + 5.9
+injection & agent handoff (§8.5/ADR-028) → 2.8 (handoff artifact) + 2.9 (coordinator dispatch, CEO 2026-08-12) + 3.6 (Context Assembler) + 5.9
 (injection + model-window budget) + 6.6 (scoped recall) — extend FR-A/FR-B/FR-E across the owning
 epics**. **No orphan FRs; no orphan stories.**
 
@@ -523,7 +531,7 @@ stories.**
 | 7 | **Plugin architecture** (NATS event bus, subject taxonomy, JetStream, GRAIL 1st plugin) | E12, E9, E13 | 12.1–12.4; 9.4 (NATS dep); 13.7 (seam SLOs) |
 | 8 | **Ollama runtime adapter** (ISI-2158; BYO endpoint, capability negotiation, CI lane) | E5, E7, E14 | 5.7 + 5.8 (opencode) + 5.6 (conformance Ollama lane); 7.5 (cred); 14.8 (CI lane) |
 | 9 | **Console screens** (11 screens, dark+light, v2 logo) | E8 | 8.1–8.11 (theming 8.9, org diagram 8.10, agent detail 8.11) |
-| 10 | **Context injection & handoff** (envelope, hierarchical budget, A2A handoff artifacts, goal propagation) | E2, E3, E5, E6 | 2.8 + 3.6 + 5.9 + 6.6 |
+| 10 | **Context injection & handoff** (envelope, hierarchical budget, A2A handoff artifacts, goal propagation, **coordinator feedback loop**) | E2, E3, E5, E6 | 2.8 + **2.9** + 3.6 + 5.9 + 6.6 |
 | 11 | **Agent-ticket lifecycle** (claim, work, comment, status, artifacts, complete) | E2, E3, E8 | 2.2–2.6; 3.1–3.3; 8.3/8.7/8.11 |
 | 12 | **Observability** (OTel traces/metrics/logs, token consumption, blocked-by codes, per-ticket trace) | E13 | 13.1–13.7 |
 | 13 | **Testing & CI** (feature/concurrency/perf/security/quality, SBOM, CVE, Actions, Node 24) | E14 | 14.1–14.8 (+Epic X absorbed) |
