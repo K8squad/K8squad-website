@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310, rbac-canonical-vocab-r8-ISI-2313, global-search-r9-ISI-2323]
+stepsCompleted: [discovery, vision, executive-summary, success, journeys, domain, innovation, project-type, scoping, functional, nonfunctional, polish, challenger-integration, ceo-requirements-r3, ceo-nats-plugin-r4, ceo-checklist-completeness-r5, rbac-auth-r6-ISI-2302, rbac-3level-r7-ISI-2310, rbac-canonical-vocab-r8-ISI-2313, global-search-r9-ISI-2323, responsive-nfr-ui-r11-ISI-2330]
 inputDocuments:
   - docs/bmad/00-kickoff-brief.md   # CEO scope + LOCKED decisions (commit 90747e3)
   - docs/bmad/01-brainstorming.md   # Phase 1 synthesis, Alfred-approved 2026-08-10 (commit f7c151e)
@@ -32,6 +32,7 @@ revisions:
   - r8 (2026-08-12, ISI-2313 ← CEO v1 directive ISI-2301, ADR-033): **canonical role-model normalization.** Mechanical vocabulary alignment of the Theme O bodies (personas/access-level note ~§5, journeys §5.2/§5.5, D9, §9.15 FR-AUTH2/AUTH5 + scope guard + authorization-granularity line, R20, §13.6 map) to the model now stated authoritatively in ADR-033 / arch §12.3–§12.4 / Epic 15: **two global roles (`admin`|`user`)** and **three per-`Project` access levels (`viewer`|`contributor`|`maintainer`)**. Fixes the r7 drift (r7 said three *global* levels Admin/Operator/Viewer): there is **no global `operator` role** — Operator→per-`Project` `maintainer`, Viewer→per-`Project` `viewer`, and a new intermediate per-`Project` `contributor` (act/compose without administering membership/settings). **Enforcement semantics are unchanged** — only vocabulary + per-project tier count; the UI display axis stays "Access level". PRD-doc twin of the 04-epics normalization (ISI-2312, Story Writer). **No new scope, no locked decision reopened, auth-is-v1 gate not reopened**; rides the standing Theme-O CEO gate.
   - r9 (2026-08-12, ISI-2323 ← CEO-validated console mocks 2026-08-12): **global cross-entity search.** Adds **Theme P (FR-SEARCH1…5)** — an always-visible top-bar search bar over tickets/Runs/files/agents/projects, debounced with a grouped result dropdown + keyboard nav (FR-SEARCH1/2), **RBAC-scoped server-side** so results never exceed the caller's Project membership + access level (FR-SEARCH3, ties FR-AUTH3/NFR-SEC10), contextual per-screen + entity-type filters (FR-SEARCH4), and graceful empty/no-match/special-character handling (FR-SEARCH5); plus NFR-PERF3 (interactive latency, RBAC-in-query). Search is a **derived read-model** — no new store of record, no coordination path (§6/R6 untouched). Index/query mechanism (Postgres FTS vs dedicated index) + relevance targets routed to Architecture (new OQ21, arch §17.5). **No new authority, no locked decision reopened.**
   - r10 (2026-08-12, ISI-2325 ← CEO-validated Project Dashboard mocks 2026-08-12): **expanded Theme I** (§9.9) from FR-I1…I4 to **FR-I1…I8** to match the validated dashboard: **FR-I2** gains an explicit **token-consumption trend** (over a window); **FR-I5 Pending Approvals** introduces a **human-in-the-loop work-item approval gate** (agent-raised, authorized-human approve/reject, provenanced, durable in the coordination record — **not** an agent↔agent channel, R13 guardrail); **FR-I6 PR status mini-board** (ready-for-review/draft/blocked/merged) off the Theme H source-control sync read model; **FR-I7 KPI card row + Recent Tickets** (tickets-by-status, tokens+trend, PRs-by-status, live Runs — all from real sources, FR-I3 provenance, no placeholders); **FR-I8 quick-access links** (Issues/Files/Board/Discussion). All ride existing seams — coordination record, `scm` mirror, OTel metering, Run/claim state — **no new subsystem** (arch §13 r24, ADR-020; epics 8.8a–f + 2.12 approval gate; obs-plan §17). Scope guard unchanged (operational view over KSquad's own entities, not a BI tool, R15). **No new authority, no locked decision reopened.**
+  - r11 (2026-08-12, ISI-2330 ← CEO cross-cutting directive ISI-2327, ADR-038): **responsive console promoted to a first-class NFR.** Adds **NFR-UI** (§10.5) — the console SHALL be responsive across **desktop/tablet/mobile for ALL screens at v1** (not deferred), promoting the r3 "responsive" adjective on NFR-USE2 to a measurable requirement. Encodes the three canonical breakpoints (mobile `<768` bottom-nav+drawer / tablet `768–1024` icon rail / desktop `>1024` full rail), the **360px** portrait minimum, the **≥44px** touch-target bar, no-hover-only affordances, pull-to-refresh on list/feed views, pinch-to-zoom on diagrams, and per-screen reflow parity (never a "mobile-lite" feature reduction) as testable ACs (AC-UI1…UI7). Strategy is **CSS-first, one responsive SSR tree** (Tailwind breakpoints + container queries), data/authz paths untouched (same BFF payloads, same §12.3 RBAC wall, same one SSE bus) — cross-references arch **§13.1/ADR-038**. Cross-cutting → Epic 8 per-screen mobile+tablet ACs, testing viewport matrix (360/768/1024/1440), observability viewport/device-class RUM dimension (delegated). **No new authority, no locked decision reopened.**
   - r5 (2026-08-11, ISI-2152): completeness pass against the CEO's *definitive checklist* — folds the six remaining checklist FRs the architecture (r8–r13) had already adopted but the PRD lacked: FR-MEM-GRAIL→FR-E8, FR-OLLAMA→FR-D6, FR-ORG→FR-F8, FR-AGENT-DETAIL→FR-F9, FR-CTX+FR-AGENT-TICKET→new Theme N (FR-N1…N5); plus FR-I2/I4 (sandbox usage + live agent↔task↔project map). Adds the §13.5 checklist-coverage matrix (all 13 checklist items → ≥1 FR). FR↔architecture lockstep verified against arch §7.6/§8.5/§8.6/§10.3/§13, ADR-024/026/028. No locked decision reopened.
 workflowType: 'prd'
 authoringMode: 'analyst-led autonomous synthesis (same posture as Phase 1); CEO gate is the human review checkpoint'
@@ -998,9 +999,37 @@ Only NFRs that matter for KSquad are listed (selective by design).
   install SHALL expose the console via the **Gateway API** and require an **explicit StorageClass**
   (FR-L1/L2), both documented and part of the S1 acceptance test. *(r3 — ISI-2149.)*
 - **NFR-USE2** The console SHALL target **polished UI/UX** (kickoff mandate): coherent visual system,
-  responsive, accessible enough for daily operator use, and SHALL ship **both dark and light modes** at
-  v1 (FR-F7) with a coherent system across both. Detailed UX/visual direction is delegated to the
-  Graphic Designer (§11.4). *(r3 theming — ISI-2150.)*
+  **responsive (first-class, testable — NFR-UI)**, accessible enough for daily operator use, and SHALL
+  ship **both dark and light modes** at v1 (FR-F7) with a coherent system across both. Detailed UX/visual
+  direction is delegated to the Graphic Designer (§11.4). *(r3 theming — ISI-2150; responsive promoted to
+  NFR-UI r11 — ISI-2330.)*
+- **NFR-UI** The **console (Theme F) SHALL be responsive across desktop, tablet, and mobile for ALL
+  screens at v1** — reflow + touch parity of the **same** screens at every breakpoint, **not** a reduced
+  "mobile-lite" product and **not** a native app. This promotes the r3 "responsive" adjective (NFR-USE2)
+  to a first-class, measurable requirement. Architecture strategy is **CSS-first, one responsive SSR tree,
+  no separate mobile build and no device-class server routing** (layout keys off viewport/container width
+  via Tailwind breakpoints + CSS container queries on the existing token system) — see **Architecture
+  §13.1 / ADR-038**. The data and authorization paths are untouched: **same BFF payloads, same deny-by-
+  default RBAC wall (§12.3 arch), same single SSE bus** — there is no responsive-specific data or authz
+  path. Acceptance (all v1, testable, verified on the shared breakpoint/viewport matrix):
+  - **AC-UI1 — Canonical breakpoints.** Every console screen SHALL render usably at the three canonical
+    breakpoints, driven by the shared design tokens: **mobile `<768px`** (top bar + 5-item bottom nav +
+    slide-in drawer), **tablet `768–1024px`** (collapsible icon rail / tap-expand overlay, no bottom nav),
+    **desktop `>1024px`** (full labeled left rail, no bottom nav).
+  - **AC-UI2 — 360px minimum.** Every screen SHALL be fully usable (no horizontal scroll of the shell, no
+    clipped controls, no overlapping hit targets) down to **360px portrait width**.
+  - **AC-UI3 — Touch-target bar.** All interactive targets SHALL be **≥44×44px** at mobile/tablet
+    breakpoints.
+  - **AC-UI4 — No hover-only affordances.** Every action exposed via hover SHALL have an equivalent
+    **tap and keyboard-focus** trigger; no functionality SHALL be reachable by hover alone.
+  - **AC-UI5 — Pull-to-refresh.** List and feed views SHALL support **pull-to-refresh** on touch devices.
+  - **AC-UI6 — Pinch-to-zoom on diagrams.** Diagram/graph views (e.g. org/team and dependency diagrams,
+    FR-F8) SHALL support **pinch-to-zoom** on touch devices.
+  - **AC-UI7 — Per-screen parity, not feature reduction.** Each screen SHALL preserve its full feature set
+    across breakpoints via reflow (e.g. Kanban→tabs+h-scroll, List→row-expand, Dashboard→stack, file
+    tree→dropdown, Search→full-width/icon, Settings→accordion), never a dropped capability.
+  *(r11 — ISI-2330; cross-cuts arch §13.1/ADR-038, Epic 8 per-screen mobile+tablet ACs, testing viewport
+  matrix 360/768/1024/1440, and the observability viewport/device-class RUM dimension.)*
 
 ### 10.6 Extensibility & interoperability
 - **NFR-EXT1** Adding a new runtime SHALL require only a conformant shim, **zero core changes** (S5).
