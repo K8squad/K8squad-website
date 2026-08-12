@@ -127,12 +127,19 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
         _selftest()
         sys.exit(0)
-    # Default: print the recommendation grid using the spike's CONSERVATIVE
-    # placeholder replenish times. Replace these with claim-latency-bench.sh
-    # measured p95 replenish_s before locking a v1 default (arch §21).
-    REPLENISH_S = {"runc": 2.0, "gvisor": 4.0, "kata": 15.0}  # PLACEHOLDER — measure!
+    # v1 LOCKED replenish times — measured by claim-latency-bench.sh (ITERS=10) on
+    # cluster `observable-agentsandbox` (Proxmox+CAPI, k8s v1.35.3, containerd
+    # 1.7.25, gVisor RuntimeClass `gvisor`->runsc verified sentry-real), per
+    # ISI-2292/ISI-2294 on 2026-08-12. Values are measured p95 replenish_s (arch §21).
+    #   runc   repl_p95 = 3.560 s
+    #   gvisor repl_p95 = 1.716 s  (BEATS runc — no pool-size tax; S9 warm-claim
+    #                               p50 0.110s/p95 0.135s clears NFR-PERF1 by ~15-37x)
+    #   kata   NOT measured — handler not installed on the bench cluster; the value
+    #          below stays the spike's CONSERVATIVE placeholder (arch §21). Remeasure
+    #          before locking any Kata-on-nested-virt default.
+    REPLENISH_S = {"runc": 3.560, "gvisor": 1.716, "kata": 15.0}  # kata=PLACEHOLDER
     LAMBDAS = {"light(3/m)": 0.05, "medium(12/m)": 0.2, "heavy(30/m)": 0.5}
-    print("Recommended warm-pool target buffer (95% warm-hit) — "
-          "R values are PLACEHOLDERS pending hardware measurement:\n")
+    print("v1 warm-pool target base-stock (95% warm-hit). runc/gvisor R MEASURED "
+          "(ISI-2294); kata R is a placeholder pending a nested-virt measurement:\n")
     print(table(REPLENISH_S, LAMBDAS, 0.95))
     print("\nRun `python3 pool_sizing.py --selftest` to verify the model.")
