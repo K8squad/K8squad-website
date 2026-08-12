@@ -139,6 +139,67 @@ status trail is a read-only, upsert-keyed projection of the coordination audit (
 
 ---
 
+## 0e. Revision v6 — team configuration / actual organization (ISI-2153, CEO review 2026-08-12)
+
+CEO ask (Henrik, ISI-2153 review): *"we need a team configuration screen, where you can see your
+actual organization."* A **12th screen** ships in **dark + light** on the same locked system —
+`11-team-configuration` — populated from the **live Agent registry** (not sample data): the real
+company roster of **15 active agents across 5 teams + 15 OpenCode backups**, so it reads as *your
+organization*, not a demo.
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 11 | Team configuration | `images/11-team-configuration.png` | Real company roster — **team → agent → role → runtime**; read-only, live status |
+
+Each team is a card (**Leadership · Engineering · Research · Product & Content · Platform & Ops**);
+each agent row shows **name · role · runtime badge** with a live status dot. The **RUNTIMES** panel
+surfaces all four adapters actually in the company — **Claude Code** (`claude_local`, the azure/primary
+chip), **OpenCode** (`opencode_local`, the 15 backups), **Ollama** (`ollama_agent` · Saver), **OpenClaw**
+(`openclaw_gateway` · Alfred) — plus **Process** (GitHub Monitor / CI) — and notes the **1:1 OpenCode
+backup failover**. It is a pure **read model** (R6): add / assign / retire happens in **Compose**, not
+here — live status via SSE. This complements the abstract **team-organization hierarchy** diagram
+(screen 09, §0c): 09 shows the Team→Agent→Role *pattern*; 11 shows the *actual* org for real config
+legibility. Source: `gen-11-team-config.py` (token-mirrored dark/light generator).
+
+---
+
+## 0f. Revision v7 — Settings / OTLP exporter config (ISI-2288, CEO 2026-08-12 · Gate-2 Architect §13/§17.2/ADR-029)
+
+CEO ask (Henrik, ISI-2288): *"a Settings page where users define their OTLP exporter URL (where to send
+logs, metrics, traces), plus a general settings surface."* The Gate-2 Architect data-contract scopes it
+as a **general settings surface whose first pane is OTLP exporter config** — a **read-write form over the
+`OTelConfig` CRD** (ISI-2289), written via the **apiserver BFF (no direct kube)** and **RBAC-gated** to
+authorized operators. A **13th screen** ships in **dark + light** on the same locked system.
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 12 | Settings — OTLP exporter | `images/12-settings.png` | Per-signal exporter form (traces/metrics/logs) over the `OTelConfig` CRD; form ⇄ live YAML; RBAC-gated; opt-in default |
+
+**Layout — three columns.** (1) A **settings sub-nav** groups the surface: *TELEMETRY* (OTLP Exporter ·
+Sampling defaults), *PLATFORM* (General · Namespaces · Appearance), *ACCESS & SECURITY* (Operators & RBAC
+· Secrets) — OTLP Exporter is the active first pane. Entry point is a **Settings gear** in the rail
+footer (the locked 8-item primary rail is unchanged). (2) The **form** mirrors the CRD **per signal** —
+each with **endpoint**, **protocol** (`gRPC | HTTP` segmented control), **authentication**, **resource
+attributes** (key=value chips), and **sampling**. (3) A **live `OTelConfig` YAML preview** (form ⇄ YAML,
+like Compose / FR-F5) plus two guard notes: **RBAC-gated** (apiserver BFF, no direct kube) and
+**Secrets referenced, never stored**.
+
+**Three exporter states in one view** encode the data-contract:
+- **Traces** — *Configured*, form fully **expanded** (endpoint `otel-collector.observability.svc:4317`,
+  gRPC, sampling `0.10`, resource attrs, auth).
+- **Metrics** — *Configured*, **collapsed** one-line summary with an *Edit* affordance.
+- **Logs** — the **empty / first-run state** (dashed card, *Not configured*): *"Logs stay in-cluster
+  until you add an exporter"* + `+ Configure exporter`. This is the **opt-in default** the contract
+  calls for — telemetry stays in-cluster until an exporter is added (header sub-line states it too).
+
+**Secret safety (S-class).** Authentication is a **Secret *reference*** (`secret://otlp-headers`) shown
+with a lock glyph and the line *"References a Secret — the token is never shown or stored here."* The UI
+references a Secret; it never renders or persists a raw token. The write path (`Save configuration →
+OTelConfig` via apiserver BFF) depends on the CRD (ISI-2289); the mock proceeds in parallel. Source:
+`gen-12-settings.py` (self-contained token-mirrored dark/light generator).
+
+---
+
 ## 1. Design principles
 
 The console is an **operator surface**, not a marketing site or a playground. Five rules, applied to
