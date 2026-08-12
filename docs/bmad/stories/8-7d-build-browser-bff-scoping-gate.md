@@ -73,6 +73,15 @@ Given the layered enforcement (design §5), When any single layer is bypassed in
 **AC9 — no mutating verb; path traversal structurally rejected.**
 Given `path` inputs, When `diff`/`file` resolve a path, Then `../`, absolute paths, and symlink-escape are rejected **structurally** — paths are validated against the Run's changed set and resolved through `git show` / `git cat-file` (never raw FS `open`), so escape out of the worktree tree object is impossible, not merely filtered. (This behavior is delivered by 8.7a; this story asserts the endpoints preserve it end-to-end and never introduce a raw-FS path.)
 
+**AC10 — read-surface observability (OBS-BB3, BFF slice — ISI-2168 / plan ISI-2165 §1–§3).**
+Given any served read on the four endpoints, When it completes, Then the BFF emits:
+- a root span `buildbrowser.<endpoint>` (`endpoint ∈ tree|diff|file|meta`) carrying the plan §1.1 span attributes as **span-only** values — `ksquad.run.id`, `ksquad.work_item.id`, `ksquad.buildbrowser.{endpoint,live,source,cache_hit,bytes_returned,truncated,too_large,path,outcome}` (`bytes_returned`/`path` are **span/log only, never a metric label**; `path` is **filename only, never content**);
+- the metrics `ksquad.buildbrowser.read.total{endpoint,live,source,cache_hit,outcome}` (counter), `.read.duration{endpoint,source}` (histogram), `.bytes_returned{endpoint,source}` (**histogram, not a sum**), and `.scope.denied{endpoint}` (counter) — **bounded enum labels only**.
+And **trace attachment** follows the live/completed split (plan §1.2): a **live** read (`live:true`) propagates W3C `traceparent` over the A2A read verb (8.7b) so the read span is a **true child of the Run trace**; a **completed** read (`live:false`) opens a **BFF-rooted trace with an OTel span *link*** back to the Run's original `trace_id` read from the snapshot `coord.artifact.meta` (persisted by 8.7c / OBS-BB2). And a **`deny`** (AC3) increments `scope.denied{endpoint}` and writes a **provenanced id-only `WARN`** log `{run.id, principal.id, endpoint, outcome:denied}` that **never confirms Run existence** in any client-visible surface — the log carries the id for the S4 audit + enumeration detection (plan §3), the response stays `404`.
+
+**AC11 — NFR-OBS3 standing law (AC on every OBS-touched 8.7 story).**
+Given any `ksquad.buildbrowser.*` instrument this story emits, When telemetry is produced, Then **all** hold: (a) `run.id`/`work_item.id`/`principal.id`/`path`/`bytes_returned` are **never** a **metric label** (span/log/exemplar only); (b) file **content** and diff **bodies** are **never** placed in any signal — only magnitudes, status, and filename-only paths; (c) **no `model` label** on any build-browser instrument; (d) `bytes_returned` is a **histogram, not a monotonic sum**. Read volume is **legibility telemetry, never a consumption / billing axis** (plan §0, §7). Verified by the OBS-BB5 CI gates (Epic 14); this story must not emit anything that would trip them.
+
 ## Tasks / Subtasks
 
 - [ ] **Task 1 — Pure authZ predicate `authorizeRead(caller, run)` (AC4, AC5, AC6).** *Do this first — it is the security core and needs no backend.*
@@ -95,8 +104,12 @@ Given `path` inputs, When `diff`/`file` resolve a path, Then `../`, absolute pat
   - [ ] Add the `05-testing-strategy.md` §6.5 **cross-principal same-Team read-authZ** case to the S4 blast-radius suite: seed a Run owned by A; drive B (same Team, non-owner) against all four endpoints → assert `404`; drive a cross-Team caller → `404`; **positive control** owner A → `200`.
   - [ ] Tag it `NFR-SEC5` so the L4 security gate (testing §6.5 / §ledger) tracks it.
   - [ ] Add a fail-closed assertion: with the BFF gate stubbed to `allow`, the Team-namespace NetworkPolicy/RBAC still denies a cross-namespace read (documents defense-in-depth; may live as a separate S4 sub-case).
-- [ ] **Task 6 — Observability hooks (non-blocking, align to ISI-2165).**
-  - [ ] Emit a per-read span (`buildbrowser.tree|diff|file|meta`) with `runId`, `live`, `cacheHit`, `bytesReturned`, `truncated` per `build-browser-observability-plan.md`. **Do not** add `model`/`principal` labels to metrics (NFR-OBS3 firewall) and **do not** treat read volume as a consumption axis — this is legibility telemetry only. A `deny` emits a span/log **without** confirming Run existence in any client-visible surface.
+- [ ] **Task 6 — Read-surface observability (OBS-BB3 BFF slice — AC10, AC11; plan ISI-2165 §1–§3, §8 BFF row).**
+  - [ ] Emit the root span `buildbrowser.<endpoint>` with the plan §1.1 **span-only** attributes (`ksquad.run.id`, `ksquad.work_item.id`, `ksquad.buildbrowser.{endpoint,live,source,cache_hit,bytes_returned,truncated,too_large,path,outcome}`). `bytes_returned`/`path` are span/log only — **never** a metric label; `path` is filename-only, never content.
+  - [ ] Emit the metrics `ksquad.buildbrowser.read.total{endpoint,live,source,cache_hit,outcome}` (counter), `.read.duration{endpoint,source}` (histogram), `.bytes_returned{endpoint,source}` (**histogram, not a sum**), `.scope.denied{endpoint}` (counter) — bounded enum labels only.
+  - [ ] Trace attachment (plan §1.2): live (`live:true`) → propagate `traceparent` over the 8.7b A2A read verb so the read span is a child of the Run trace; completed (`live:false`) → BFF-rooted trace + OTel span **link** to the Run `trace_id` read from the snapshot `coord.artifact.meta` (persisted by 8.7c). If 8.7b/8.7c are stubbed, wire the attachment behind the same interface and `skip` the link/child integration assertion with `TODO(8.7b|8.7c)`.
+  - [ ] On `deny` (AC3): increment `scope.denied{endpoint}` and write a provenanced **id-only `WARN`** `{run.id, principal.id, endpoint, outcome:denied}` — the response body still `404`, never confirming existence.
+  - [ ] **Standing-law self-check (AC11):** no `model` label, no `principal.id`/`run.id`/`work_item.id`/`path`/`bytes_returned` on any metric label, no file content/diff bodies in any signal, `bytes_returned` stays a histogram. The OBS-BB5 CI gates (Epic 14) will fail the build otherwise — do not treat read volume as a consumption axis.
 
 ## Dev Notes
 
@@ -124,6 +137,8 @@ Given `path` inputs, When `diff`/`file` resolve a path, Then `../`, absolute pat
 - [Source: docs/bmad/03-architecture.md#11] — BYO-per-principal credentials + per-principal metering principal (= `Run.owningPrincipal`, no new field).
 - [Source: docs/bmad/05-testing-strategy.md#6.5 Blast-radius / NetworkPolicy validation (S4)] — the cross-principal same-Team read-authZ row (NFR-SEC5); B→404, cross-Team→404, owner→200 positive control.
 - [Source: docs/bmad/04-epics-and-stories.md — Epic 8.7 row 8.7d] — epic-level AC + the ⛔ NFR-SEC5 blocking-gate note; deps 8.7b, 8.7c.
+- [Source: docs/bmad/04-epics-and-stories.md — Epic 8.7 observability fold-in (ISI-2168)] — OBS-BB slice→story map + the ⛔ NFR-OBS3 Standing law (AC on every touched story).
+- [Source: docs/bmad/design/build-browser-observability-plan.md §1–§3, §7, §8] — read spans + `read.*`/`scope.denied` metrics (OBS-BB3), live/completed trace attachment (§1.2), provenanced id-only denial logs (§3), NFR-OBS3 firewall + CI gates (§7).
 
 ### Open questions (for the dev agent to resolve with the named owner — do not block the security core on these)
 

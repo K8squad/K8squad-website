@@ -315,6 +315,40 @@ fast-follows and do not gate v1. Full acceptance detail per story lives in the d
 story here carries its own GWT acceptance in the table above. New architectural questions surfacing
 during a slice → route back to the Architect (Winston) via ISI-2148, per the ISI-2163 request.
 
+#### Epic 8.7 observability fold-in (ISI-2168 — from OBS-BB1..5 / the approved plan ISI-2165)
+
+**Source of truth:** `docs/bmad/design/build-browser-observability-plan.md` §8 (per-story instrumentation
+scope) + §10 (Developer handoff). **No big-bang** — instrumentation lands **with each feature story**,
+not as a separate observability pass. No new architectural decision: this operationalizes ADR-021 under
+arch §17.2 (OTel spine) + the NFR-OBS3 firewall (plan §0/§7). Each OBS-BB slice below adds acceptance
+criteria to its host story; the **Standing law** is an AC on **every touched story** (8.7a/b/c/d/f).
+
+**⛔ Standing law — AC on every touched Epic-8.7 story (8.7a, 8.7b, 8.7c, 8.7d, 8.7f):**
+Given any `ksquad.buildbrowser.*` instrument, When telemetry is emitted, Then **all** of the following
+hold, or the story is not done:
+1. `run.id` / `work_item.id` / `principal.id` / `path` / `bytes_returned` **never** appear as a **metric
+   label** — they are **span / log / exemplar only** (plan §0.2, §2, §5, parent §5.6).
+2. File **content**, diff **bodies**, and blob **bytes** are **never** placed in any signal (span attr,
+   log line, or metric). Only **magnitudes** (`bytes_returned`, `size_bytes`, `file_count`), **status**
+   (A/M/D/R, binary, truncated, too_large), and **filename-only paths** (span/log only) (plan §5).
+3. **No `model` label** on any `ksquad.buildbrowser.*` instrument — its absence is load-bearing; a metric
+   with no `model` and no per-principal label cannot be aggregated into a consumption bill (plan §0.2).
+4. `bytes_returned` is a **histogram, not a monotonic sum** — a sum reads like a meter (NFR-OBS3
+   violation); a distribution answers "how big are payloads" (plan §2.1).
+
+| OBS-BB slice | Host story | Acceptance criteria to fold in (GWT) |
+|--------------|-----------|--------------------------------------|
+| **OBS-BB1** | **8.7a** (foundation) | **Given** the pure git read-model produces a tree/diff/file projection, **When** it returns a result, **Then** it records, as **span attributes only** on the current read span, `ksquad.buildbrowser.truncated`, `.too_large`, `.file_count`, and `.bytes_returned` — all as **magnitudes** (plan §1.1, §8 row "git read-model svc"). **And** the foundation emits **no metric** (metrics land with 8.7c/8.7d/8.7f — no big-bang) and adds **no new transport**. **And** the Standing law holds (esp. `bytes_returned`/`path` are span-only, never a metric label; no content). |
+| **OBS-BB2** | **8.7c** (snapshot emit) | **Given** a Run reaching Collecting, **When** the build-snapshot is emitted, **Then** the operator emits `ksquad.buildbrowser.snapshot.emit.total{result:ok\|failed\|skipped}` (counter), `.snapshot.emit.duration{result}` (histogram), `.snapshot.bytes{truncated}` (histogram), and `.snapshot.file_count{truncated}` (histogram) (plan §2.2). **And** the Run's original OTel `trace_id` is **persisted on the artifact `meta`** so a later completed-Run read can attach a span **LINK** back to the Run trace (plan §1.2, §8 row "operator"). **And** an emit failure logs `ERROR` at Collecting `{run.id, work_item.id, result:failed, cause}` and surfaces the legible "no build view" signal (never a silent 404). **And** the Standing law holds. |
+| **OBS-BB3** | **8.7b** (apiserver/shim) **+ 8.7d** (BFF) | **8.7b:** **Given** a live read served by the shim, **When** the BFF issues the A2A read verb, **Then** the apiserver/shim emits the inner `buildbrowser.read.source` span and **propagates W3C `traceparent`** over the A2A read verb so the read span is a **true child of the live Run trace** (plan §1.2 live, §8 row "apiserver"). **8.7d:** **Given** the four GET endpoints, **When** a read is served, **Then** the BFF emits the root `buildbrowser.<endpoint>` span and the metrics `read.total{endpoint,live,source,cache_hit,outcome}` (counter), `read.duration{endpoint,source}` (histogram), `bytes_returned{endpoint,source}` (histogram), and `scope.denied{endpoint}` (counter) (plan §2.1); **And** a **completed** read (`live:false`) opens a **BFF-rooted trace with an OTel span link** to the Run's `trace_id` read from the snapshot `meta` (plan §1.2 completed); **And** a cross-principal `deny` emits `scope.denied` + a **provenanced id-only `WARN`** log `{run.id, principal.id, endpoint, outcome:denied}` that **never confirms Run existence** in any client-visible surface (ties AC3/AC7 S4, NFR-SEC5). **And** the Standing law holds (`scope.denied` is labeled by `endpoint` only — never `principal.id`). |
+| **OBS-BB4** | **8.7f** (flagged RO reader) | **Given** the RO-reader feature flag is on, **When** a full-tree read launches/reuses/tears down a reader pod, **Then** the apiserver emits `ksquad.buildbrowser.reader.launched.total{reason:full_tree, outcome:launched\|reused\|failed}` (counter), `.reader.active` (gauge), and `.reader.ttl{outcome:idle_teardown\|error}` (histogram) (plan §2.3), plus `INFO` lifecycle logs `{run.id, reader.pod, reason, ttl_ms}` (plan §3). **And** reader CPU/mem is **not re-invented** — it rides `k8s.pod.*` (kubelet/cAdvisor) attributed as **feature operating cost**, never principal consumption (plan §0.4, §2.3). **And** with the flag **off**, no reader instrument is emitted and 8.7e is unaffected. **And** the Standing law holds. |
+| **OBS-BB5** | **CI** (Epic 14 — Testing & CI) | Two CI enforcement gates make NFR-OBS3 machine-checkable (plan §7). **Gate 1 (cardinality allowlist, extend parent §5.6):** add `endpoint`, `source`, `cache_hit`, `live`, `reader.reason` to the bounded-label allowlist; keep `bytes_returned`, `path`, `run.id`, `work_item.id`, `principal.id` on the **forbidden-as-label** list; the existing label-key grep gate then covers build-browser instrumentation automatically. **Gate 2 (NFR-OBS3 firewall, new):** CI asserts the §13 consumption-dashboard / metering query allowlist contains **zero `ksquad.buildbrowser.*` series** and that **no** `ksquad.buildbrowser.*` instrument declares a `model` label — and a red-team test that wires a `ksquad.buildbrowser.*` series into the consumption allowlist **must fail the build**. |
+
+**Testing / KPI validation is delegated separately to the Testing Architect** (plan §10 → Testing
+Architect: build-view coverage KPI, NFR-OBS3 firewall assertion, S4/NFR-SEC5 telemetry tie). Story files
+created for 8.7a/b/c/f via `bmad-create-story` **must** carry their OBS-BB slice AC(s) + the Standing law;
+8.7d already carries them (story file `docs/bmad/stories/8-7d-build-browser-bff-scoping-gate.md`).
+
 ---
 
 ## Epic 9 — Install, exposure & storage (Helm hardening) — **CEO directive 2026-08-11**
