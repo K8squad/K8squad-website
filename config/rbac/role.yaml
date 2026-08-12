@@ -1,0 +1,52 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ksquad-otelconfig-manager
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ksquad.io
+  resources:
+  - otelconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ksquad.io
+  resources:
+  - otelconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ksquad.io
+  resources:
+  - otelconfigs/status
+  verbs:
+  - get
+  - patch
+  - update

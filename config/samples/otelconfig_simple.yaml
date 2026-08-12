@@ -1,0 +1,13 @@
+# Minimal OTelConfig — traces only (single destination)
+apiVersion: ksquad.io/v1alpha1
+kind: OTelConfig
+metadata:
+  name: ksquad-otel-traces-only
+  namespace: ksquad-system
+spec:
+  exporters:
+    traces:
+      endpoint: "https://api.dynatrace.com/api/v2/otlp"
+      protocol: grpc
+      authSecretRef:
+        name: dt-otel-token

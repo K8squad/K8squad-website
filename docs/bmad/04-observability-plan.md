@@ -273,7 +273,8 @@ adding a runtime cannot inflate cardinality because the check set is fixed by th
 `phase`, `from`/`to` (phase enum), `runtime` (openclaw\|hermes\|…, finite), `runtime_class`
 (kata\|gvisor), `operation`, `result`, `state`, `kind`, `trigger`, `reason` (curated enums),
 `decision`, `surface`, `capability`, `check`, `direction`, `pool_hit`, `cause`, `error_code`,
-`provenance_class`, `signal`. Total series per instrument stays in the low hundreds.
+`provenance_class`, `signal`, `endpoint`, `source`, `cache_hit`, `live` (build browser, ISI-2165).
+Total series per instrument stays in the low hundreds.
 
 **Forbidden as metric labels (trace/log/exemplar only):** `run.id`, `work_item.id`, `principal.id`,
 `sandbox.pod`, `trace_id`, `team`/`project` names (these ride as **resource attributes** for scoping,
@@ -548,6 +549,7 @@ error-code taxonomy) is explicitly deferred to the architecture revision (ISI-21
 | Sandbox / warm pool (§5.4) — claim latency, ready-count, teardown | §5.3 | sandbox.claim span | teardown/replenish logs | claim-latency + readiness page |
 | Memory service (§8) — r/w counters w/ provenance+scope, poisoning | §5.4 | memory.op span | denied-write logs (provenanced) | poisoning page, authz ticket |
 | Shim / A2A (§7) — SSE progress, capability negotiation, conformance | §5.5 | shim.execute span + traceparent | A2A lifecycle logs | conformance-regression block |
+| Build browser (design §9.4/ADR-021, ISI-2165) — reads, snapshot emit, RO-reader cost | `ksquad.buildbrowser.*` (component plan) | `buildbrowser.*` span (child live / **linked** completed) | scope-denial + emit-failure + reader logs | "no build view" coverage, RO-reader cost, scope-denial — **all ticket-grade** | see `design/build-browser-observability-plan.md` |
 
 **Disposition:** this plan is the observability design for the Gate-2 architecture, ready to feed Phase-4
 epics (OBS-1..7). It adds no architectural decisions, honors the arch's tracing phasing, and reuses the

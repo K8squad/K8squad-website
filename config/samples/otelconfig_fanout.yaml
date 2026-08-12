@@ -1,0 +1,37 @@
+apiVersion: ksquad.io/v1alpha1
+kind: OTelConfig
+metadata:
+  name: ksquad-otel-export
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: otel-config
+spec:
+  exporters:
+    # Fan-out: traces to Dynatrace, metrics to Prometheus, logs to Loki
+    traces:
+      endpoint: "https://abc123.live.dynatrace.com/api/v2/otlp"
+      protocol: http
+      authSecretRef:
+        name: dynatrace-otel-token
+        key: token
+      resourceAttributes:
+        environment: "production"
+        squad: "platform"
+      sampling:
+        type: parentbased_traceidratio
+        ratio: "0.25"
+    metrics:
+      endpoint: "http://prometheus-gateway.monitoring.svc.cluster.local:4318"
+      protocol: http
+      authSecretRef:
+        name: prometheus-auth
+        key: token
+      resourceAttributes:
+        environment: "production"
+    logs:
+      endpoint: "http://loki-gateway.monitoring.svc.cluster.local:4318"
+      protocol: grpc
+      authSecretRef:
+        name: loki-auth
+        key: token

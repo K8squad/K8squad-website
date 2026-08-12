@@ -1,0 +1,360 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: otelconfigs.
+spec:
+  group: ""
+  names:
+    kind: OTelConfig
+    listKind: OTelConfigList
+    plural: otelconfigs
+    shortNames:
+    - otelc
+    singular: otelconfig
+  scope: Namespaced
+  versions:
+  - name: ""
+    schema:
+      openAPIV3Schema:
+        description: |-
+          OTelConfig is the Schema for the otelconfigs API.
+
+          It configures opt-in OTLP export for KSquad telemetry (traces, metrics, logs).
+          When no OTelConfig exists in the ksquad-system namespace, no telemetry egresses the cluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              OTelConfigSpec defines the desired state of OTelConfig.
+
+              OTelConfig is the dedicated CRD for OTLP export configuration.
+              Default behaviour: no exporter (opt-in). Absent an OTelConfig instance,
+              telemetry stays in-cluster and nothing egresses (D8 privacy-safe default).
+            properties:
+              exporters:
+                description: |-
+                  Exporters configures per-signal OTLP export routing.
+                  Each signal (traces, metrics, logs) can fan-out to a different destination.
+                  When a signal is omitted, that signal type is not exported.
+                properties:
+                  logs:
+                    description: Logs configures the OTLP exporter for log data.
+                    properties:
+                      authSecretRef:
+                        description: |-
+                          AuthSecretRef references a Kubernetes Secret containing exporter credentials.
+                          The Secret must contain a key "token" with the authentication header value.
+                          Credentials are never logged, never inlined, never exposed in status or events.
+                          This follows the BYO-Secret discipline (§11).
+                        properties:
+                          key:
+                            default: token
+                            description: |-
+                              Key is the data key within the Secret that holds the auth token.
+                              Defaults to "token" if omitted.
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: Namespace of the Secret. Defaults to the
+                              OTelConfig namespace if omitted.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      endpoint:
+                        description: |-
+                          Endpoint is the OTLP receiver URL (e.g. "https://api.dynatrace.com/api/v2/otlp").
+                          Must be a fully-qualified URL with scheme.
+                        minLength: 1
+                        type: string
+                      protocol:
+                        default: grpc
+                        description: Protocol selects the OTLP transport protocol.
+                        enum:
+                        - grpc
+                        - http
+                        type: string
+                      resourceAttributes:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          ResourceAttributes are additional OTel resource attributes appended to every
+                          telemetry signal exported through this exporter.
+                        type: object
+                      sampling:
+                        description: |-
+                          Sampling configures the trace sampling ratio for this exporter.
+                          Only applies to the traces signal.
+                        properties:
+                          ratio:
+                            default: "1"
+                            description: |-
+                              Ratio is the sampling ratio for ratio-based samplers (0.0–1.0).
+                              Serialized as string to avoid cross-language float issues.
+                            pattern: ^[01]([.][0-9]+)?$
+                            type: string
+                          type:
+                            default: parentbased_traceidratio
+                            description: Type selects the sampling strategy.
+                            enum:
+                            - always_on
+                            - always_off
+                            - traceidratio
+                            - parentbased_traceidratio
+                            type: string
+                        type: object
+                    required:
+                    - authSecretRef
+                    - endpoint
+                    type: object
+                  metrics:
+                    description: Metrics configures the OTLP exporter for metric data.
+                    properties:
+                      authSecretRef:
+                        description: |-
+                          AuthSecretRef references a Kubernetes Secret containing exporter credentials.
+                          The Secret must contain a key "token" with the authentication header value.
+                          Credentials are never logged, never inlined, never exposed in status or events.
+                          This follows the BYO-Secret discipline (§11).
+                        properties:
+                          key:
+                            default: token
+                            description: |-
+                              Key is the data key within the Secret that holds the auth token.
+                              Defaults to "token" if omitted.
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: Namespace of the Secret. Defaults to the
+                              OTelConfig namespace if omitted.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      endpoint:
+                        description: |-
+                          Endpoint is the OTLP receiver URL (e.g. "https://api.dynatrace.com/api/v2/otlp").
+                          Must be a fully-qualified URL with scheme.
+                        minLength: 1
+                        type: string
+                      protocol:
+                        default: grpc
+                        description: Protocol selects the OTLP transport protocol.
+                        enum:
+                        - grpc
+                        - http
+                        type: string
+                      resourceAttributes:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          ResourceAttributes are additional OTel resource attributes appended to every
+                          telemetry signal exported through this exporter.
+                        type: object
+                      sampling:
+                        description: |-
+                          Sampling configures the trace sampling ratio for this exporter.
+                          Only applies to the traces signal.
+                        properties:
+                          ratio:
+                            default: "1"
+                            description: |-
+                              Ratio is the sampling ratio for ratio-based samplers (0.0–1.0).
+                              Serialized as string to avoid cross-language float issues.
+                            pattern: ^[01]([.][0-9]+)?$
+                            type: string
+                          type:
+                            default: parentbased_traceidratio
+                            description: Type selects the sampling strategy.
+                            enum:
+                            - always_on
+                            - always_off
+                            - traceidratio
+                            - parentbased_traceidratio
+                            type: string
+                        type: object
+                    required:
+                    - authSecretRef
+                    - endpoint
+                    type: object
+                  traces:
+                    description: Traces configures the OTLP exporter for trace data.
+                    properties:
+                      authSecretRef:
+                        description: |-
+                          AuthSecretRef references a Kubernetes Secret containing exporter credentials.
+                          The Secret must contain a key "token" with the authentication header value.
+                          Credentials are never logged, never inlined, never exposed in status or events.
+                          This follows the BYO-Secret discipline (§11).
+                        properties:
+                          key:
+                            default: token
+                            description: |-
+                              Key is the data key within the Secret that holds the auth token.
+                              Defaults to "token" if omitted.
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: Namespace of the Secret. Defaults to the
+                              OTelConfig namespace if omitted.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      endpoint:
+                        description: |-
+                          Endpoint is the OTLP receiver URL (e.g. "https://api.dynatrace.com/api/v2/otlp").
+                          Must be a fully-qualified URL with scheme.
+                        minLength: 1
+                        type: string
+                      protocol:
+                        default: grpc
+                        description: Protocol selects the OTLP transport protocol.
+                        enum:
+                        - grpc
+                        - http
+                        type: string
+                      resourceAttributes:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          ResourceAttributes are additional OTel resource attributes appended to every
+                          telemetry signal exported through this exporter.
+                        type: object
+                      sampling:
+                        description: |-
+                          Sampling configures the trace sampling ratio for this exporter.
+                          Only applies to the traces signal.
+                        properties:
+                          ratio:
+                            default: "1"
+                            description: |-
+                              Ratio is the sampling ratio for ratio-based samplers (0.0–1.0).
+                              Serialized as string to avoid cross-language float issues.
+                            pattern: ^[01]([.][0-9]+)?$
+                            type: string
+                          type:
+                            default: parentbased_traceidratio
+                            description: Type selects the sampling strategy.
+                            enum:
+                            - always_on
+                            - always_off
+                            - traceidratio
+                            - parentbased_traceidratio
+                            type: string
+                        type: object
+                    required:
+                    - authSecretRef
+                    - endpoint
+                    type: object
+                type: object
+            type: object
+          status:
+            description: OTelConfigStatus defines the observed state of OTelConfig.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the OTelConfig state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              exportedSignals:
+                description: ExportedSignals lists which signals are currently being
+                  exported.
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  for this OTelConfig.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

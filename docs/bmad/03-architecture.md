@@ -1029,10 +1029,22 @@ shell/git/build — PRD NFR-SEC2):
   "trusted-dev" flag.
 
 **Structural safety:** RuntimeClass is a **per-Team / per-Project knob** (`SandboxPool.runtimeClass`,
-`Role.runtimeClassHint`), not a hardcode. **ISI-2113 has not run** (§21); its claim-latency +
-isolation numbers set the *default* and the *pool-sizing policy*, but the architecture stands whatever
-it picks. If ISI-2113 shows gVisor's LLM-bound overhead is unacceptable, we flip the default
-RuntimeClass — no structural change.
+`Role.runtimeClassHint`), not a hardcode. If a spike shows gVisor's LLM-bound overhead is
+unacceptable, we flip the default RuntimeClass — no structural change.
+
+> **ISI-2113 (spike) — decision ratified, hardware numbers pending.** The spike
+> (`spikes/isi-2113-warm-pool-sandbox-latency.md`) confirms this decision on evidence: (1)
+> **isolation is decisive and decided before latency** — arbitrary shell/git/build is untrusted
+> code, so `runc`'s shared-kernel boundary is disqualified as a default regardless of speed;
+> gVisor's syscall-interception boundary is right-sized, Kata's microVM is the high-assurance
+> opt-in. (2) **Warm-claim latency is not the selection axis** — a warm pod is already `Ready`,
+> so runtime choice moves *cold-start*, *replenish time R*, and *steady-state overhead*, not the
+> user-felt warm claim. (3) **Steady-state overhead is masked for LLM-bound Runs** (wall-clock is
+> model-API-bound), so gVisor's tax lands only on bounded build/IO bursts. (4) The runtime cost
+> shows up as **pool size**: Kata's ~4× longer R forces a **~2–2.6× larger idle warm pool** for
+> the same warm-hit SLA (§9.2 sizing). **gVisor stays the recommended default; Kata opt-in; runc
+> trusted-dev-only.** The absolute ms numbers that lock the v1 default + S9 acceptance come from
+> the spike's `bench/claim-latency-bench.sh` run on a gVisor-enabled cluster (§21 follow-up).
 
 ### 9.2 Warm pool (FR-C1/C4, S9, R2)
 
@@ -1044,7 +1056,14 @@ RuntimeClass — no structural change.
   Runs draw from the warm pool; **batch/non-interactive Runs may cold-start** (zero idle cost, and
   sidesteps reuse-contamination) — routed by a Run class field. Both regimes sized by ISI-2113.
 - Pool size is **policy-driven, not fixed** (FR-C4): a target-ready-count with autoscale bounds
-  (min/max, scale-on-claim-rate). Default policy ships; numeric tuning is post-ISI-2113 (NFR-SCALE2).
+  (min/max, scale-on-claim-rate). **Sizing policy (ISI-2113):** the target ready-buffer is a
+  **base-stock level** `N = ceil(λ·R + z·sqrt(λ·R))` — λ = peak claim rate, R = measured
+  `warmpool.replenish.duration` (obs §5.3), z = warm-hit service level (1.65 ≈ 95%). Reference
+  implementation + self-test: `spikes/isi-2113-.../bench/pool_sizing.py`. Default curve (gVisor,
+  95%): interactive `min=2, target=base-stock(λ_peak,R), max=10`; batch/non-interactive `target=0`
+  (cold-start). Kata's ~4× R ⇒ ~2–2.6× larger target for the same SLA — a reason to cap Kata pools
+  tighter and prefer cold-start for Kata bursts. Numeric R/λ constants land from the spike harness
+  on a gVisor-enabled cluster (NFR-SCALE2, §21 follow-up).
 
 ### 9.3 Hygiene — reset-or-teardown (F6/D7, FR-C6, NFR-SEC5) — **teardown-and-replace**
 
@@ -1713,13 +1732,13 @@ Every gated item is a **parameter behind a seam**, not a structural risk. But th
 
 | Gate | Sets | Spike | Status |
 |------|------|-------|--------|
-| Sandbox RuntimeClass default + LLM-bound overhead | §9.1 default (gVisor provisional) | **ISI-2113** | ⚠ backlog — not started |
-| Warm-pool sizing/autoscale numbers + warm/cold routing | §9.2 policy defaults | **ISI-2113** | ⚠ backlog — not started |
+| Sandbox RuntimeClass default + LLM-bound overhead | §9.1 default (gVisor **recommended**, evidence-based) | **ISI-2113** | 🟡 **decision delivered** (`spikes/isi-2113-...md`): gVisor default / Kata opt-in / runc trusted-dev-only — isolation-decisive, overhead masked for LLM-bound Runs; **ms numbers pending harness on a gVisor-enabled cluster** |
+| Warm-pool sizing/autoscale numbers + warm/cold routing | §9.2 policy defaults | **ISI-2113** | 🟡 **policy delivered** (base-stock formula §9.2 + `bench/pool_sizing.py`); default curve ships; **R/λ constants pending harness** |
 | OAuth token longevity, refresh cadence, concurrency-on-one-subscription | §11 Claude-family lifecycle | **ISI-2112** | ⚠ backlog — not started |
 | Reference shim + conformance assertions | §10.1 S5/S6 claimable | **ISI-2114** | ⚠ backlog — not started |
 | Ollama conformance/CI lane (free, credential-less e2e harness) | §10.3 + §10.1 conformance | **ISI-2114 Ollama lane / ISI-2157** | ⚠ backlog — not started |
 | Pinned A2A/MCP revision | §10.2 adapter seam version | ISI-2114 scope | ⚠ backlog — not started |
-| Docker-in-sandbox mechanism (rootless dockerd vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 (RuntimeClass) | ⚠ backlog — not started |
+| Docker-in-sandbox mechanism (rootless dockerd vs Kata real-docker) | §5.3.3 `docker` capability backing | ISI-2113 (RuntimeClass) | 🟡 **recommended** (spike §2): rootless-dockerd on gVisor as default docker backing; route only genuine nested-virt Docker to a Kata `runtimeClassHint`; **confirm rootless coverage on harness cluster** |
 | CLI redistribution licensing (bake-in vs init-time vendor pull) | §5.3.5 open-Q 2 — Claude Code ToS live risk | CTO Alfred (legal) | ✅ **disposed 2026-08-11** — mixed model via the `image`+`cliVersion` seam; spike lands Phase 4; **not a blocker** |
 
 **Architect recommendation to Alfred/CEO:** schedule and staff ISI-2112/2113/2114 **in parallel with
