@@ -157,8 +157,12 @@ only. Ship dependent Epics 3/4/5/7 against Model B.
 3. **Treat the token as revocable-at-any-time.** Ship a `claude -p` **canary health
    probe**; on 401/auth-failure, page for re-issue. No silent death.
 4. **Proactive rotation:** rotation is manual/interactive (re-run `setup-token`) and
-   there is **no rotation API**. Record issue-date, alert at ~75% of assumed
-   lifetime, keep a runbook. Pin the real TTL via the follow-up measurement.
+   there is **no rotation API**. Record issue-date, alert at ~75% of the assumed
+   lifetime, keep a runbook. **Assumed lifetime = ~1 year** (externally observed
+   order, see above); at ~75% that is a rotation alert at **~9 months**. This
+   threshold is actionable *today* off the assumption — the follow-up measurement
+   (ISI-2293) only replaces the estimate with a measured `exp`; it does **not**
+   block rotation alerting or any dependent story.
 5. **Budget against the shared account limits:** backoff + queue; don't fan out
    unboundedly on one sub.
 6. **Secrets hygiene:** the token grants full inference on the user's paid account —
