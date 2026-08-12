@@ -17,6 +17,7 @@ status: draft-for-devops-cosign-off
 revisions:
   - r1 (2026-08-11, ISI-2157): initial testing methodology + CI/CD design; DevOps-owned sections (§11) flagged for co-sign
   - r2 (2026-08-12, ISI-2305): added §6.7 **Authentication & Authorization (RBAC) test matrix** — auth session lifecycle, admin/user access matrix per endpoint, per-project isolation, agent-identity + scoped-credential enforcement, privilege-escalation prevention, console adaptive-nav (non-admin UI), and the auth+middleware+agent integration case. §6 intro bumped six→seven mechanisms; traceability (§12) + epic map (§3.3) extended; **open item: human console authN mechanism (OIDC/IdP vs local cred) is unpinned — needs an ADR (§13)**, so the auth-session cases are written mechanism-aware and the IdP-delegated variant is the design-consistent default
+  - r3 (2026-08-12, ISI-2308 / Architect Winston): **resolved the §6.7 open authN-mechanism decision** — pinned to **ADR-033** (already landed via ISI-2301/2303, CEO Henrik 2026-08-12): **local username/password store (argon2id, Postgres `auth` schema §12.3) is the v1 default; OIDC/SSO is an opt-in fast-follow behind the `AuthProvider` seam** because the ≤4h air-gapped S1 install cannot hard-depend on an external IdP. This **inverts the r2 IdP-first default**: §6.7.1 **A5 is now the local-cred primary case** (single-use time-boxed reset token, sessions invalidated on reset, no user-enumeration, argon2id, NFR-SEC3) and **A5-oidc is the skipped-with-reason opt-in-seam variant**. §6.7.1 **`skip` dropped**; §6.7.0, A1, framework note, §13 open-items, and the §12 traceability row updated. Local-cred A5 test-body implementation handed to Amelia
 ---
 
 # KSquad Testing Strategy & CI/CD Methodology
@@ -245,15 +246,17 @@ The access model these tests assert against, pinned from the architecture:
   plane.
 - **Existence-hiding.** Out-of-scope reads return **`404`, not `403`** (don't confirm existence) —
   already locked for the build browser (8.7d); §6.7 applies the same rule Team-wide.
-- **⚠ OPEN DECISION (blocks fully-concrete auth-session cases).** KSquad has **no home-grown password/
-  session store** designed. The *provider* credential model is OAuth (§11.1), but the **human console
-  authN mechanism is unpinned**: OIDC/IdP-delegated (SSO) vs a local credential store. The
-  design-consistent default — matching the K8s-native, no-secret-handling posture (NFR-SEC3) and the
-  existing OAuth lifecycle — is **IdP-delegated (OIDC)**, in which case *password reset lives in the
-  IdP, and KSquad never stores or handles a password*. The §6.7.1 auth-session cases are therefore
-  written **mechanism-aware**: the IdP variant is the primary suite; a local-cred variant is scaffolded
-  **skipped-with-reason** and activates only if an ADR chooses local creds. **Handoff: this needs an
-  ADR (PM/Architect) before §6.7.1 can drop its `skip` (§13 open items).**
+- **✅ RESOLVED — console authN mechanism (ADR-033, ISI-2308).** The mechanism is pinned: KSquad ships
+  a **local username/password store** (Postgres `auth` schema, **argon2id**; §12.3) as the **v1
+  default**, behind an **`AuthProvider` seam** that keeps **OIDC/SSO a pluggable, opt-in fast-follow**
+  (config-gated on `auth.oidc.*`). *Rationale (CEO Henrik, 2026-08-12): the S1 "≤4h air-gapped install"
+  acceptance test cannot hard-depend on an external IdP, so a local store must ship day one; OIDC drops
+  in later behind the seam.* This **inverts the earlier r2 default** — local-cred is now the **primary**
+  suite, IdP is the opt-in-seam variant — but the cases stay **mechanism-aware** because both must work.
+  Password reset therefore lives **in KSquad's own flow** (single-use, time-boxed reset token; sessions
+  invalidated on reset; no user-enumeration), *not* only in an IdP. **§6.7.1 drops its `skip`:** the
+  local-cred auth-session cases (A1–A5) are the active v1 suite; the IdP variant (A5-oidc) is
+  skipped-with-reason until the `AuthProvider` OIDC seam is wired.
 
 **Determinism guard (matches §4.1):** the §6.7 suite **fails fast** if the BFF has no principal-
 resolution middleware wired, or if any endpoint reaches a backend before an authZ decision is
@@ -266,17 +269,19 @@ recorded — it must not silently pass on a build where the choke point was neve
 #### 6.7.1 Auth session lifecycle (apiserver middleware + BFF)
 
 Framework: Go `testing`+`testify` against the apiserver auth middleware; Playwright for the console
-redirect/teardown legs. IdP faked by a pinned local OIDC stub (e.g. mock-oidc) in CI — no external IdP
-dependency, no real credentials.
+login/teardown legs. **Primary suite = the v1 local username/password store (§12.3, ADR-033):** a
+throwaway `auth`-schema fixture with argon2id-hashed seed users, no real credentials. The **opt-in IdP
+variant (A5-oidc)** is exercised against a pinned local OIDC stub (e.g. mock-oidc) — no external IdP
+dependency — and stays skipped-with-reason until the `AuthProvider` OIDC seam is wired.
 
 | Case | Scenario | Assertion (pass condition) |
 |------|----------|----------------------------|
-| **A1 · login (valid)** | caller presents a valid IdP token/session | BFF resolves a principal + its Team memberships; a scoped session is established; the principal is attached to the request context for every downstream authZ decision |
+| **A1 · login (valid)** | caller presents valid local username/password (or, when the OIDC seam is wired, a valid IdP token) | BFF resolves a principal + its Team memberships; an **opaque HttpOnly session cookie** is established (§12.3); the principal is attached to the request context for every downstream authZ decision |
 | **A2 · invalid credentials** | malformed / bad-signature / wrong-audience / expired-at-presentation token | **`401`**, **no** principal established, **no** downstream apiserver/kube/git call made (verified by a backend spy); no stack/secret leak in the body |
 | **A3 · session expiry** | a session valid at login crosses its TTL mid-use | next request → **`401`** + re-auth signal; any **in-flight SSE stream is closed** (not left streaming under a dead principal); no authZ decision uses the stale principal |
 | **A4 · logout** | principal logs out | session invalidated server-side; subsequent calls with the old session → **`401`**; SSE subscriptions torn down; a replayed post-logout session token is **not** re-accepted |
-| **A5 · password reset** *(IdP variant — primary)* | user triggers "reset/recover" | KSquad **redirects to the IdP** and **never stores/handles the password** (asserted: no password field crosses the BFF, nothing password-shaped hits any log — reinforces NFR-SEC3); on IdP completion the next login (A1) succeeds with the same principal identity |
-| **A5-local** · password reset *(local-cred variant)* | — | **skipped-with-reason** pending the authN ADR; if local creds are chosen: reset token single-use + time-boxed, old sessions invalidated on reset, no user-enumeration via reset responses |
+| **A5 · password reset** *(local-cred variant — primary, ADR-033)* | user triggers "reset/recover" | reset token is **single-use + time-boxed**; on reset **all existing sessions are invalidated** (old cookie → `401`); reset responses are **identical whether or not the account exists** (no user-enumeration); the new password is **argon2id**-hashed and **nothing password-shaped hits any log/span** (NFR-SEC3); next login (A1) succeeds with the same principal identity |
+| **A5-oidc** · password reset *(IdP variant — opt-in seam)* | — | **skipped-with-reason** until the `AuthProvider` OIDC seam is wired; when enabled: KSquad **redirects to the IdP** and **never stores/handles the password** (no password field crosses the BFF, nothing password-shaped hits any log); on IdP completion the next login (A1) succeeds with the same principal identity |
 
 #### 6.7.2 RBAC access matrix — per endpoint × role
 
@@ -545,7 +550,7 @@ CI-provisioned secret needed for v1 is the built-in `GITHUB_TOKEN`. No registry 
 | L3 P4 (outbox lag) | §17.4 | 12 | plugin isolation |
 | L4 blast-radius (S4) | §12.2, §17.1 | 4 / X | NFR-SEC1/4/5, F6/F7/F11 |
 | L4 provenance/poisoning | §7.3 | 6 | NFR-SEC6, F5/F6 |
-| **L4 §6.7.1 auth session (A1–A5)** | §13 BFF choke, §11.1 | 8 / 7 | NFR-SEC3; **authN-mechanism ADR (open)** |
+| **L4 §6.7.1 auth session (A1–A5)** | §12.3, §13 BFF choke, ADR-033 | 8 / 7 | NFR-SEC3; local-cred v1 (OIDC opt-in seam) — **ADR-033 resolved (ISI-2308)** |
 | **L4 §6.7.2 RBAC matrix** | §13, §12.1, §5.3.6 | 8 | NFR-SEC1; admin/operator/viewer |
 | **L4 §6.7.3 per-Project isolation (I1–I3)** | §12.1, §9.4 | 4 / 8 | NFR-SEC1/5 |
 | **L4 §6.7.4 agent identity (AG1–AG3)** | §7.3.1, §11, §12 | 6 / 7 | NFR-SEC3/6; impersonation-impossible |
@@ -566,13 +571,14 @@ CI-provisioned secret needed for v1 is the built-in `GITHUB_TOKEN`. No registry 
   recipe ready (§11.4, needs repo-admin scope to apply); cosign keyless / no stored secrets (§11.5).
   Skeleton pushed to `K8squad/K8squad`. *Only residual:* applying branch protection needs an
   Administration-scoped token (repo admin / Alfred).
-- **⚠ Human console authN mechanism — needs an ADR (PM/Architect), blocks §6.7.1 `skip` drop.** The
-  auth-*session* cases (A1–A5) are scaffolded mechanism-aware, with **IdP-delegated (OIDC)** as the
-  design-consistent primary suite (matches the K8s-native, no-secret-handling NFR-SEC3 posture and the
-  existing OAuth credential lifecycle §11.1); the local-credential variant (A5-local) stays
-  **skipped-with-reason** until the decision lands. Everything else in §6.7 (RBAC matrix, isolation,
-  agent identity, escalation, adaptive nav, integration) is mechanism-independent and active now.
-  *Owner of the unblock: PM (John) / Architect ADR — until then A5-local cannot un-skip.*
+- **✅ Human console authN mechanism — RESOLVED (ADR-033, ISI-2308; Architect Winston, 2026-08-12).**
+  Decision: **local username/password store (argon2id, Postgres `auth` schema §12.3) as the v1 default,
+  OIDC/SSO an opt-in fast-follow behind the `AuthProvider` seam** — the ≤4h air-gapped S1 install cannot
+  hard-depend on an external IdP. This **overrides the r2 IdP-first recommendation** (the SSO-purity
+  default lost to the air-gapped-install constraint; OIDC survives as a seam, not v1 scope). **§6.7.1
+  `skip` dropped:** the local-cred cases (A1–A5) are the active v1 suite; the IdP variant (A5-oidc) is
+  now the skipped-with-reason opt-in-seam case. Everything else in §6.7 was already mechanism-independent.
+  *Test-body implementation of the local-cred A5 flow handed off to Amelia (Testing Architect).*
 - **Observability Agent:** align the OTel metric/span names the L3 perf tests assert on with the
   dashboard taxonomy (04-observability-plan.md, §17.2) so tests and dashboards read the same signals.
 - **Spike ISI-2113:** provides the numeric baselines for P1/P2 gates (thresholds stay relative until
