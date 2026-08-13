@@ -1,6 +1,6 @@
 # Story 8.8a: Dashboard data-aggregation read model (BFF, RBAC-filtered, per-tile degrade)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -59,6 +59,9 @@ Given a served dashboard request, When it completes, Then the BFF emits an ordin
 
 **AC8 — NFR-OBS3 standing law (cardinality firewall).**
 Given any telemetry this story emits, When produced, Then: (a) `run.id`/`work_item.id`/`user.id`/`principal.id` are **never** a metric label (span/log/exemplar only); (b) **no `model` label** on any dashboard instrument; (c) token/cost figures are **read** from the metering seam, never re-derived or re-emitted as a new counter here; (d) dashboard read volume is **legibility telemetry, never a consumption/billing axis** (obs §17, arch ADR-020). Verified by the Epic 14 cardinality CI gate — this story must not emit anything that trips it.
+
+**AC9 — runnable falsification check (the RBAC-scoping + per-tile-degrade + no-new-store core).**
+Given the dashboard read model, When the self-contained check `docs/bmad/spikes/bench/dashboard-aggregation-check.py` runs (stdlib-only, `python3` it directly, **no console, no live cluster** — sources + memberships fed by fixtures), Then it asserts C1-C7 with teeth: it first proves the **ADR-020 anti-pattern** — a "dashboard rollup service" (its own bespoke authz path that leaks to a non-member, pre-aggregates into a rollup table it writes, hard-fails the whole dashboard `5xx` when one source is down, fills tiles from agent self-reported numbers, drives updates with a new polling loop, and puts `run.id`/`model` on metric labels) — is **DETECTED as violating every invariant**, then proves the §13/ADR-020 read-model composition **violates nothing and actually returns the member a partial-but-honest `200` payload (one tile degraded, every other tile populated), server-filtered to their memberships, denying the non-member, writing nothing, over the existing SSE bus, with per-item ids off every metric label**. Baseline exits 0; each `--mutate=NAME` (`MUTATING_VERB`→C1, `BESPOKE_AUTHZ`→C2, `FABRICATED_TILE`→C3, `WHOLE_FAIL`→C4, `ROLLUP_STORE`→C5, `POLL_TRANSPORT`→C6, `PERITEM_LABEL`→C7) exits 1 with exactly the mapped invariant RED (no vacuous guard).
 
 ## Tasks / Subtasks
 
@@ -121,10 +124,21 @@ Given any telemetry this story emits, When produced, Then: (a) `run.id`/`work_it
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (the Epic-8 model-check pattern, sibling of `credential-auth-state-check.py` / `live-run-sse-check.py`). The authoritative Go apiserver `dashboard` package + console BFF are greenfield and are built by the runtime tasks; this check pins the payload/RBAC/degrade contract the five tile stories consume.
 
 ### Debug Log References
 
+- `python3 dashboard-aggregation-check.py` → exit 0 (rollup-service anti-pattern trips all 7; §13/ADR-020 read model holds C1-C7, returns member a partial-but-honest 200, denies non-member).
+- `--mutate={MUTATING_VERB,BESPOKE_AUTHZ,FABRICATED_TILE,WHOLE_FAIL,ROLLUP_STORE,POLL_TRANSPORT,PERITEM_LABEL}` → each exit 1 with exactly the mapped invariant (C1…C7) RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented AC9: the runnable falsification check encoding AC1-AC8 as C1-C7 (AC7+AC8 fold into C7, the cardinality firewall). Teeth via a `ROLLUP` anti-pattern design that trips every invariant; each `--mutate` grafts exactly one defect onto the `CONFORMANT` read model.
+- **Load-bearing crux proven mechanically:** (AC2) the payload routes through the ONE shared deny-by-default wall with a non-member denied to the Project-not-found shape and a member admitted; (AC4) with the metrics backend unwired (a normal state — Epic 13.4 absent), `tokenConsumption` degrades to `{available:false, reason}` while every other tile is populated and the endpoint returns `200`, never `5xx`; (AC5) the compose path is read-only over existing stores with zero writes and no new rollup datastore; (AC8) `run.id`/`work_item.id`/`user.id`/`model` never appear as metric labels and this story emits no new domain metric.
+- Runtime proof (real GET-through-BFF, live per-membership RBAC scoping on the Go apiserver, SSE delta stream) is owned by the console E2E + the apiserver `dashboard`-package tests; this check guards the construction-time contract the five tile stories (8.8b-f) render over.
+- **Blocks cleared for tile stories:** 8.8b-f may now consume the pinned per-tile sub-payload names + SSE delta contract.
+
 ### File List
+
+- `docs/bmad/spikes/bench/dashboard-aggregation-check.py` (new) — the C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8a-dashboard-data-aggregation-read-model.md` (this file) — AC9 + Dev Agent Record.
