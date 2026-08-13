@@ -246,8 +246,10 @@ consume the card and dispatch**, so the honesty invariants have teeth:
 Exits non-zero if a gap is ever omitted from a card, an override forges a capability the runtime lacks,
 secret material reaches the serialized card, a self-declared skill lands on the card, the card is
 non-deterministic, or an unknown/un-backed credential emits a block instead of failing closed. **The
-three headline invariants are mutation-checked:** deleting the no-omission defaulting (A/F1), the
-override intersect (F2), or the no-material guard (F3) each turns the check **RED** — verified. Models
+three headline invariants are mutation-checked (single-line teeth, verified):** widening the
+no-omission emission so the honest path also skips a `false` cap (A) — `if omit_gaps and not card_cap`
+→ `if not card_cap`, replacing the `runtime_cap AND override` intersect with "override wins" (F2), or
+always embedding the resolved Secret material (F3) each turns the check **RED**. Models
 the Agent-reconciler CRD→card generation in-process; real-runtime promotion rides the ISI-2114
 conformance suite (§10.1, Story 5.6).
 

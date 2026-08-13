@@ -152,13 +152,15 @@ def generate_card(agent, runtime, role, skills_by_name, secrets, *,
             card_cap = runtime_cap and (override if override is not None else True)
         if omit_gaps and not card_cap:
             # WRONG (AC2): omit the gap → the core reads "absent → assume capable" downstream.
+            # Widening this guard to `if not card_cap` (drop the `omit_gaps and`) so the HONEST
+            # path also skips False caps IS the no-omission mutation — arm (B) then goes RED.
             continue
+        # LOAD-BEARING (AC2): the honest path (omit_gaps=False) never trips the `continue` above,
+        # so this unconditional assignment emits EVERY known key with an explicit bool — a gap is
+        # `false`, never absent. This is the SOLE no-omission guard; the naive arm (A) sets
+        # omit_gaps=True to trip the skip and reproduce the R3 leak. (No redundant setdefault
+        # backstop: a single mutation to this emission must be enough to turn the check RED.)
         capabilities[k] = card_cap
-    # LOAD-BEARING (AC2): every known key carries an explicit bool. Deleting this defaulting IS
-    # the omit_gaps mutation. (When omit_gaps=True the loop above already skipped the False ones.)
-    if not omit_gaps:
-        for k in CAP_KEYS:
-            capabilities.setdefault(k, False)
 
     # byoModelEndpoint honesty (AC5 / §10.3): an Agent that sets modelEndpointRef on a runtime
     # WITHOUT the byo_model_endpoint capability must FAIL CLOSED — the card never forges it.
