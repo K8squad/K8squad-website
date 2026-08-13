@@ -63,11 +63,16 @@ Invariants (K1-K7, one per AC):
       non-terminal Run; a Succeeded/Failed/Cancelled Run shows no kill and killing an already-terminal Run
       is rejected. `Cancelled` is a sink — you cannot cancel a done Run.
 
-Mutation-proof harness (no vacuous guard): `--mutate=<CLICKS|DIRECT_API|IMPERATIVE|UNSTAMPED|
-VIEWER_AFFORDANCE|CONTRIB_ANY|NO_RECHECK|NONIDEMPOTENT|OPAQUE|KILL_TERMINAL>` injects ONE single defect into
-the CONFORMANT §13/FR-F4 design; the check then goes RED with EXACTLY one violation (no guard shadows
-another; the ISI-2346-F1 vacuous-tooth class is excluded by construction). Baseline `python3
-run-kill-twoclicks-check.py` exits 0; each `--mutate=NAME` exits 1 with exactly one violation.
+Mutation-proof harness (no vacuous guard): every `check()` sub-guard has its OWN isolating single-defect
+mutation, so each guard is independently mutation-proven and the ISI-2346-F1 vacuous-tooth class is excluded
+by construction (not merely proven collectively by `naive_design()`). `--mutate=<CLICKS|SURFACE_MISSING|
+KUBECTL|DIRECT_API|ACTION|IMPERATIVE|UNSTAMPED|VIEWER_AFFORDANCE|CONTRIB_AFFORDANCE|CONTRIB_ANY|
+CONTRIB_OWN_DENY|MAINTAINER_DENY|ADMIN_DENY|OUT_OF_SCOPE|NO_RECHECK|NONIDEMPOTENT|TRANSPORT|OPAQUE|
+CONFLATE_FAILED|KILL_TERMINAL>` injects ONE single defect into the CONFORMANT §13/FR-F4 design; the check
+then goes RED with EXACTLY one violation (no guard shadows another). Baseline `python3
+run-kill-twoclicks-check.py` exits 0; each `--mutate=NAME` exits 1 with exactly one violation. (The three
+K4 authz sub-guards CONTRIB_OWN_DENY/MAINTAINER_DENY/ADMIN_DENY + the AC4 contributor affordance-hiding half
+CONTRIB_AFFORDANCE + the admin fleet-bypass allow-case are all now exercised, closing ISI-2440 F1/F2/F3.)
 """
 
 import argparse
@@ -87,21 +92,28 @@ def authorize_kill(design, caller_role, run_owned_by_caller, run_in_scope):
     if not design["server_rechecks"]:
         # NO_RECHECK: the API trusts the client's assertion instead of re-resolving membership → allow-all.
         return True
-    if not run_in_scope:
+    if design["scope_enforced"] and not run_in_scope:
         return False  # existence-hiding: out-of-scope Run is not even visible, let alone killable
-    if caller_role in KILLERS_ANY:
-        return True
+    if caller_role == "admin":
+        return design["admin_can_kill"]         # global_role=admin fleet bypass (§12.3)
+    if caller_role == "maintainer":
+        return design["maintainer_can_kill"]    # kills any Run in scope (§15.3)
     if caller_role == "contributor":
-        # own-only unless the design has been mutated to let contributors kill anyone's Run
-        return True if design["contributor_kills_any"] else run_owned_by_caller
+        if design["contributor_kills_any"]:
+            return True                         # mutated: contributor kills anyone's Run
+        return run_owned_by_caller and design["contributor_kills_own"]  # own-only
     # viewer (or anything lower): read-only, no kill
     return False
 
 
-def affordance_visible(design, caller_role):
+def affordance_visible(design, caller_role, run_owned_by_caller=True):
     """Whether the kill BUTTON is rendered in the DOM for this role (8.16 — absent, not display:none)."""
-    if caller_role in KILLERS_ANY or caller_role == "contributor":
+    if caller_role in KILLERS_ANY:
         return True
+    if caller_role == "contributor":
+        # contributor sees the button on OWN Runs only — another member's Run → absent (AC4/Task-4),
+        # unless the design has been mutated to leak the affordance across ownership.
+        return run_owned_by_caller or design["contributor_sees_others_affordance"]
     # viewer: no mutate affordance — unless mutated to leak it
     return design["viewer_sees_affordance"]
 
@@ -142,13 +154,17 @@ def check(design):
         rbac_ok = False
     if authorize_kill(design, "viewer", run_owned_by_caller=True, run_in_scope=True):
         rbac_ok = False
-    # contributor: own allowed, other DENIED
+    # contributor: own allowed, other DENIED; another member's Run → affordance ABSENT (AC4/Task-4)
     if not authorize_kill(design, "contributor", run_owned_by_caller=True, run_in_scope=True):
         rbac_ok = False
     if authorize_kill(design, "contributor", run_owned_by_caller=False, run_in_scope=True):
         rbac_ok = False
-    # maintainer: any in scope allowed
+    if affordance_visible(design, "contributor", run_owned_by_caller=False):
+        rbac_ok = False
+    # maintainer: any in scope allowed; admin: global fleet bypass (§12.3), also any in scope
     if not authorize_kill(design, "maintainer", run_owned_by_caller=False, run_in_scope=True):
+        rbac_ok = False
+    if not authorize_kill(design, "admin", run_owned_by_caller=False, run_in_scope=True):
         rbac_ok = False
     # out-of-scope Run: even a maintainer cannot kill what is not in scope (existence-hiding)
     if authorize_kill(design, "maintainer", run_owned_by_caller=False, run_in_scope=False):
@@ -188,8 +204,13 @@ def conformant_design():
         "client_teardown": False,                 # reconciler tears down, not the UI
         "intent_stamps_principal": True,          # §12.4 who-issued-it
         "server_rechecks": True,                  # API re-resolves membership every call (8.16)
+        "scope_enforced": True,                   # out-of-scope Run is not killable (existence-hiding)
         "viewer_sees_affordance": False,          # viewer button absent from DOM (8.16)
         "contributor_kills_any": False,           # contributor own-only (§15.3)
+        "contributor_kills_own": True,            # contributor CAN kill own Run (§15.3)
+        "contributor_sees_others_affordance": False,  # contributor button absent on others' Runs (AC4)
+        "maintainer_can_kill": True,              # maintainer kills any Run in scope (§15.3)
+        "admin_can_kill": True,                   # admin global fleet bypass (§12.3)
         "idempotent_intent": True,                # F-DOUBLECLICK no-op
         "feedback_transport": "existing_sse",     # rides 8.2's bus (§4.4)
         "opaque_feedback": False,                 # Cancelling reason surfaced (FR-G3)
@@ -210,8 +231,13 @@ def naive_design():
         "client_teardown": True,                  # releases the checkout + sets phase client-side
         "intent_stamps_principal": False,         # no who-issued-it
         "server_rechecks": False,                 # trusts the client's role claim
+        "scope_enforced": False,                  # kills out-of-scope Runs too (no existence-hiding)
         "viewer_sees_affordance": True,           # everyone sees the button (display:none at most)
         "contributor_kills_any": True,            # any authenticated user kills any Run
+        "contributor_kills_own": True,            # (moot — contributor_kills_any already allows all)
+        "contributor_sees_others_affordance": True,  # button shown on everyone's Run
+        "maintainer_can_kill": True,              # (moot — server_rechecks=False allow-all above)
+        "admin_can_kill": True,                   # (moot — server_rechecks=False allow-all above)
         "idempotent_intent": False,               # each click re-fires the teardown
         "feedback_transport": "poll",             # polls for status after firing
         "opaque_feedback": True,                  # a bare spinner, no reason
@@ -221,23 +247,46 @@ def naive_design():
 
 
 MUTATIONS = {
+    # K1 — ≤2 clicks, both surfaces, no kubectl
     "CLICKS":            lambda d: d.update(clicks_to_kill=3),
+    "SURFACE_MISSING":   lambda d: d.update(surfaces=["run_stream"]),
+    "KUBECTL":           lambda d: d.update(kubectl_fallback=True),
+    # K2 — BFF choke point
     "DIRECT_API":        lambda d: d.update(kill_call_target="apiserver"),
+    # K3 — declarative intent, not imperative teardown
+    "ACTION":            lambda d: d.update(action="teardown_pod"),
     "IMPERATIVE":        lambda d: d.update(client_teardown=True),
     "UNSTAMPED":         lambda d: d.update(intent_stamps_principal=False),
+    # K4 — RBAC mutate-affordance gate (each sub-guard gets its own tooth)
     "VIEWER_AFFORDANCE": lambda d: d.update(viewer_sees_affordance=True),
+    "CONTRIB_AFFORDANCE": lambda d: d.update(contributor_sees_others_affordance=True),
     "CONTRIB_ANY":       lambda d: d.update(contributor_kills_any=True),
+    "CONTRIB_OWN_DENY":  lambda d: d.update(contributor_kills_own=False),
+    "MAINTAINER_DENY":   lambda d: d.update(maintainer_can_kill=False),
+    "ADMIN_DENY":        lambda d: d.update(admin_can_kill=False),
+    "OUT_OF_SCOPE":      lambda d: d.update(scope_enforced=False),
     "NO_RECHECK":        lambda d: d.update(server_rechecks=False),
+    # K5 — idempotent intent
     "NONIDEMPOTENT":     lambda d: d.update(idempotent_intent=False),
+    # K6 — never-opaque, existing SSE bus, distinct from Failed
+    "TRANSPORT":         lambda d: d.update(feedback_transport="poll"),
     "OPAQUE":            lambda d: d.update(opaque_feedback=True),
+    "CONFLATE_FAILED":   lambda d: d.update(terminal_distinct_from_failed=False),
+    # K7 — only killable (non-terminal) Runs
     "KILL_TERMINAL":     lambda d: d.update(offers_kill_on_terminal=True),
 }
 
 # Which single invariant each mutation is expected to flip (for the no-shadow proof).
 MUT_INVARIANT = {
-    "CLICKS": "K1", "DIRECT_API": "K2", "IMPERATIVE": "K3", "UNSTAMPED": "K3",
-    "VIEWER_AFFORDANCE": "K4", "CONTRIB_ANY": "K4", "NO_RECHECK": "K4",
-    "NONIDEMPOTENT": "K5", "OPAQUE": "K6", "KILL_TERMINAL": "K7",
+    "CLICKS": "K1", "SURFACE_MISSING": "K1", "KUBECTL": "K1",
+    "DIRECT_API": "K2",
+    "ACTION": "K3", "IMPERATIVE": "K3", "UNSTAMPED": "K3",
+    "VIEWER_AFFORDANCE": "K4", "CONTRIB_AFFORDANCE": "K4", "CONTRIB_ANY": "K4",
+    "CONTRIB_OWN_DENY": "K4", "MAINTAINER_DENY": "K4", "ADMIN_DENY": "K4",
+    "OUT_OF_SCOPE": "K4", "NO_RECHECK": "K4",
+    "NONIDEMPOTENT": "K5",
+    "TRANSPORT": "K6", "OPAQUE": "K6", "CONFLATE_FAILED": "K6",
+    "KILL_TERMINAL": "K7",
 }
 
 
