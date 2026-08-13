@@ -29,9 +29,11 @@ Invariants (C1-C7, each mapped to an AC of story 8.6):
   C1  DERIVED, NOT STORED: credential health is a projection DERIVED from the controller's Secret state
       (§5.2/§11.1) + the Run's `Paused` condition (§7.4) — NOT a console-owned/duplicated health field
       (ADR-020: no new store). The console shows status; the controller owns refresh.
-  C2  PAUSED-ON-EXPIRY IS LEGIBLE (the FR-F6 crux): a Run `Paused(cred_expired)` renders an EXPLICIT
-      paused-on-expiry signal — a legible status + reason + the actionable re-login remedy — NEVER a generic
-      error / blank / opaque failure. (The read-side mirror of 7.4-P2.)
+  C2  PAUSED IS LEGIBLE (the FR-F6 crux): a Run in the `Paused` condition renders an EXPLICIT signal — a
+      legible status + the specific reason (cred_expired / cred_invalid / rate_limited / endpoint_unreachable)
+      + an actionable, reason/family-driven remedy — NEVER a generic error / blank / opaque failure / a
+      silent 'connected'. The mapping is STRUCTURAL (a Paused Run is NEVER connected), not a pause-reason
+      whitelist, so a new reason (7.6 rate_limited) slots in. (The read-side mirror of 7.4-P2.)
   C3  BFF CHOKE POINT: the browser reads through the Next.js BFF, which proxies the Go apiserver; the browser
       never connects to the apiserver/kube/Postgres directly and holds no apiserver URL (§13/ADR-013).
   C4  SCOPED IN-ASSEMBLY, EXISTENCE-HIDING: the §12.3 caller sees only the Agents within their membership —
@@ -52,6 +54,7 @@ Mutation-proof harness (no vacuous guard — the ISI-2346-F1 class is excluded b
 mapped invariant failing:
   --mutate=SHADOW_STORE    read a console-owned health field, not the derived state   -> C1 RED
   --mutate=OPAQUE_EXPIRY   render the Paused(cred_expired) Run as a generic error      -> C2 RED
+  --mutate=PAUSE_WHITELIST collapse a non-whitelisted Paused reason to 'connected'     -> C2 RED
   --mutate=DIRECT_API      point the browser straight at the Go apiserver              -> C3 RED
   --mutate=CROSS_PRIN      surface an out-of-scope principal's credential row          -> C4 RED
   --mutate=LEAK_MATERIAL   echo the token bytes into a field/span                      -> C5 RED
@@ -113,6 +116,22 @@ def build_agents():
          "controller_state": "refreshing", "run_condition": "Running", "run_reason": None,
          "stored_health": "refreshing",
          "_secret_material": "refresh_token=sk-LIVE-hermes-oauth-material-DO-NOT-SURFACE"},
+        # sam's static-key Run PAUSED on an INVALID credential (7.3) -> cred_invalid must render a legible
+        # non-connected signal (AC2 enumerates it); the old 2-reason whitelist mis-rendered this 'connected'.
+        {"agent": "auditor-openclaw", "runtime": "OpenClaw", "family": "static-key",
+         "secret_ref": "secret://sam/openclaw-audit-key", "token_type": "API key", "principal": "sam",
+         "run": "#145", "expires": "invalid",
+         "controller_state": "invalid", "run_condition": "Paused", "run_reason": "cred_invalid",
+         "stored_health": "connected",
+         "_secret_material": "sk-LIVE-openclaw-audit-material-DO-NOT-SURFACE"},
+        # sam's Claude Run PAUSED rate-limited (7.6 forward-compat) — controller_state is VALID, so ONLY the
+        # Paused condition makes it legible; a pause-reason whitelist would mis-render this 'connected'.
+        {"agent": "builder-hermes", "runtime": "Hermes", "family": "claude-oauth",
+         "secret_ref": "secret://sam/hermes-oauth", "token_type": "OAuth", "principal": "sam",
+         "run": "#146", "expires": "in 55m",
+         "controller_state": "valid", "run_condition": "Paused", "run_reason": "rate_limited",
+         "stored_health": "connected",
+         "_secret_material": "refresh_token=sk-LIVE-hermes-oauth-material-DO-NOT-SURFACE"},
         # sam's BYO-Ollama endpoint Run paused unreachable -> proves C7 family-neutrality (7.5).
         {"agent": "runner-ollama", "runtime": "opencode", "family": "ollama-endpoint",
          "secret_ref": "secret://sam/ollama-endpoint", "token_type": "endpoint", "principal": "sam",
@@ -137,26 +156,47 @@ def build_agents():
     ]
 
 
+# ---- the actionable remedy: reason/family-driven, NOT a hardcoded OAuth re-login ---------------------
+# AC2 requires "each with its own actionable remedy" — a Claude OAuth token re-login does NOT fix a
+# rate-limit backoff (7.6) or an unreachable BYO-Ollama endpoint (7.5). The remedy is derived from the
+# pause reason + credential family so the Go port never hardcodes `relogin_oauth` for endpoint faults.
+def remedy_for(a):
+    reason = a["run_reason"] or a["controller_state"]
+    if reason == "rate_limited":
+        return "wait_retry"        # 7.6: a rate-limited pause resolves on backoff, not a re-login
+    if a["family"] == "ollama-endpoint" or reason == "endpoint_unreachable":
+        return "check_endpoint"    # 7.5: an unreachable BYO-Ollama endpoint is a config fault, not OAuth
+    return "relogin_oauth"         # 7.7: OAuth / static-key credential re-auth handoff ("Connect Claude")
+
+
 # ---- the health derivation: the executable spec (controller state + Run condition -> health) --------
-# The ONLY inputs are the DERIVED sources. A Run Paused(cred_expired) OR an expired/unreachable controller
-# state -> "expired-paused" with the actionable remedy; a refreshing controller -> "refreshing"; else
-# "connected". The token bytes are NEVER read here.
+# The ONLY inputs are the DERIVED sources. The mapping is STRUCTURAL, not a pause-reason whitelist: a Run
+# in the `Paused` condition is NEVER "connected" — it renders "expired-paused" with the reason surfaced
+# from `run_reason` (cred_expired / cred_invalid / rate_limited / endpoint_unreachable ...) so a new pause
+# reason (e.g. 7.6 rate_limited) slots in without a special-case. An expired/invalid/unreachable controller
+# state also renders "expired-paused"; a refreshing controller -> "refreshing"; else "connected". The
+# `status` is the paused-health bucket in HEALTH_STATES; `reason` carries the specific, legible cause. The
+# token bytes are NEVER read here.
 def derive_health(a, source):
     if source == "stored":
         # C1 DEFECT: trust the console-owned duplicate instead of deriving. It is stale for the paused Agent.
         status = a["stored_health"]
         reason, remedy = None, None
+    elif a["run_condition"] == "Paused":
+        # a Paused Run is NEVER connected — surface the reason legibly for EVERY pause reason (not a
+        # 2-reason whitelist); this is the read-side mirror of 7.4-P2 (never-opaque), incl. cred_invalid/
+        # rate_limited (7.3 / 7.6).
+        status = "expired-paused"
+        reason = a["run_reason"] or a["controller_state"]
+        remedy = remedy_for(a)
+    elif a["controller_state"] in ("expired", "invalid", "endpoint_unreachable"):
+        status = "expired-paused"
+        reason = a["controller_state"]
+        remedy = remedy_for(a)
+    elif a["controller_state"] == "refreshing":
+        status, reason, remedy = "refreshing", None, None
     else:
-        paused_on_cred = a["run_condition"] == "Paused" and a["run_reason"] in ("cred_expired",
-                                                                                "endpoint_unreachable")
-        if paused_on_cred or a["controller_state"] in ("expired", "endpoint_unreachable"):
-            status = "expired-paused"
-            reason = a["run_reason"] or a["controller_state"]
-            remedy = "relogin_oauth"      # one-click "Connect Claude" / ksquad auth login (7.7)
-        elif a["controller_state"] == "refreshing":
-            status, reason, remedy = "refreshing", None, None
-        else:
-            status, reason, remedy = "connected", None, None
+        status, reason, remedy = "connected", None, None
     return status, reason, remedy
 
 
@@ -176,6 +216,13 @@ def project(design, caller, agents, mut=None):
             continue
 
         status, reason, remedy = derive_health(a, source)
+
+        # C2: PAUSE_WHITELIST re-introduces the deleted 2-reason whitelist defect — a Paused Run whose reason
+        # is NOT in ("cred_expired", "endpoint_unreachable") collapses to 'connected', silently misclassifying
+        # cred_invalid (7.3) / rate_limited (7.6) as healthy. A Paused Run is NEVER connected.
+        if (mut == "PAUSE_WHITELIST" and a["run_condition"] == "Paused"
+                and a["run_reason"] not in ("cred_expired", "endpoint_unreachable")):
+            status, reason, remedy = "connected", None, None
 
         # C2: the paused-on-expiry Run must render an EXPLICIT signal. OPAQUE_EXPIRY overwrites it with a
         # generic error and drops the remedy.
@@ -267,6 +314,26 @@ def evaluate(design, mut, agents):
           f"— FR-F6 requires an explicit paused-on-expiry signal + reason + one-click re-login remedy, "
           f"never a generic/blank error (C2/§7.4)")
 
+    # C2 (cred_invalid, 7.3) — a Paused(cred_invalid) Run must ALSO render a legible non-connected signal,
+    # NOT silently 'connected'. AC2 enumerates cred_invalid as a paused-on-expiry-class reason; the old
+    # 2-reason whitelist had ZERO teeth on it.
+    invalid_paused = by_agent.get("auditor-openclaw")
+    check("C2", invalid_paused is not None and invalid_paused["status"] == "expired-paused"
+          and invalid_paused["reason"] == "cred_invalid",
+          f"Paused(cred_invalid) Run rendered as {invalid_paused and (invalid_paused['status'], invalid_paused['reason'])} "
+          f"— a Paused Run is NEVER 'connected'; every pause reason (incl. cred_invalid, 7.3) must render an "
+          f"explicit legible signal (C2/§7.4, AC2 never-opaque mirror of 7.4-P2)")
+
+    # C2 (rate_limited, 7.6 forward-compat) — a Paused(rate_limited) Run with a VALID controller state is
+    # legible ONLY via the Paused condition; a reason whitelist would mis-render it 'connected'. The mapping
+    # must be structural so 7.6 slots in without special-casing.
+    rate_paused = by_agent.get("builder-hermes")
+    check("C2", rate_paused is not None and rate_paused["status"] == "expired-paused"
+          and rate_paused["reason"] == "rate_limited",
+          f"Paused(rate_limited) Run rendered as {rate_paused and (rate_paused['status'], rate_paused['reason'])} "
+          f"— 7.6 forward-compat: a rate-limited pause must slot in as a legible signal keyed by the reason, "
+          f"without special-casing (C2/§7.4, Dev Notes 7.6)")
+
     # C3 — through the BFF, never the Go apiserver directly.
     check("C3", meta["endpoint"] == "bff",
           f"browser reads through {meta['endpoint']!r}, not the Next.js BFF (§13/ADR-013)")
@@ -323,8 +390,8 @@ def run(mut=None):
 
 
 MUTANTS = {
-    "SHADOW_STORE": "C1", "OPAQUE_EXPIRY": "C2", "DIRECT_API": "C3", "CROSS_PRIN": "C4",
-    "LEAK_MATERIAL": "C5", "TOKEN_PASTE": "C6", "FAMILY_SPECIAL": "C7",
+    "SHADOW_STORE": "C1", "OPAQUE_EXPIRY": "C2", "PAUSE_WHITELIST": "C2", "DIRECT_API": "C3",
+    "CROSS_PRIN": "C4", "LEAK_MATERIAL": "C5", "TOKEN_PASTE": "C6", "FAMILY_SPECIAL": "C7",
 }
 ALL_INV = ["C1", "C2", "C3", "C4", "C5", "C6", "C7"]
 
