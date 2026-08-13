@@ -222,8 +222,13 @@ check fails **loud** — the clean conformant result would then prove nothing.
   through only the card + verbs and produces a **byte-identical trace** with `native_calls == 0`; a
   **cheating core** with an `if type == "openclaw"` branch reaches OpenClaw's **native gateway** and
   **forks the trace on type**. Asserts conformant-agnostic + zero-native AND cheating-forks + touched-native.
-  *Mutation-proven:* making the conformant path touch `native_gateway` (or branch on `type`) turns the
-  check **RED** — the C10/NFR-EXT1 seam has teeth.
+  The compared trace is **recorded from the real verb calls (verb + args)**, *not* a hardcoded constant —
+  so a `type`-fork that varies behaviour (different envelope, verb order, capability assumption) forks the
+  trace **even when it never reaches the native channel**. *Mutation-proven:* making the conformant path
+  touch `native_gateway` **or** branch on `type` (even without a native reach — ISI-2377 review probe MUT-A)
+  turns the check **RED** — the C10/NFR-EXT1 seam has teeth. *(Pre-review the trace was a constant literal,
+  so `conf_oc == conf_hm` was a tautology and a native-free `type`-branch passed GREEN; hardened in the
+  ISI-2377 review, [[isi-2377-story51-review]].)*
 - **(D) deterministic-id dispatch dedup (AC2, §6.4 C1).** Runs the conformant dispatch through **both** crash
   windows (after-submit/before-marker; before-submit) and asserts **exactly one** agent execution each; a
   **naive** design with a **fresh per-attempt id** double-dispatches (executions == 2). *Mutation-proven:*

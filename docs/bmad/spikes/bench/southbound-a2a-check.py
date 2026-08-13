@@ -59,9 +59,18 @@ class Runtime:
         self.native_calls = 0
         self._session = None        # dedup key == a2a_task_id (deterministic, == run_id)
         self._fence = None
+        # The dispatch trace is RECORDED from the real verb calls (verb + args), NOT
+        # a hardcoded constant. This is what gives AC1 teeth: a conformant path that
+        # forks on `runtime.type` (different envelope, verb order, capability
+        # assumption) produces a DIVERGENT recorded trace even when it never reaches
+        # the native channel. The trace deliberately excludes `self.type` and card
+        # *content* — only the calls the core makes — so two runtimes with identical
+        # cards yield identical traces iff the core did not couple to the runtime.
+        self.trace = []
 
     # V1 SubmitTask — deterministic id + dedup (§6.4 C1).
     def submit_task(self, a2a_task_id, envelope, fence):
+        self.trace.append(("submit", a2a_task_id, envelope, fence))   # args recorded
         if self._session == a2a_task_id:
             return "reattached"      # second submit with existing id ⇒ NO second execution
         self._session, self._fence = a2a_task_id, fence
@@ -89,6 +98,7 @@ class Runtime:
     # V6 GetAgentCard — capability contract (§6). The core negotiates against THIS,
     # never against a hardcoded per-type assumption.
     def get_agent_card(self):
+        self.trace.append(("card",))     # the fact of negotiation, NOT card content
         return {"schemaVersion": "ksquad.a2a/v1",
                 "runtime": {"type": self.type},
                 "capabilities": {"streaming": True, "interactivePrompt": False}}
@@ -97,6 +107,7 @@ class Runtime:
     # gateway / Hermes native). A conformant core must NEVER call this.
     def native_gateway(self, cmd):
         self.native_calls += 1
+        self.trace.append(("native", self.type, cmd))   # forks the trace too
         return f"{self.type}-native:{cmd}"
 
 
@@ -120,13 +131,16 @@ class Coord:
 
 def conformant_dispatch(rt):
     """CORE dispatch using ONLY the card + the six verbs. No `type` branching, no
-    native channel — identical for every runtime. Returns a dispatch trace to compare
-    across types (must be byte-identical) and asserts native_calls stays 0."""
+    native channel — identical for every runtime. Returns the RECORDED dispatch trace
+    (rt.trace, derived from the real verb calls incl. args) so a type-fork in the
+    dispatch — even one that never reaches the native channel — is caught, and asserts
+    native_calls stays 0."""
     card = rt.get_agent_card()                          # V6 — negotiate, don't assume
     assert card["capabilities"]["streaming"], "SSE V2 is mandatory (§6.1)"
     rt.submit_task(RUN_ID, envelope="<ctx>", fence=1)   # V1 — deterministic id
-    # trace deliberately excludes rt.type: proves the path did not fork on runtime.
-    return ("submit", RUN_ID, "stream", "collect")
+    # Trace is DERIVED from the calls made, deliberately excludes rt.type / card
+    # content: identical across types iff the core did not couple to the runtime.
+    return tuple(rt.trace)
 
 
 def cheating_dispatch(rt):
@@ -137,9 +151,9 @@ def cheating_dispatch(rt):
     if rt.type == "openclaw":                           # ← the moat leak (type ==)
         rt.native_gateway("start-session")              # ← lateral protocol
         rt.submit_task(RUN_ID, envelope="<ctx>", fence=1)
-        return ("openclaw-native-start", "submit", RUN_ID, "stream", "collect")
+        return tuple(rt.trace)
     rt.submit_task(RUN_ID, envelope="<ctx>", fence=1)   # divergent path for other types
-    return ("submit", RUN_ID, "stream", "collect")
+    return tuple(rt.trace)
 
 
 def check_moat():
