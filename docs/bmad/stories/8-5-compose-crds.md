@@ -349,8 +349,8 @@ vacuous-tooth class is excluded by construction). Baseline exits 0; each of the 
 ### Project Structure Notes
 
 - **Go (apiserver):** compose authorization + CR build/apply next to the apiserver write paths —
-  `AuthorizeCompose` (the per-project **maintainer** gate, server-re-checked) + `BuildCR` (the declarative CR
-  producer, credential-ref-only) + `ApplyCR` (apply through the Story-1.3 admission chain) + `handler.go`
+  `AuthorizeCompose` (the per-project **write-tier** gate — maintainer/admin/contributor, viewer-deny —
+  server-re-checked) + `BuildCR` (the declarative CR producer, credential-ref-only) + `ApplyCR` (apply through the Story-1.3 admission chain) + `handler.go`
   (the mutating verb + status codes) + `*_test.go` (the AC-driven table). Mirror `pkg/coord`/`pkg/auth`
   naming and the standard `testing` idiom.
 - **No new CRD, no new validator, no new credential model.** The five core CRD types (1.2), the CEL+webhook
@@ -361,7 +361,7 @@ vacuous-tooth class is excluded by construction). Baseline exits 0; each of the 
   regardless (Task 4 note). The console fires the apply through the BFF proxy and renders the read-only YAML
   mirror byte-identical to the applied CR.
 - **Runnable check:** `docs/bmad/spikes/bench/run-compose-crd-check.py` (authored) — stdlib-only, differential
-  over the compose-CRD design, 10 mutations covering C1–C7.
+  over the compose-CRD design, 12 mutations covering C1–C7.
 
 ### References
 
