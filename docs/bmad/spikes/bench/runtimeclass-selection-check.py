@@ -20,8 +20,11 @@ guards the static selection shape, which is the construction-time crux.
 import sys
 
 # --- cluster facts (S1 prerequisite): which RuntimeClasses are installed ---
-INSTALLED = {"gvisor", "kata"}          # runc == node default (always present, but rejected for untrusted)
-UNTRUSTED_CLASSES = {"gvisor", "kata"}  # acceptable for untrusted agent code
+INSTALLED = {"gvisor", "kata", "sysbox"}  # runc == node default (always present, rejected for untrusted).
+                                          # sysbox: models an operator-installed class that is PRESENT but
+                                          # NOT isolation-approved (weak/misconfigured) -> AC2 allowlist must
+                                          # still reject it; denylist(runc,empty) alone is too weak here.
+UNTRUSTED_CLASSES = {"gvisor", "kata"}  # the ONLY isolation-approved classes for untrusted agent code (AC2)
 DOCKER_MECHS = {"rootless-builder", "rootless-dockerd", "kata"}  # §5.3.3 backings for docker:true
 
 
@@ -75,6 +78,12 @@ def compliant_selector(runs, role, pool):
         if rc not in INSTALLED and not (rc == "runc" and r.get("trustedDev")):
             out.append({"run": r["id"], "rejected": f"RuntimeClassUnavailable:{rc}"})
             continue
+        # AC2 (allowlist): untrusted code runs ONLY on an isolation-approved class (gVisor/Kata).
+        # An installed-but-not-approved class (weak/misconfigured, e.g. sysbox) is rejected too —
+        # a denylist of just runc/empty would silently admit it. "Resolve to gVisor or Kata only."
+        if rc not in UNTRUSTED_CLASSES and not r.get("trustedDev"):
+            out.append({"run": r["id"], "rejected": f"class-not-isolation-approved:{rc}"})
+            continue
         # AC6: docker:true on gVisor needs a backing mechanism
         if r.get("docker") and rc == "gvisor" and r.get("docker_mech") not in DOCKER_MECHS:
             out.append({"run": r["id"], "rejected": "docker-on-gvisor-no-mechanism"})
@@ -110,6 +119,10 @@ def violations(decisions, runs):
         # AC2: untrusted code must not run on runc/empty
         if untrusted and rc in ("", "runc"):
             v.append(f"{d['run']}: untrusted Run admitted on runc/node-default [AC2]")
+        # AC2 (allowlist): untrusted code on any non-approved class (not gVisor/Kata) is a violation,
+        # even when that class is installed — the crux AC is an allowlist, not a runc-only denylist.
+        if untrusted and rc not in ("", "runc") and rc not in UNTRUSTED_CLASSES:
+            v.append(f"{d['run']}: untrusted Run admitted on non-approved class {rc} [AC2]")
         # AC4: an admitted class must actually be installed (no downgrade-admit)
         if rc and rc != "runc" and rc not in INSTALLED:
             v.append(f"{d['run']}: admitted on uninstalled class {rc} [AC4]")
@@ -130,8 +143,10 @@ def violations(decisions, runs):
     admitted = {d["run"] for d in decisions if not d.get("rejected")}
     for r in runs:
         rc = resolve_runtime_class(r, ROLE, POOL)
-        should_reject = ((rc in ("runc", "") and not r.get("trustedDev"))
-                         or (rc not in INSTALLED and rc != "runc"))
+        should_reject = (
+            (not r.get("trustedDev") and rc not in UNTRUSTED_CLASSES)          # only gVisor/Kata for untrusted (AC2 allowlist)
+            or (rc not in INSTALLED and not (rc == "runc" and r.get("trustedDev")))  # absent class fails closed (AC4)
+        )
         if should_reject and r["id"] in admitted:
             v.append(f"{r['id']}: should have been rejected (resolved={rc}) but was admitted [AC2/AC4]")
     return v
@@ -145,7 +160,8 @@ RUNS = [
     {"id": "r-policy", "sandboxPolicy": {"runtimeClass": "kata"}},    # -> kata (precedence)
     {"id": "r-runc", "sandboxPolicy": {"runtimeClass": "runc"}},      # -> reject (untrusted)
     {"id": "r-trusted", "sandboxPolicy": {"runtimeClass": "runc"}, "trustedDev": True},  # -> allowed
-    {"id": "r-missing", "sandboxPolicy": {"runtimeClass": "firecracker"}},  # -> fail-closed (absent)
+    {"id": "r-missing", "sandboxPolicy": {"runtimeClass": "firecracker"}},  # -> fail-closed (absent, AC4)
+    {"id": "r-weak", "sandboxPolicy": {"runtimeClass": "sysbox"}},    # -> reject: installed but NOT approved (AC2 allowlist)
     {"id": "r-docker-ok", "docker": True, "docker_mech": "rootless-builder"},  # -> gvisor + builder
     {"id": "r-docker-bad", "docker": True},                          # -> reject (no mechanism)
 ]
@@ -188,7 +204,8 @@ def main():
     ok = (len(naive_v) > 0
           and len(good_v) == 0
           and "r-runc" in rejected
-          and "r-missing" in rejected
+          and "r-missing" in rejected                # absent class fails closed (AC4)
+          and "r-weak" in rejected                   # installed-but-unapproved class rejected (AC2 allowlist)
           and "r-docker-bad" in rejected
           and "r-trusted" not in rejected           # explicit trustedDev escape works
           and distinct_pods == admitted)            # every admitted Run got its own pod

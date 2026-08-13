@@ -205,14 +205,17 @@ all of them.
 
 ```
 [model] precedence : sandboxPolicy>runtimeClassHint>pool>gvisor-default resolves correctly across 4 cases
-[model] naive selector : 6 isolation violation(s) -> DETECTED (empty runtimeClassName, runc-downgrade, cross-class reuse, ungated docker)
-[model] §9.1 selector : 0 violations; runc rejected w/o trustedDev; missing-class fail-closed (no runc downgrade); 2 Runs -> 2 distinct pods
+[model] naive selector : 20 isolation violation(s) -> DETECTED (empty runtimeClassName, runc-downgrade, non-approved class, cross-class reuse, ungated docker)
+[model] §9.1 selector : 0 violations; rejected=[r-runc, r-missing, r-weak, r-docker-bad]; 4 admitted -> 4 distinct pods
 [model] PASS — naive detectably breaks isolation; §9.1 selection contract holds AC1-AC6.
 ```
 
 It encodes the AC1–AC6 invariants as assertions over the *pod-spec + admission decision a reconciler
 would produce* for sample Runs: (a) a non-empty `runtimeClassName` resolved by the precedence chain,
-gVisor-default (AC1); (b) `runc`/empty rejected unless `trustedDev` (AC2); (c) two Runs → two distinct
+gVisor-default (AC1); (b) `runc`/empty rejected unless `trustedDev`, and — as an **allowlist, not a
+denylist** — any non-approved class (installed-but-not-gVisor/Kata, e.g. an operator-added weak
+`sysbox`) is likewise rejected for untrusted code (AC2, the crux; "resolve to gVisor or Kata only");
+(c) two Runs → two distinct
 pods, no shared pod/namespace, no cross-Run reuse (AC3); (d) a resolved class absent from the cluster
 **fails closed** — a selector that downgrades to `runc` is a violation (AC4); (e) the warm-pool bind
 matches the resolved class — a cross-class bind is a violation (AC5); (f) `docker:true` on gVisor
