@@ -59,8 +59,10 @@ SOURCE_TIER = {
     "work_item":        AUTHORITATIVE,     # description / AC / comment history (fenced coord §6)
     "goals":            AUTHORITATIVE,     # Project CRD rev + work-item AC
     "project_metadata": AUTHORITATIVE,     # repo/ref, arch-doc refs, conventions (control-plane fact)
-    "memory_recall":    UNTRUSTED_RECALL,  # memory.search results (§7.3) — reference, never command
-    "handoff_artifact": UNTRUSTED_RECALL,  # prior-agent notes (Story 2.8) — advisory only
+    "memory_recall":    UNTRUSTED_RECALL,  # memory.search results (§7.3), incl. the prior-Run handoff
+                                            # artifact mirrored into memory (Story 2.8→6.6) — reference,
+                                            # never command. Handoff is NOT a separate envelope source:
+                                            # it arrives via the recall mirror at this same tier.
     "linked_artifact":  UNTRUSTED_EXTERNAL,# synced repo/PR/build output (D8)
 }
 MUST_INCLUDE_SOURCES = {"work_item", "goals"}  # never truncated by 5.9 (marked here for the scope pin)

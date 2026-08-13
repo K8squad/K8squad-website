@@ -160,6 +160,16 @@ snapshot = { work_item_rev, goal_rev, memory_doc_ids[], assembled_at, envelope[ 
   cannot explain, and two attempts of the "same" Run diverge. The snapshot is the source of truth on
   resume; the live query is only for the **first** assembly.
 
+> **⚠ Dev invariant (the reuse guarantee's precondition — honor at the 3.1 seam).** The re-entrant-reuse
+> guarantee holds *only if the snapshot is durably present the instant a Run is `Running`.* The Assembler
+> **MUST co-commit the envelope snapshot and the `Claiming → Running` phase advance in a SINGLE
+> transaction** (Story 3.1's §6.4 transactional spine). If the phase advance and the snapshot write are
+> two transactions, a crash between them leaves a Run in `Running` with **no snapshot** → resume finds
+> nothing to reuse → it re-queries → the reuse guarantee is silently defeated in production while every
+> unit check stays green. The falsification models reuse but not the transaction boundary, so this is an
+> **implementation invariant**, not a design choice: snapshot ⊕ phase-advance are atomic, or the audit
+> and re-entry guarantees both rot at the exact crash window §6.4 exists to close.
+
 ## Goal versioning (authoritative — §D)
 
 Goals are **CRD-sourced and versioned** (§8.5). The `Project` CRD carries `goals`; a goal change is a
