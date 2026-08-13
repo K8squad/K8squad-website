@@ -75,10 +75,6 @@ ARTIFACT_KINDS = {"diff", "comment", "report", "file", "log", "handoff"}
 # affordances allowed on a read-only inspection surface (R6). Anything else is a mutate leak.
 READONLY_AFFORDANCES = {"view", "download", "navigate"}
 
-# the 7 advisory fields of a structured handoff (story 2.8 — a superset of §8.5's illustrative shape)
-HANDOFF_FIELDS = {"did", "decisions", "next", "blockers", "findings",
-                  "recommended_next", "artifacts_for_downstream"}
-
 
 def sha256(b):
     return hashlib.sha256(b).hexdigest()
@@ -250,7 +246,7 @@ NAIVE = {
 
 
 # ---- the runnable check ----------------------------------------------------------------------------
-def evaluate(design, mut, coord, bespoke, *, is_naive=False):
+def evaluate(design, mut, coord, bespoke):
     """Return the list of (invariant, detail) violations for `design`."""
     fails = []
 
@@ -303,9 +299,12 @@ def evaluate(design, mut, coord, bespoke, *, is_naive=False):
 
     # A7 — bounded body + span carries only magnitudes (no content/sha/id leak).
     huge, _ = inspect(design, OWNER, OWNER, "art-huge", coord, bespoke, mut=mut)
-    check("A7", huge["body"] is not None and huge["body"]["tooLarge"] is True
-          and huge["body"]["content"] is None,
-          f"oversize blob must be tooLarge with no body (got {huge['body']})")
+    hb = huge["body"] or {}
+    # compact detail: never echo the (multi-MiB) unbounded body itself into the report.
+    hb_repr = {"tooLarge": hb.get("tooLarge"), "binary": hb.get("binary"),
+               "content": None if hb.get("content") is None else f"<{len(hb['content'])} B streamed>"}
+    check("A7", huge["body"] is not None and hb.get("tooLarge") is True and hb.get("content") is None,
+          f"oversize blob must be tooLarge with no body (got {hb_repr})")
     binr, _ = inspect(design, OWNER, OWNER, "art-bin", coord, bespoke, mut=mut)
     check("A7", binr["body"] is not None and binr["body"]["binary"] is True
           and binr["body"]["content"] is None,
@@ -324,7 +323,7 @@ def run(mut=None):
     bespoke = build_bespoke_store(coord)
 
     # 1) teeth: the NAIVE bespoke-store-editor model must break EVERY invariant.
-    naive_fails = evaluate(NAIVE, None, coord, bespoke, is_naive=True)
+    naive_fails = evaluate(NAIVE, None, coord, bespoke)
     naive_hit = {inv for inv, _ in naive_fails}
 
     # 2) the conformant §6.5/§13 durable-coord model (baseline, or with a single injected defect).
