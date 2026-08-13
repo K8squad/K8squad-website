@@ -1,6 +1,6 @@
 # Story 8.7d: Build-browser BFF endpoints + per-principal scoping gate (NFR-SEC5)
 
-Status: ready-for-dev
+Status: in-review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -149,10 +149,25 @@ Given any `ksquad.buildbrowser.*` instrument this story emits, When telemetry is
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Paperclip agent 2230b001, ISI-2274).
 
 ### Debug Log References
 
+- `docs/bmad/spikes/bench/build-browser-bff-scoping-check.py` — baseline `python3 build-browser-bff-scoping-check.py` exits **0**; the naive "proxy-the-runId-to-git" anti-pattern is DETECTED violating **all 11** invariants (43 violations); each of the **17** `--mutate=NAME` mutants exits 1 with its mapped invariant RED (0 survivors / 0 vacuous guards).
+- Two design corrections surfaced by the teeth check, both fixed:
+  - A total allow-all naive never *denies* anyone, so the deny-shape invariants (D2 authorize-before-backend, D3 404-not-403) could not be observed. Fixed by making the naive still deny the cross-Team caller (keep `check_scope`) while leaking to the same-Team peer (drop `check_owner`), and probing D2/D3/D10 deny-shape with the always-denied cross-Team caller C.
+  - `NO_SCOPE_CHECK` initially survived because the *owner* check still denies cross-Team C (C isn't the owner). Added the `CALLER_A_OUTSCOPE` probe (owner principal A, Team scope excluding the Run) to isolate the Team-scope condition — AC4 "either condition false → 404".
+
 ### Completion Notes List
 
+- Delivered the **runnable NFR-SEC5 falsification bench** — the non-negotiable deliverable per Dev Notes / Project Structure Notes (the Go apiserver + Next.js BFF are still greenfield in the source repo, so this check *is* the executable spec the `internal/buildbrowser` gate must match, mirroring how 8.7a's `git-read-model-check.py` precedes its Go port).
+- Invariants **D1–D11** map 1:1 to **AC1–AC11**. The security core is a **real executable** `authorize_read(caller, run)` predicate + a `serve()` edge simulation driving actual requests (owner A, same-Team non-owner B, cross-Team C, owner-out-of-scope) through the gate with a **backend spy** that proves **zero backend calls on the deny path** (AC2) — not a descriptor assertion.
+- Crux (ISI-2166) enforced with teeth: same-Team non-owner B → **404 (never 403)**, deny body **indistinguishable** from genuinely-missing; owner A → 200 positive control; the gate checks **both** Team-scope AND owning-principal (either false → 404); cache partition is asserted **NOT** the read gate (the F7/B1 conflation is its own mutant `CACHE_AS_GATE`).
+- Path safety (AC9) is **structural**: `../../etc/passwd` resolves through the git-changed-set allowlist (`git show`, never raw FS `open`) and is rejected; the `RAW_FS` mutant proves the escape is caught.
+- OBS-BB3 / NFR-OBS3 (AC10/AC11) checked against **real emitted telemetry**: deny emits `scope.denied` + an id-only WARN never surfaced to the client (response stays 404); live→trace-child / completed→trace-link split; no `run.id`/`principal.id`/`path`/`bytes_returned`/`model` on any metric label; `bytes_returned` is a histogram.
+- Backends 8.7b (live) / 8.7c (completed) are stubbed behind the spy interface per Task 3 — the **authZ gate does not depend on them** and is fully tested here. Open questions 1 (enforcement split) and 2 (BFF bootstrap) remain for Architect/PM but do **not** block this deliverable (the Go-side gate + AC6 predicate + AC7 S4 case land here regardless, as the story mandates).
+
 ### File List
+
+- `docs/bmad/spikes/bench/build-browser-bff-scoping-check.py` (new) — the D1–D11 mutation-proof NFR-SEC5 scoping-gate falsification (17 mutants, baseline exit 0).
+- `docs/bmad/stories/8-7d-build-browser-bff-scoping-gate.md` (this file) — Dev Agent Record.
