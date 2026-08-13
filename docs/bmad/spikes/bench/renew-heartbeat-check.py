@@ -226,6 +226,8 @@ def main():
         "FENCING BROKEN: a stale-fence renew must be a no-op even when the principal matches"
     assert b_full["zombie_audit"] == 0 and b_full["zombie_outbox"] == 0, \
         "rejected stale-fence renew must not audit (AC6 — the (b) reject path is audit-silent)"
+    assert not b_full["live_lease_moved_by_zombie"], \
+        "FENCING BROKEN: the stale-fence zombie must not move the LIVE re-dispatch's lease"
     assert b_full["live_renew_ok"], "the live current-fence holder must still renew"
     print(f"[model] (b) stale-fence renew:  holder→LEAK (zombie extended live)  fence→reject   full→reject")
 
