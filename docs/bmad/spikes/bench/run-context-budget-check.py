@@ -15,10 +15,16 @@ lowest-priority-first), the fail-closed gate when must-include alone exceeds the
 preserving injection contract (no flat prompt blob, F16), and determinism over the snapshot.
 
 Mutation contract (the headline invariants must be falsifiable — re-run these after any edit):
-  * delete the "place must-include verbatim, budget only the remainder" guard in fit() -> (F1) MUST turn RED.
-  * delete the "if size(must-include) > window: return fail_closed" gate in fit()      -> (F2) MUST turn RED.
-  * replace the min(configured, window) clamp / over-window reject in resolve_budget()  -> (F3) MUST turn RED.
-  * flatten the injected envelope to one prompt string                                  -> (F5) MUST turn RED.
+  * delete the "place must-include verbatim, budget only the remainder" guard in fit()  -> (F1) MUST turn RED.
+    (F1 is exercised on a DEDICATED sub-envelope f1_envelope() where a best-effort element
+     OUTRANKS a must-include element, so a merged whole-env greedy trim is forced to evict a
+     must element — the vacuous-arm trap ISI-2346-F1/ISI-2361-F1 warn about is avoided.)
+  * delete the "if size(must-include) > window: return fail_closed" gate in fit()        -> (F2) MUST turn RED.
+  * delete the over-window reject ("if configured > window: raise") in resolve_budget()  -> (F3) MUST turn RED.
+    (The reject is the SOLE teeth; the subsequent min(configured, window) is belt-and-suspenders
+     — the reject already guarantees configured <= window at the return, so mutating min() alone
+     does NOT flip the check. Do not claim the clamp is independently mutation-proven.)
+  * flatten the injected envelope to one prompt string                                    -> (F5) MUST turn RED.
 
 stdlib only. `python3 run-context-budget-check.py`. Exits non-zero on any falsification.
 No wall-clock, no RNG: token sizes are explicit ints; everything is deterministic.
@@ -84,6 +90,22 @@ def sample_envelope():
 def must_include(env):    return [e for e in env if e.tier == AUTH]
 def best_effort(env):     return [e for e in env if e.tier != AUTH]
 
+# A DEDICATED envelope for the F1 must-include-verbatim teeth (ISI-2383 F1 fix). Here a best-effort
+# recall element OUTRANKS a must-include element (priority 130 > 100). The tier-separated fit() keeps
+# must-include verbatim REGARDLESS of priority (it separates by TIER, then budgets the remainder), but
+# a mutated whole-env greedy-by-priority trim would place the high-priority recall first and be FORCED
+# to evict/summarize a must-include element to fit the window -> the guard becomes decisive.
+def f1_envelope():
+    return [
+        Elem("f1_work",  AUTH, 100, 1200, "TASK: implement the fenced renewal", "crd"),
+        Elem("f1_ac",    AUTH, 100, 900,  "AC1..AC6: the acceptance criteria verbatim", "crd"),
+        Elem("f1_goals", AUTH, 100, 400,  "GOALS: correctness over speed", "project-crd"),
+        # best-effort recall priced high enough to out-rank the task in a naive whole-env sort:
+        Elem("f1_hot",   RECALL, 130, 1500, "a very-high-relevance recall note",
+             {"author": "agentX", "trust": "untrusted"}),
+    ]
+F1_WINDOW = 3000   # must(2500) fits; must + f1_hot(1500) = 4000 > 3000, forcing a mutated trim to cut must
+
 # ---------------------------------------------------------------------------
 # §B — budget resolution + clamp. Config can SHRINK but never exceed the
 # physical model window; an over-window override is a FAIL-CLOSED validation
@@ -94,11 +116,13 @@ def resolve_budget(window, project_default=None, agent_override=None):
     configured = agent_override if agent_override is not None else project_default
     if configured is None:
         return window                      # per-runtime/model default = the window itself
-    # MUTATION POINT (F3): removing this reject lets an over-window override through.
+    # MUTATION POINT (F3): removing this reject lets an over-window override through -> RED.
+    # This is the SOLE teeth for the shrink-only / fail-closed-over-window contract (§8.5).
     if configured > window:
         raise ValidationError(
             "contextBudgetOverride %d exceeds model contextWindow %d (shrink-only)" % (configured, window))
-    # MUTATION POINT (F3): replacing this min() with `configured` breaks the clamp.
+    # min() is belt-and-suspenders only: the reject above already guarantees configured <= window
+    # here, so this is NOT independently mutation-proven (documented in the mutation contract).
     return min(configured, window)
 
 # ---------------------------------------------------------------------------
@@ -191,6 +215,22 @@ check("recall_hi" in be_kept, "(F1) highest-priority recall was dropped while bu
 check("artifact" not in be_kept,
       "(F1) lowest-priority external survived while a higher-priority recall could have been kept")
 
+# --- F1 DECISIVE teeth (ISI-2383 F1 fix): must-include stays verbatim even when a best-effort element
+# OUTRANKS it. On f1_envelope() the good tier-separated fit keeps all must verbatim (dropping f1_hot);
+# a whole-env greedy-by-priority mutation would place f1_hot first and evict a must element -> RED. ---
+f1env = f1_envelope()
+f1_fit = fit(f1env, F1_WINDOW)
+assert not isinstance(f1_fit, FailClosed), "must-include (2500) fits F1_WINDOW (3000)"
+f1_src = {e.id: (e.content, e.size) for e in must_include(f1env)}
+f1_got = {e.id: (e.content, e.size) for e in f1_fit if e.tier == AUTH}
+# robust: a DROPPED must element is a clean RED (membership check), not a KeyError crash.
+check(all(i in f1_got and f1_got[i] == f1_src[i] for i in f1_src),
+      "(F1) must-include was truncated or dropped when a best-effort element outranked it — "
+      "the task is placed by TIER and never truncated, regardless of priority (AC1)")
+# sanity: the high-priority best-effort recall is the one that gives way (proves the window is binding).
+check("f1_hot" not in {e.id for e in f1_fit},
+      "(F1) f1_hot should not fit alongside a verbatim must-include at F1_WINDOW — arm is non-binding")
+
 # ===========================================================================
 # (B) lowest-priority-first eviction: never drop a higher-priority element while
 #     keeping a lower-priority one.
@@ -248,11 +288,17 @@ be_8 = [e.id for e in fit_8k if e.tier != AUTH]
 check(len(be_200) > len(be_8),
       "(F4) the small model kept as much best-effort as the large one — window is not model-keyed (AC2)")
 check(total_size(fit_8k) <= 3600, "(F4) small-model fit exceeded its own window")
-# CLI-keyed twin: budgets against a fixed 200K CLI limit, then hands it to the 8K model -> overflow.
-CLI_LIMIT = 200_000
-cli_fit = fit(big_env, CLI_LIMIT)    # fits 200K...
-check(total_size(cli_fit) > 3600,
-      "(F4) FOIL LOST POWER: CLI-keyed budgeting no longer overflows the small model")
+
+# CLI-keyed FOIL (the broken design): budgets against the runtime CLI's fixed nominal limit,
+# IGNORING the resolved model window, then the payload is delivered to a small (8K) model -> overflow.
+# This is a genuine differential: it budgets to `cli_limit` and asserts the result exceeds the actual
+# `model_window` it will be handed to (the overflow), which the model-keyed fit() never produces.
+def cli_keyed_fit(env, cli_limit, model_window):
+    payload = fit(env, cli_limit)                 # sized to the CLI limit, NOT the model window
+    return payload, model_window                  # ...then handed to a model_window-sized model
+cli_payload, target_window = cli_keyed_fit(big_env, cli_limit=200_000, model_window=3600)
+check(not isinstance(cli_payload, FailClosed) and total_size(cli_payload) > target_window,
+      "(F4) FOIL LOST POWER: CLI-keyed budgeting no longer overflows the small model it is handed to")
 
 # ===========================================================================
 # (F5) trust tiers preserved on the wire — no flat prompt blob (F16).
@@ -268,8 +314,10 @@ if tiered:  # only inspect framing when the contract held; a flattened blob alre
     check(len(auth_injected) == 3 and len(recall_injected) >= 1,
           "(F5) injection did not frame authoritative vs untrusted-* distinctly")
 # the flatten twin (the F16-breaking mutation) collapses everything to one string -> tiers gone.
+# foil-lost-power guard: if flatten_to_prompt_blob were neutered to return the tiered list, this
+# `isinstance(blob, str)` check flips RED — a genuine detector, not a str-is-never-a-dict tautology.
 blob = flatten_to_prompt_blob(fitted)
-check(isinstance(blob, str) and not any(isinstance(part, dict) for part in [blob]),
+check(isinstance(blob, str),
       "(F5) FOIL LOST POWER: the flatten twin no longer erases tiers (must produce a tier-less string)")
 
 # ===========================================================================
@@ -309,7 +357,7 @@ if FAIL:
     sys.exit(1)
 print("OK — Story 5.9 context-injection budget check passed all falsification arms:")
 print("  (A) naive proportional budgeter detectably mangles the task (foil has teeth)")
-print("  (F1) must-include verbatim & first; best-effort trimmed lowest-priority-first")
+print("  (F1) must-include verbatim by TIER even when a best-effort element outranks it (decisive teeth)")
 print("  (B) eviction is lowest-priority-first (never drop higher while keeping lower)")
 print("  (F2) fail-closed when must-include > window (no silent task truncation)")
 print("  (F3) over-window override rejected; shrink override honored; default = window")

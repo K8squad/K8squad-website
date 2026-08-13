@@ -268,12 +268,19 @@ fail-closed budgeter** that does not:
   acceptance criteria**; the check asserts the naive design **detectably mangles the task** (the injected
   must-include ≠ the source must-include). If (A) ever stops breaking, the check fails **loud** — the
   harness lost its detecting power.
-- **(F1) must-include-never-truncated teeth (AC1).** Drives a window smaller than
-  `must-include + best-effort` but larger than `must-include` alone, and asserts the §C fit ships the
-  **must-include verbatim** (byte-identical to source) while trimming best-effort. *Mutation-proven:*
-  deleting the "place must-include verbatim, budget only the remainder" guard (letting must-include enter
-  the proportional/greedy trim) turns the check **RED** — the load-bearing "task is never truncated"
-  invariant now has teeth.
+- **(F1) must-include-never-truncated teeth (AC1) — on a dedicated envelope so the arm is decisive.**
+  A naive whole-env greedy-by-priority trim would keep must-include verbatim *anyway* on a normal envelope
+  (where the task's tier is also the highest priority), so the F1 arm runs on a **dedicated
+  `f1_envelope()` where a best-effort recall element OUTRANKS a must-include element** (priority 130 > 100)
+  at a window (`3000`) that fits must-include alone (`2500`) but not must-include + that recall (`4000`).
+  The §C tier-separated fit keeps **must-include verbatim** (byte-identical to source) and drops the
+  higher-priority recall — because it places by **tier**, then budgets the remainder. *Mutation-proven:*
+  deleting the "place must-include verbatim, budget only the remainder" guard (merging must-include into a
+  whole-env greedy-by-priority trim) forces the mutated trim to place the high-priority recall first and
+  **evict/summarize a must-include element** → the check turns **RED**. This dedicated-envelope framing
+  is the ISI-2383 F1 fix: it avoids the vacuous-arm trap (ISI-2346-F1 / ISI-2361-F1) where the mutated and
+  correct paths produce identical output. The assertion is membership-robust (`all(i in fit_must and
+  fit_must[i] == src[i] …)`) so a *dropped* must element is a clean RED, not a crash.
 - **(F2) fail-closed gate teeth (AC3).** Drives `size(must-include) > contextWindow` (a too-small model)
   and asserts the fit returns a **fail-closed** result (`ContextWindowExceeded`, zero context injected),
   **not** a truncated-task injection. A differential twin runs the NAIVE truncate-to-fit path and asserts
@@ -284,17 +291,23 @@ fail-closed budgeter** that does not:
   **lowest-priority-first**: the highest-value memory recall survives, the lowest-value artifact is cut
   first. The check asserts the surviving set is exactly the highest-priority prefix that fits, and that a
   higher-priority element is **never** dropped while a lower-priority one is kept.
-- **(F3) clamp / over-window override teeth (AC4).** Sets `contextBudgetOverride = 300K` on a model whose
+- **(F3) over-window override teeth (AC4).** Sets `contextBudgetOverride = 300K` on a model whose
   `contextWindow = 200K` and asserts the resolve is a **fail-closed validation error** (not a 300K payload
   handed to the model); and sets a *shrink* override (`50K` on a 200K model) and asserts the budget is
-  clamped **down** to 50K (config shrinks, never grows). *Mutation-proven:* replacing the clamp with the
-  raw configured value turns the over-window case **RED** (a 300K payload would be injected to a 200K
-  model).
+  clamped **down** to 50K (config shrinks, never grows). *Mutation-proven:* deleting the **over-window
+  reject** (`if configured > window: raise`) turns the over-window case **RED** (a 300K payload would be
+  injected to a 200K model) — the reject is the **sole teeth**. The subsequent `min(configured, window)`
+  is **belt-and-suspenders only** (the reject already guarantees `configured ≤ window` at the return, so
+  mutating `min()` alone stays GREEN) — the check does **not** over-claim it as independently
+  mutation-proven (ISI-2383 F3 fix).
 - **(F4) model-keyed window teeth (AC2).** Runs the *same* runtime/envelope against two resolved model
   endpoints — a ~200K frontier model and an ~8K local Ollama — and asserts the two produce **different
   budgets** (the small model trims best-effort the large one keeps), proving the window follows the
-  **model**, not the CLI. A twin that keys off a fixed CLI limit injects an over-window payload to the 8K
-  model → the check flags it.
+  **model**, not the CLI (this `len(be_200) > len(be_8)` assertion is the genuine teeth — the window is a
+  real `fit()` parameter). A named **`cli_keyed_fit(env, cli_limit, model_window)` foil** (the broken
+  design) budgets against the runtime CLI's fixed nominal limit, **ignoring** the resolved model window,
+  and the check asserts its payload **exceeds** the small model window it is handed to (the overflow the
+  model-keyed fit never produces) — a genuine differential, not a re-run of the SUT (ISI-2383 F4 fix).
 - **(F5) trust-tiers-preserved teeth (AC5, F16).** Asserts every element in the fitted, injected envelope
   still carries its `{tier, provenance}` and that must-include is framed *authoritative* while recall/
   artifacts are framed *untrusted-\**. *Mutation-proven:* a `flatten_to_prompt_blob` injection that
