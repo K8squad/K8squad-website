@@ -55,17 +55,21 @@ class World:
 
     def create(self, wid, by, priority=0, blocked_by=None):
         self.items[wid] = dict(state="backlog", created_by=by, holder=None,
-                               fence=None, priority=priority, blocked_by=blocked_by, handoff=None)
+                               fence=None, priority=priority, blocked_by=blocked_by,
+                               handoff=None, custody_via=None)
 
     def open_for_dispatch(self, wid):
         self.items[wid]["state"] = "open"
 
     def claim(self, wid, who):
-        """§6.2 conditional acquire: only an unheld/open item, bumps the monotonic fence."""
+        """§6.2 conditional acquire: only an unheld/open item, bumps the monotonic fence.
+        Stamps `custody_via='conditional_acquire'` so a *fresh higher fence alone* can't
+        be forged by a direct custody push — AC4 requires the acquire, not just fc>fb."""
         it = self.items[wid]
         assert it["holder"] is None and it["state"] in ("open", "backlog"), f"{wid} not claimable by {who}"
         self._fence += 1
         it["holder"], it["fence"], it["state"] = who, self._fence, "in_progress"
+        it["custody_via"] = "conditional_acquire"
         return it["fence"]
 
     def complete(self, wid, who, handoff):
@@ -113,6 +117,19 @@ def naive_after_B(w, wb, fb):
     return rec, it["fence"]
 
 
+def refence_handoff_after_B(w, wb):
+    """SUBTLER custody shortcut: the item is even coordinator-authored and gets a
+    *fresh higher fence* — but custody is PUSHED directly to C without ever going
+    open → §6.2 conditional acquire. A P3 check that only asserts `f_c > f_b` would
+    green-light this. It must be caught by `custody_via != conditional_acquire`."""
+    coord_choice = "WD_rate_limit_guard"
+    w.create(coord_choice, by=COORD, priority=9)
+    w._fence += 1                                   # fresh fence bump (NOT inherited)
+    it = w.items[coord_choice]
+    it["holder"], it["fence"], it["state"] = C, w._fence, "in_progress"
+    return coord_choice, it["fence"]
+
+
 def spine_after_B(w, wb):
     """§2.9 design: B did nothing beyond emitting to the record (run_B). The
     COORDINATOR now independently READS the record, DECIDES (overriding B's
@@ -147,7 +164,23 @@ def check_naive():
           f"C.fence={fc} (==B.fence {fb}? {custody_inherited})")
     print(f"[model]        -> back-channel={back_channel} b_authored={b_authored} "
           f"custody_inherited={custody_inherited} (all must be True: teeth)")
-    return violates
+
+    # Second, subtler teeth arm: a coordinator-authored, fresh-higher-fence dispatch
+    # whose custody was PUSHED to C directly (no conditional acquire). `f_c > f_b` is
+    # True here, so a fence-only P3 check would MISS it — the acquire stamp catches it.
+    w2 = World()
+    w2.create("WB", by=COORD); w2.open_for_dispatch("WB")
+    fb2, _ = run_B(w2, "WB")
+    disp2, fc2 = refence_handoff_after_B(w2, "WB")
+    it2 = w2.items[disp2]
+    fence_looks_fresh = fc2 > fb2                          # would fool a fence-only check
+    custody_forged = it2["custody_via"] != "conditional_acquire"   # but the acquire never happened
+    refence_caught = fence_looks_fresh and custody_forged
+    print(f"[model] NAIVE2 (coord-authored + fresh fence but custody PUSHED, no acquire): "
+          f"C.fence={fc2}(>{fb2}? {fence_looks_fresh}) custody_via={it2['custody_via']!r}")
+    print(f"[model]        -> fence_looks_fresh={fence_looks_fresh} custody_forged={custody_forged} "
+          f"(both True: the fresh-fence shortcut is detectable, not just fence-copy)")
+    return violates and refence_caught
 
 
 def check_spine():
@@ -159,7 +192,9 @@ def check_spine():
     no_back_channel = len(w.messages) == 0
     coord_authored = it["created_by"] == COORD
     overrode = disp != rec                                # dispatched != B's recommendation
-    fresh_custody = fc > fb                               # new monotonic acquire, not inherited
+    # AC4 crux: not merely fc>fb (a direct push can forge that) — custody MUST have
+    # come through the §6.2 conditional acquire on an open item.
+    fresh_custody = fc > fb and it["custody_via"] == "conditional_acquire"
     still_learned = learned                               # feedback still reached the coordinator
     ok = no_back_channel and coord_authored and overrode and fresh_custody and still_learned
     print(f"[model] §2.9   (read-of-record -> coordinator decides -> fenced dispatch): "
@@ -174,7 +209,8 @@ def main():
     naive_violates = check_naive()
     spine_ok = check_spine()
     if not naive_violates:
-        print("[model] FAIL — naive design did NOT exhibit a back-channel; the check lost its teeth.")
+        print("[model] FAIL — a naive design was NOT flagged (missing back-channel OR the "
+              "fresh-fence custody shortcut slipped through); the check lost its teeth.")
         return 1
     if not spine_ok:
         print("[model] FAIL — §2.9 design broke a property (back-channel / B-authored / custody / no-feedback).")

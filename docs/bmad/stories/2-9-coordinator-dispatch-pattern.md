@@ -157,6 +157,8 @@ mirror (§6.6), never a custody-bearing record.
 ```
 [model] NAIVE  (B messages A + B drives dispatch + hands lease): messages=1 next.created_by='agentB' C.fence=1 (==B.fence 1? True)
 [model]        -> back-channel=True b_authored=True custody_inherited=True (all must be True: teeth)
+[model] NAIVE2 (coord-authored + fresh fence but custody PUSHED, no acquire): C.fence=2(>1? True) custody_via=None
+[model]        -> fence_looks_fresh=True custody_forged=True (both True: the fresh-fence shortcut is detectable, not just fence-copy)
 [model] §2.9   (read-of-record -> coordinator decides -> fenced dispatch): messages=0 next.created_by='coordinator' B.rec='WC_token_refresh' dispatched='WD_rate_limit_guard' C.fence=2(>1? True)
 [model]        -> no_back_channel=True coord_authored=True overrode_recommendation=True fresh_custody=True learned_from_record=True
 [model] PASS — naive detectably back-channels+transfers custody; §2.9 keeps zero P2P, coordinator authors+overrides+prioritizes, C claims fresh, and the coordinator still learns B's results from the record.
@@ -168,7 +170,12 @@ mirror (§6.6), never a custody-bearing record.
   both variants — B always emits its results to the record; the variants differ **only** in what happens
   *after*. The **naive** variant has B message the coordinator, author + dispatch the next item per its own
   `recommended_next`, and hand C its own lease — proving all three violations are *detectable*
-  (non-empty channel, `created_by = B`, inherited fence). The **§2.9** variant has the coordinator
+  (non-empty channel, `created_by = B`, inherited fence). A **second, subtler naive arm** (`NAIVE2`)
+  proves the custody guard is not fence-number-deep: a **coordinator-authored** item with a **fresh,
+  strictly-higher fence** whose custody was **pushed directly to C** (never opened, never claimed via
+  the §6.2 conditional acquire) would satisfy a naive `f_c > f_b` test — so the check stamps
+  `custody_via = "conditional_acquire"` inside `claim()` and requires it, catching the fence-bump
+  shortcut a fence-only assertion would miss (AC4/R13 crux). The **§2.9** variant has the coordinator
   independently **read** the record/recall, **override** B's recommendation with its own choice + priority,
   author the next item (`created_by = coordinator`), and re-dispatch it **open** so C **claims fresh** at a
   higher fence. It exits non-zero if the naive variant *stops* exhibiting a back-channel (teeth lost) or the
