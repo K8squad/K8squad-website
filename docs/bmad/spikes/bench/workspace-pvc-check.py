@@ -80,7 +80,8 @@ class Reconciler:
         self.pvcs = {}                 # project -> WorkspacePVC (the durable resource)
         self.worktrees = {}            # run_id -> working-tree dict (a view onto the checkout)
         self._shared_dirs = {}         # project -> the ONE shared working dir (naive/no-worktree arm)
-        self._lease_holder = None      # project -> run_id currently holding the workspace lease
+        self._lease_holder = None      # run_id currently holding the workspace lease (None = free)
+        self._lease_wait = []          # FIFO of (run_id, project) blocked on the lease (serialized behind holder)
         self._exclusive_active = {}    # project -> run_id inside an exclusive-write critical section
         self.overlaps = []             # recorded exclusive-write overlaps on the shared cache (AC3)
 
@@ -119,25 +120,50 @@ class Reconciler:
         return self.worktrees[run_id].get(path)
 
     # --- Exclusive-write op against the SHARED cache (AC3) -----------------
-    def exclusive_write(self, run_id, project, key, value):
-        """dependency install / index rebuild — mutates the shared cache. §9.4 requires a workspace
-        lease so these serialize; the naive arm runs them concurrently and corrupts the cache."""
-        pvc = self.pvcs[project]
+    #
+    # The critical section is split into begin/end so a SINGLE fixed interleave schedule
+    # (r1.begin -> r2.begin -> r1.end -> r2.end, driven UNCONDITIONALLY by the checker) exercises
+    # the SUT's own lease logic: it is the lease that decides serialize-vs-overlap, not the checker.
+    # (This is the ISI-2346-F1 teeth pattern — the checker must not branch on the defense it tests.)
+    def begin_exclusive(self, run_id, project):
+        """Enter an exclusive-write critical section on the shared cache.
+        §9.4/§6.3: with the lease on, a Run that finds the lease held by ANOTHER Run does not enter
+        concurrently — it blocks (queues) behind the holder and only enters when end_exclusive wakes
+        it. With no lease it enters immediately, so overlapping critical sections are recorded (AC3)."""
+        if self.lease_exclusive and self._lease_holder not in (None, run_id):
+            # workspace lease held by another Run: serialize — queue, do NOT enter the section now.
+            if run_id not in (w for w, _ in self._lease_wait):
+                self._lease_wait.append((run_id, project))
+            return
+        self._enter_exclusive(run_id, project)
+
+    def _enter_exclusive(self, run_id, project):
         if self.lease_exclusive:
-            # workspace lease (§6.3 primitive): block until no other Run holds it — serialized.
-            if self._lease_holder not in (None, run_id):
-                raise Violation(f"{run_id}: lease held by {self._lease_holder} — model must serialize")
             self._lease_holder = run_id
-        # enter critical section
         if project in self._exclusive_active and self._exclusive_active[project] != run_id:
             # another Run is mid-exclusive-write on the shared cache at the same time -> corruption.
-            self.overlaps.append((self._exclusive_active[project], run_id, key))
+            self.overlaps.append((self._exclusive_active[project], run_id))
         self._exclusive_active[project] = run_id
-        pvc.cache[key] = value                          # the durable, cross-Run artifact
-        # leave critical section
-        del self._exclusive_active[project]
+
+    def end_exclusive(self, run_id, project, key, value):
+        """Leave the critical section: commit the durable artifact, release the lease, and admit the
+        next Run blocked behind it (which only now enters its section — after this one has left)."""
+        self.pvcs[project].cache[key] = value           # the durable, cross-Run artifact
+        if self._exclusive_active.get(project) == run_id:
+            del self._exclusive_active[project]
         if self.lease_exclusive:
             self._lease_holder = None
+            for i, (w_run, w_proj) in enumerate(self._lease_wait):
+                if w_proj == project:
+                    self._lease_wait.pop(i)
+                    self._enter_exclusive(w_run, w_proj)  # holder released -> waiter enters now, no overlap
+                    break
+
+    def exclusive_write(self, run_id, project, key, value):
+        """Convenience wrapper for a sequential (non-interleaved) exclusive write: begin then end in
+        one call. Used where lifetimes do NOT overlap (e.g. AC1's single warming Run)."""
+        self.begin_exclusive(run_id, project)
+        self.end_exclusive(run_id, project, key, value)
 
     def read_cache(self, project, key):
         return self.pvcs[project].cache.get(key)
@@ -192,22 +218,21 @@ def check_ac2_worktree(make_reconciler):
 
 
 def check_ac3_lease(make_reconciler):
-    """§9.4/§6.3: concurrent exclusive-writes on the SHARED cache must not overlap (lease serializes)."""
+    """§9.4/§6.3: concurrent exclusive-writes on the SHARED cache must not overlap (lease serializes).
+
+    ONE fixed interleave schedule, identical for every arm — the checker does NOT branch on the
+    lease flag. r1 opens its critical section, then (while r1 is still inside) r2 attempts to open
+    its own; then r1 leaves, then r2 leaves. Whether r2's begin actually enters concurrently or is
+    made to wait behind r1 is decided ENTIRELY by the SUT's lease code. So deleting that lease logic
+    (V-LEASE-DEAD) lets r2 in on top of r1 -> overlap -> AC3 RED. That is the teeth."""
     r = make_reconciler()
     proj = "acme/api"
-    # Two concurrent Runs each rebuild the shared index. Model the interleave: r1 enters its critical
-    # section, and while it is inside, r2 attempts its exclusive write.
     r.start_run("r1", proj)
-    r.start_run("r2", proj)
-    if r.lease_exclusive:
-        # lease serializes: r1 fully completes its exclusive op, then r2 does — no overlap by construction.
-        r.exclusive_write("r1", proj, "index.db", "built-by-r1")
-        r.exclusive_write("r2", proj, "index.db", "built-by-r2")
-    else:
-        # no lease: interleave the critical sections to model true concurrency on the shared cache.
-        r._exclusive_active[proj] = "r1"               # r1 enters and is still inside...
-        r.exclusive_write("r2", proj, "index.db", "built-by-r2")   # ...r2 enters concurrently -> overlap
-        r._exclusive_active.pop(proj, None)
+    r.start_run("r2", proj)                             # concurrent — r2's lifetime overlaps r1's
+    r.begin_exclusive("r1", proj)                       # r1 enters and is still inside...
+    r.begin_exclusive("r2", proj)                       # ...r2 attempts to enter concurrently (lease decides)
+    r.end_exclusive("r1", proj, "index.db", "built-by-r1")   # r1 leaves (admits any Run queued behind it)
+    r.end_exclusive("r2", proj, "index.db", "built-by-r2")   # r2 leaves
     r.finish_run("r1", proj)
     r.finish_run("r2", proj)
     ok = len(r.overlaps) == 0
