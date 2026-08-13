@@ -23,13 +23,27 @@ The check had no `audit_log`/`outbox` at all — AC6's crux (audit §6.5 + event
 
 **Fix (applied):** `DurableStore.advance` now co-writes an audit row + outbox event **inside** the committed branch. `check_durable` asserts (a) exactly one audit + one outbox per committed transition (`== len(STEPS)-1`, no double-audit across failover, no transition without a trail) and (b) the zombie stale-fence pass adds **zero** audit/outbox rows (no phantom event).
 
-### F3 (MED, OPEN → follow-up) — AC5 retry lap + claiming_sandbox bind idempotency are prose-only
+### F3 (MED, **REMEDIATED** — ISI-2350) — AC5 retry lap + claiming_sandbox bind idempotency are prose-only
 `STEPS` is a linear happy path ending at `succeeded`. Never exercised: (a) the **`Failed → Claiming` retry lap** (§8 + FR-A5) — the *trickiest* re-entry, because after a fence-first reclaim (§6.3) the second lap must re-run `claiming_sandbox` **idempotently**; (b) **Paused** non-terminal classification (AC5); (c) the `claiming_sandbox` step has **no modeled side effect**, so the story's "sandbox bind keyed by `run_id`, re-entry reattaches, never double-provisions" (story:122-125) is unfalsifiable even though a crash IS injected at that boundary. Design prose is sound; this is a coverage gap. Not blocking (design is arch-faithful), but should close before the machine ships. **Filed as child issue for falsification hardening during dev.**
 
-### F4 (LOW, OPEN → note for dev) — AC4 "fencing is safety" is precise only for the *reclaim* (bumped-fence) zombie
+**Closed by ISI-2350:** the check now models a run_id-keyed sandbox-bind effect at `claiming_sandbox`
+(asserted exactly-once across a crash@claiming_sandbox mid-phase re-drive AND a Failed→Claiming retry
+lap), a `check_retry_lap()` arm driving Lap1→Failed→(§6.3 fence-first reclaim)→Lap2 with the bind
+reattaching (provisioned once, each lap a genuine new agent attempt), and a `check_paused_classifier()`
+asserting `Paused`/`Paused(rate_limited)` are non-terminal resumable. All three proven to fail loud when
+their mechanism is neutered.
+
+### F4 (LOW, **REMEDIATED** — ISI-2350) — AC4 "fencing is safety" is precise only for the *reclaim* (bumped-fence) zombie
 On a **pure leader-election split-brain** (leader crashes, claim *not* reclaimed → `fence_token` unchanged), the old leader and the failover leader share the **same** fence, so fencing does **not** distinguish them — the conditional step-advance CAS (`WHERE reconcile_step = :expected`, AC3) is what prevents double-advance there, not fencing. The prose is complete (AC3 names the CAS) but AC4's emphasis could lead a dev to think fencing alone covers split-brain and drop the step-CAS. The check only ever tests a *lower*-fence zombie (`fence=0`), never a *same*-fence competitor; model uses `fence >= self.fence` where arch §6.3:711 is equality `fence_token = :myFence`. Recommend one line in AC4 crediting the step-CAS for the same-fence case, and a same-fence concurrent-advance arm in the check.
+
+**Closed by ISI-2350:** AC4 now credits the step-CAS explicitly for the same-fence (non-reclaimed)
+split-brain and reserves fencing for the reclaim (bumped-fence) zombie. The check's `advance` guard was
+tightened from `fence >= self.fence` to the arch-faithful equality `fence == self.fence` (§6.3:711),
+the fence bump moved into an explicit `reclaim()` (§6.3 fence-first), and a `check_same_fence_split_brain()`
+arm added: two equal-fence leaders race and the step-CAS serializes them to exactly one advance (removing
+the step-CAS makes it fail loud; removing the fence-equality guard makes the reclaim-zombie arm fail loud).
 
 ## Disposition
 - **Story → APPROVE for dev.** Design is arch-faithful (§8/§5.1/§5.2/§6.3/§6.4) and internally consistent on all four load-bearing decisions.
 - **Falsification** strengthened: F1 (mid-phase crux crash → dedup/upsert now exercised) + F2 (AC6 audit/outbox co-commit + no-phantom-on-zombie). Passes; proven to fail loud when either mechanism is removed.
-- **F3 + F4** → child issue (falsification hardening: retry lap, claiming-bind idempotency, Paused classifier assert, same-fence split-brain arm) assigned to Developer to close alongside implementation + the real-Postgres integration test (Story 2.7 gate).
+- **F3 + F4** → child issue (falsification hardening: retry lap, claiming-bind idempotency, Paused classifier assert, same-fence split-brain arm) assigned to Developer to close alongside implementation + the real-Postgres integration test (Story 2.7 gate). **CLOSED by ISI-2350** — all four arms added (D same-fence, E retry lap + run_id-keyed bind, F Paused classifier; C extended to `claiming_sandbox`), each proven to fail loud when its mechanism is neutered; AC4 prose corrected; `advance` guard made arch-faithful (equality + explicit §6.3 reclaim). The real-Postgres integration test remains the Story 2.7 gate (unchanged).

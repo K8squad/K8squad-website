@@ -175,9 +175,14 @@ Re-entering an already-completed phase is a **no-op**, not a re-execution.
 **AC4 — leader-election failover continues from durable state; fencing prevents zombie double-drive.**
 Given a leader controller that dies mid-Run, When the failover leader takes the lease, Then it re-reads
 the durable `reconcile_step` + fence and **continues the Run from that point** (no restart from
-`Pending`, no lost progress). And if a **zombie old leader** briefly issues a stale mutation, its
-**stale fence token loses the conditional UPDATE** (§6.3) — so correctness does **not** depend on
-leader-election being perfectly single-writer; leader-election is availability, **fencing is safety**.
+`Pending`, no lost progress). And if a **zombie old leader** whose claim was **reclaimed** (§6.3
+fence-first bump) briefly issues a stale mutation, its **bumped-out fence token loses the equality
+guard** `fence_token = :myFence` (§6.3) — so correctness does **not** depend on leader-election being
+perfectly single-writer; leader-election is availability, **fencing is safety**. And on a **pure
+split-brain where the claim is *not* reclaimed** (old + failover leader share the **same** fence),
+fencing cannot distinguish them — there the **conditional step-advance CAS** `WHERE reconcile_step =
+:expected` (AC3) is what serializes the two equal-fence writers so exactly one advance commits. Fencing
+covers the reclaim zombie; the step-CAS covers the same-fence competitor.
 
 **AC5 — terminal classification, retry, and Paused reachability.**
 Given a Run reaches `Succeeded`, `Failed`, or `Cancelled`, When it is terminal, Then no further
@@ -204,14 +209,27 @@ crash-injection falsification (same shape as the Story 2.2 check), not a happy-p
   double-dispatches a second agent execution** (and double-collects). The check asserts the naive design
   **detectably breaks** — proving the harness can catch a double-drive.
 - **(B) §6.4 DURABLE reconciler** persists `reconcile_step` to a simulated Postgres, uses the
-  deterministic `a2a_task_id = run_id` + dedup, content-addressed artifact upsert, and conditional
-  step-advance UPDATE guarded by fence. Injected crash at **every** phase boundary (and a zombie-leader
-  stale-fence mutation) → the check asserts **exactly-one agent execution, exactly-one artifact set,
-  exactly-one terminal transition, zero lost progress** across all crash points.
+  deterministic `a2a_task_id = run_id` + dedup, content-addressed artifact upsert, run_id-keyed sandbox
+  bind, and conditional step-advance UPDATE guarded by fence. Injected crash at **every** phase boundary
+  (and a zombie-leader stale-fence mutation) → the check asserts **exactly-one agent execution,
+  exactly-one artifact set, exactly-one sandbox provision, exactly-one terminal transition, zero lost
+  progress** across all crash points.
+- **(C) mid-phase crux** — crash *after* an effect fires but *before* its step commits, at
+  `claiming_sandbox` / `dispatching` / `collecting`: the failover re-drive is suppressed by the
+  run_id-keyed bind / dedup / upsert (the only window that exercises those idempotency mechanisms).
+- **(D) same-fence split-brain** (AC4) — two **equal-fence** leaders race to advance the same step;
+  the check asserts the **step-CAS** (`WHERE reconcile_step = :expected`), not fencing, serializes them
+  to exactly one advance (removing the step-CAS makes it fail loud).
+- **(E) Failed→Claiming retry lap** (§8/FR-A5, AC5) — after a §6.3 fence-first reclaim, lap 2 re-runs
+  `claiming_sandbox`; the check asserts the run_id-keyed sandbox bind **reattaches** (provisioned once
+  across both laps) while each lap is a genuine new agent attempt.
+- **(F) Paused classifier** (AC5) — asserts `Paused` / `Paused(rate_limited)` are **non-terminal
+  resumable** (reachable for a later rate-limit story), succeeded/failed/cancelled terminal.
 
 If (A) ever stops breaking (no double-drive seen), the check fails **loud** — the harness lost its
-detecting power and (B) proves nothing. Exits non-zero if (B) ever double-dispatches, double-collects,
-loses progress, resumes from `Pending`, or lets a stale-fence zombie mutation win.
+detecting power and (B) proves nothing. Exits non-zero if (B)–(F) ever double-dispatches,
+double-collects, double-provisions, loses progress, resumes from `Pending`, lets a stale-fence zombie
+mutation win, lets an equal-fence competitor double-advance, or makes `Paused` unreachable.
 
 ## Out of scope (owned elsewhere)
 
