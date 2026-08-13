@@ -151,10 +151,14 @@ def stale_fence(guard):
     assert f2 > f1
     lease_live_before = co.claim["lease_expires_at"]
     r = co.renew("A", f1)                         # zombie renews with STALE fence
+    audit_after_zombie, outbox_after_zombie = len(co.audit), len(co.outbox)
     live_r = co.renew("A", f2)                    # the live re-dispatch renews normally
     return {"f_stale": f1, "f_live": f2, "zombie_returned": r,
             "zombie_leaked": r is not None,
             "live_lease_moved_by_zombie": co.claim["lease_expires_at"] != lease_live_before or r is not None,
+            # AC6: the zombie's REJECTED renew must have written 0 audit + 0 outbox (measured
+            # before the live renew appends its own) — the (b) reject path is audit-silent too.
+            "zombie_audit": audit_after_zombie, "zombie_outbox": outbox_after_zombie,
             "live_renew_ok": live_r is not None}
 
 
@@ -220,6 +224,8 @@ def main():
         "TEETH LOST: holder-only guard must let a same-principal stale-fence zombie renew"
     assert not b_full["zombie_leaked"], \
         "FENCING BROKEN: a stale-fence renew must be a no-op even when the principal matches"
+    assert b_full["zombie_audit"] == 0 and b_full["zombie_outbox"] == 0, \
+        "rejected stale-fence renew must not audit (AC6 — the (b) reject path is audit-silent)"
     assert b_full["live_renew_ok"], "the live current-fence holder must still renew"
     print(f"[model] (b) stale-fence renew:  holder→LEAK (zombie extended live)  fence→reject   full→reject")
 
