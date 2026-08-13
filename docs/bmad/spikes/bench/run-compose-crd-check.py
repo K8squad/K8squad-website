@@ -15,11 +15,14 @@ gated *authoring surface*, so its whole job is to compose declarative CRs correc
   * it composes DECLARATIVE CRs — it does NOT edit orchestration code, execute anything, or become a general
     IDE / code editor / dashboard. The console is a legibility + composition surface, NOT an IDE (R6 scope
     guard, PRD §11.5 / epics Epic-8 objective). The output is CRs; the reconciler acts (ADR-002);
-  * compose is a MUTATE affordance gated by per-project role (§12.3/15.3/8.16): `maintainer`/`admin` compose
-    CRDs in scope; `contributor` and `viewer` get NO compose affordance (absent from the DOM, not
-    display:none) AND the API denies a forged compose — the server re-checks every call. NOTE the gate is
-    STRICTER than kill: §15.3 grants compose to `maintainer` only ("maintainer = full control … compose
-    CRDs"); `contributor` may create tickets + kill OWN Runs but may NOT compose CRDs;
+  * compose is a WRITE-tier mutate affordance gated by per-project role (arch §12.3/8.16): `maintainer`,
+    `admin`, AND `contributor` compose CRDs in scope; only `viewer` gets NO compose affordance (absent from
+    the DOM, not display:none) AND the API denies a forged compose — the server re-checks every call. The
+    maintainer↔contributor delta is PROJECT MEMBERSHIP/SETTINGS ADMINISTRATION, NOT CRD composition: arch
+    §12.3 (ADR-033/035, the authoritative "one enforcement point, every surface" wall) grants `contributor`
+    "compose (create/edit CRDs, start/kill Runs)" — a `contributor` is project-scoped WRITE. (The epics prose
+    enumeration "Story 15.3" is looser and omits contributor-compose; where it conflicts with §12.3 the
+    authoritative wall governs. Arch §15 is the Coordination-Spine risk section — there is no arch §15.3.);
   * composing an Agent binds runtime + role + skills + a CREDENTIAL REF (`secret://user/name`), NEVER an
     inline credential value — the secret value appears in NO sink (form state, the YAML mirror, the CR spec,
     the apiserver payload). CRs carry Secret REFS only (NFR-SEC3 / §11 ADR-010, Story 5.4 injection);
@@ -34,7 +37,7 @@ gated *authoring surface*, so its whole job is to compose declarative CRs correc
 
 A "the compose form rendered and a CR got created" demo passes even if the form ships its own looser
 validation the server never re-runs, POSTs straight at the apiserver/kube, turns into a code editor, inlines
-the credential value, lets a viewer compose, drifts the YAML from the applied CR, or accepts arbitrary kinds.
+the credential value, lets a VIEWER compose, drifts the YAML from the applied CR, or accepts arbitrary kinds.
 So this is a DIFFERENTIAL check over the COMPOSE-CRD DESIGN a console would ship. We first prove the NAIVE
 "raw compose editor" anti-pattern is DETECTED as violating every invariant (real teeth), then prove the
 §13/FR-F5 conformant design violates nothing.
@@ -50,12 +53,12 @@ Invariants (C1-C7, one per AC):
   C3  DECLARATIVE CRs, NOT AN IDE (R6 scope guard, ADR-002): the console composes DECLARATIVE CRs and applies
       them — it does NOT edit orchestration code, execute/run anything, or act as a general IDE / code editor
       / dashboard. A compose surface that edits code or executes has become the thing R6 forbids.
-  C4  RBAC MUTATE-AFFORDANCE GATE (the crux, §12.3/15.3/8.16): compose passes the deny-by-default wall and is
-      MAINTAINER-level. `maintainer`/`admin` → compose any kind in scope; `contributor` AND `viewer` → NO
-      compose affordance (absent from the DOM) AND the API denies a forged compose; out-of-scope →
-      existence-hidden; and the server RE-CHECKS every call (never client-trusted). Any wrong decision — a
-      visible contributor/viewer compose button, a contributor allowed to compose, or trusting the client —
-      breaks the gate.
+  C4  RBAC MUTATE-AFFORDANCE GATE (the crux, arch §12.3/8.16): compose passes the deny-by-default wall and is
+      a WRITE-tier affordance. `maintainer`/`admin`/`contributor` → compose any core kind in scope; only
+      `viewer` → NO compose affordance (absent from the DOM) AND the API denies a forged compose; out-of-scope
+      → existence-hidden; and the server RE-CHECKS every call (never client-trusted). Any wrong decision — a
+      visible viewer compose button, a viewer allowed to compose, or trusting the client's role claim — breaks
+      the gate. (The maintainer↔contributor delta is membership/settings admin, NOT compose — §12.3.)
   C5  CREDENTIAL IS A SECRET REF, NEVER INLINE (NFR-SEC3 / §11 ADR-010, Story 5.4): composing an Agent binds
       a per-user Secret REF (`secret://user/name`); the credential VALUE is never inlined into the form, the
       YAML mirror, the CR spec, or the apiserver payload. An inline credential value in any sink is a
@@ -69,21 +72,24 @@ Invariants (C1-C7, one per AC):
       DECLARATIVE revision applied through the apiserver (reconciler-observed), not an imperative out-of-band
       patch. Accepting an arbitrary kind or an imperative edit path is out of scope.
 
-Mutation-proof harness (no vacuous guard): `--mutate=<CLIENT_ONLY_VALIDATION|DIRECT_API|CODE_EDITOR|
-EXECUTES|VIEWER_AFFORDANCE|CONTRIB_COMPOSE|NO_RECHECK|INLINE_SECRET|YAML_DRIFT|ARBITRARY_KIND>` injects ONE
-single defect into the CONFORMANT §13/FR-F5 design; the check then goes RED with EXACTLY one violation (no
-guard shadows another; the ISI-2346-F1 vacuous-tooth class is excluded by construction). Baseline `python3
-run-compose-crd-check.py` exits 0; each `--mutate=NAME` exits 1 with exactly one violation.
+Mutation-proof harness (no vacuous guard): `--mutate=<SERVER_SKIP_VALIDATION|CLIENT_ONLY_VALIDATION|
+DIRECT_API|CODE_EDITOR|EXECUTES|VIEWER_AFFORDANCE|NO_RECHECK|INLINE_SECRET|YAML_DRIFT|EDITABLE_YAML|
+ARBITRARY_KIND|IMPERATIVE_EDIT>` injects ONE single defect into the CONFORMANT §13/FR-F5 design; the check
+then goes RED with EXACTLY one violation (each named guard is INDEPENDENTLY mutation-proven — one arm per
+guard, so no guard shadows another and the ISI-2346-F1 vacuous-tooth class is excluded by construction).
+Baseline `python3 run-compose-crd-check.py` exits 0; each `--mutate=NAME` exits 1 with exactly one violation.
 """
 
 import argparse
 import sys
 
-# --- role model (per-project, §15.3; global admin bypass, §12.3) -----------------------------------------
-# compose is a MAINTAINER-level mutate affordance: maintainer=any kind in scope, admin=fleet bypass.
-# NOTE: unlike kill (8.4), a `contributor` may NOT compose (§15.3: contributor = create tickets + kill OWN
-# Runs, view all; compose is reserved to maintainer/admin).
-COMPOSERS = {"maintainer", "admin"}          # admin = global_role=admin fleet bypass
+# --- role model (per-project, arch §12.3; global admin bypass) -------------------------------------------
+# compose is a WRITE-tier mutate affordance. arch §12.3 (ADR-033/035 — the authoritative RBAC wall) grants
+# `contributor` "compose (create/edit CRDs, start/kill Runs)": contributor is project-scoped WRITE. The
+# maintainer↔contributor delta is Project MEMBERSHIP/SETTINGS administration, NOT CRD composition. Only
+# `viewer` is read-only. (The epics prose enumeration "Story 15.3" omits contributor-compose and is looser;
+# §12.3 is authoritative where they conflict — see ISI-2461. Arch §15 is a different section entirely.)
+COMPOSERS = {"maintainer", "admin", "contributor"}   # write-tier: admin = global_role=admin fleet bypass
 CORE_KINDS = {"Team", "Agent", "Role", "Skill", "Project"}   # the exact FR-F5 set
 
 
@@ -91,30 +97,24 @@ def authorize_compose(design, caller_role, kind, in_scope):
     """The server-side compose authorization decision (re-checked on EVERY call, never client-trusted).
 
     Returns True iff the caller may apply a CR of `kind` in this scope. This is the SAME deny-by-default
-    §12.3 wall every surface passes — there is no console-specific authz path (r21).
+    §12.3 wall every surface passes — there is no console-specific authz path (r21). Write-tier roles
+    (maintainer/admin/contributor) compose; `viewer` is denied.
     """
     if not design["server_rechecks"]:
-        # NO_RECHECK: the API trusts the client's assertion instead of re-resolving membership → allow-all.
+        # NO_RECHECK: the API trusts the client's assertion instead of re-resolving membership → allow-all
+        # (a `viewer` slips through — the classic broken-access-control regression).
         return True
     if kind not in design["allowed_kinds"]:
         return False  # not a composable kind (C7 also guards this; the API must reject it regardless)
     if not in_scope:
         return False  # existence-hiding: out-of-scope Project is not visible, let alone composable
-    if caller_role in COMPOSERS:
-        return True
-    if caller_role == "contributor":
-        # contributor may NOT compose unless the design has been mutated to grant it
-        return bool(design["contributor_composes"])
-    # viewer (or anything lower): read-only, no compose
-    return False
+    return caller_role in COMPOSERS   # write-tier composes; `viewer` (or lower) is read-only → deny
 
 
 def affordance_visible(design, caller_role):
     """Whether the compose AFFORDANCE is rendered in the DOM for this role (8.16 — absent, not display:none)."""
-    if caller_role in COMPOSERS:
+    if caller_role in COMPOSERS:   # write-tier (maintainer/admin/contributor) sees the compose entry
         return True
-    if caller_role == "contributor":
-        return design["contributor_sees_affordance"]
     # viewer: no mutate affordance — unless mutated to leak it
     return design["viewer_sees_affordance"]
 
@@ -157,19 +157,19 @@ def check(design):
                  "Project CR, not imperative orchestration (ADR-002/R6)")
 
     # C4 — RBAC mutate-affordance gate (the crux). Evaluate the decision table + affordance visibility.
-    #   viewer      : no affordance, API denies
-    #   contributor : no affordance, API denies (compose is maintainer-level, §15.3)
-    #   maintainer  : affordance, composes ANY core kind in scope
+    #   viewer      : NO affordance, API denies (read-only — the only role that cannot compose)
+    #   contributor : affordance, composes ANY core kind in scope (write-tier, §12.3)
+    #   maintainer  : affordance, composes ANY core kind in scope (+ membership/settings admin, out of scope here)
     rbac_ok = True
     # viewer must NOT see the affordance and must be denied by the API
     if affordance_visible(design, "viewer"):
         rbac_ok = False
     if authorize_compose(design, "viewer", "Agent", in_scope=True):
         rbac_ok = False
-    # contributor must NOT see the affordance and must be denied (compose is maintainer-level)
-    if affordance_visible(design, "contributor"):
+    # contributor is write-tier: MUST see the affordance and be ALLOWED to compose (arch §12.3)
+    if not affordance_visible(design, "contributor"):
         rbac_ok = False
-    if authorize_compose(design, "contributor", "Agent", in_scope=True):
+    if not authorize_compose(design, "contributor", "Agent", in_scope=True):
         rbac_ok = False
     # maintainer: any core kind in scope allowed
     if not authorize_compose(design, "maintainer", "Team", in_scope=True):
@@ -178,9 +178,9 @@ def check(design):
     if authorize_compose(design, "maintainer", "Agent", in_scope=False):
         rbac_ok = False
     if not rbac_ok:
-        v.append("C4 RBAC mutate-gate broken — viewer AND contributor must have NO compose affordance + "
-                 "API-deny, maintainer/admin compose any core kind in scope, server re-checks every call "
-                 "(§12.3/15.3/8.16)")
+        v.append("C4 RBAC mutate-gate broken — only `viewer` may have NO compose affordance + API-deny; "
+                 "maintainer/admin/contributor (write-tier) compose any core kind in scope, out-of-scope is "
+                 "existence-hidden, and the server re-checks every call (arch §12.3/8.16)")
 
     # C5 — credential is a Secret ref, never inline
     if credential_value_leaks(design):
@@ -220,9 +220,7 @@ def conformant_design():
         "executes_orchestration": False,                # C3: applies CRs, reconciler acts (ADR-002)
         "composes_declarative_cr": True,                # C3: output is a declarative CR
         "server_rechecks": True,                        # C4: API re-resolves membership every call (8.16)
-        "contributor_composes": False,                  # C4: compose is maintainer-level (§15.3)
-        "viewer_sees_affordance": False,                # C4: viewer button absent from DOM
-        "contributor_sees_affordance": False,           # C4: contributor button absent from DOM
+        "viewer_sees_affordance": False,                # C4: viewer button absent from DOM (only read-only role)
         "credential_mode": "secret_ref",                # C5: secret://user/name, never a value
         "credential_value_in_sink": False,              # C5: raw value in no sink
         "yaml_mirror_matches_cr": True,                 # C6: mirror == applied CR (kubectl-ready)
@@ -242,10 +240,8 @@ def naive_design():
         "surface_kind": "code_editor",                  # a raw YAML/code editor (the IDE R6 forbids)
         "executes_orchestration": True,                 # "run this squad now" button in the editor
         "composes_declarative_cr": False,               # emits an imperative apply script, not a CR
-        "server_rechecks": False,                       # trusts the client's role claim
-        "contributor_composes": True,                   # any authenticated user composes
-        "viewer_sees_affordance": True,                 # everyone sees the compose button
-        "contributor_sees_affordance": True,
+        "server_rechecks": False,                       # trusts the client's role claim (viewer slips through)
+        "viewer_sees_affordance": True,                 # even a viewer sees the compose button
         "credential_mode": "inline_value",              # paste the token straight into the form
         "credential_value_in_sink": True,               # value lands in the YAML mirror + CR spec
         "yaml_mirror_matches_cr": False,                # the editor buffer drifts from what is applied
@@ -256,23 +252,29 @@ def naive_design():
 
 
 MUTATIONS = {
-    "CLIENT_ONLY_VALIDATION": lambda d: d.update(server_validates=False),
+    "SERVER_SKIP_VALIDATION": lambda d: d.update(server_validates=False),
+    "CLIENT_ONLY_VALIDATION": lambda d: d.update(client_only_validation=True),
     "DIRECT_API":             lambda d: d.update(apply_call_target="apiserver"),
     "CODE_EDITOR":            lambda d: d.update(surface_kind="code_editor"),
     "EXECUTES":               lambda d: d.update(executes_orchestration=True),
     "VIEWER_AFFORDANCE":      lambda d: d.update(viewer_sees_affordance=True),
-    "CONTRIB_COMPOSE":        lambda d: d.update(contributor_composes=True, contributor_sees_affordance=True),
     "NO_RECHECK":             lambda d: d.update(server_rechecks=False),
     "INLINE_SECRET":          lambda d: d.update(credential_mode="inline_value", credential_value_in_sink=True),
     "YAML_DRIFT":             lambda d: d.update(yaml_mirror_matches_cr=False),
+    "EDITABLE_YAML":          lambda d: d.update(yaml_mirror_editable_code=True),
     "ARBITRARY_KIND":         lambda d: d.update(allowed_kinds=CORE_KINDS | {"ConfigMap"}),
+    "IMPERATIVE_EDIT":        lambda d: d.update(edit_is_declarative_revision=False),
 }
 
-# Which single invariant each mutation is expected to flip (for the no-shadow proof).
+# Which single invariant each mutation is expected to flip (for the no-shadow proof). Each named guard has
+# its OWN arm — two arms per multi-guard family (C1, C4, C6, C7) so no sub-guard is left vacuous (ISI-2346-F1).
 MUT_INVARIANT = {
-    "CLIENT_ONLY_VALIDATION": "C1", "DIRECT_API": "C2", "CODE_EDITOR": "C3", "EXECUTES": "C3",
-    "VIEWER_AFFORDANCE": "C4", "CONTRIB_COMPOSE": "C4", "NO_RECHECK": "C4",
-    "INLINE_SECRET": "C5", "YAML_DRIFT": "C6", "ARBITRARY_KIND": "C7",
+    "SERVER_SKIP_VALIDATION": "C1", "CLIENT_ONLY_VALIDATION": "C1",
+    "DIRECT_API": "C2", "CODE_EDITOR": "C3", "EXECUTES": "C3",
+    "VIEWER_AFFORDANCE": "C4", "NO_RECHECK": "C4",
+    "INLINE_SECRET": "C5",
+    "YAML_DRIFT": "C6", "EDITABLE_YAML": "C6",
+    "ARBITRARY_KIND": "C7", "IMPERATIVE_EDIT": "C7",
 }
 
 
@@ -313,7 +315,7 @@ def main():
     print(f"[model] §13/FR-F5 conformant compose design: {len(v)} violation(s); "
           f"target={design['apply_call_target']}, surface={design['surface_kind']}, "
           f"server_validates={design['server_validates']}, credential={design['credential_mode']}, "
-          f"viewer_button={design['viewer_sees_affordance']}, contributor_composes={design['contributor_composes']}, "
+          f"viewer_button={design['viewer_sees_affordance']}, composers={sorted(COMPOSERS)}, "
           f"kinds={sorted(design['allowed_kinds'])}")
     if v:
         print("[model] FAIL — the conformant design violated an invariant:")
@@ -322,7 +324,8 @@ def main():
         return 1
     print("[model] PASS — the naive raw-compose-editor detectably breaks every invariant; the §13/FR-F5 design")
     print("        holds C1-C7 (valid CRs server-validated · BFF choke point · declarative CRs not an IDE ·")
-    print("        RBAC maintainer-gate · credential Secret-ref not inline · form≡YAML mirror · five core kinds).")
+    print("        RBAC write-tier gate [contributor composes, viewer read-only] · credential Secret-ref not")
+    print("        inline · form≡YAML mirror · five core kinds).")
     return 0
 
 

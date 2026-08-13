@@ -13,14 +13,15 @@ Status: ready-for-dev
 > renders and a CR gets created" but that the form is a **thin producer of declarative CRs**: the apply is
 > routed through the **BFF choke point** (never browser→kube), re-validated by the **same Story-1.3 server
 > wall** as a raw `kubectl apply` (the console is not a second, looser validator), **gated by the same
-> deny-by-default RBAC wall** as every other surface — but at the **`maintainer` level** (compose is stricter
-> than kill: a `contributor` may **not** compose) — with the credential bound as a **Secret ref, never an
+> deny-by-default RBAC wall** as every other surface — a **write-tier** affordance (arch §12.3: `maintainer`,
+> `admin`, **and** `contributor` compose CRDs in scope; only `viewer` is read-only) — with the credential
+> bound as a **Secret ref, never an
 > inline value**, and the console kept firmly **on the declarative side of R6**: a **CRD composer, not an IDE
 > / code editor / dashboard**. A compose screen that ships its own validation the server never re-runs, POSTs
-> straight at the apiserver, inlines the credential value, lets a `viewer`/`contributor` compose, drifts the
+> straight at the apiserver, inlines the credential value, lets a `viewer` compose, drifts the
 > YAML mirror from the applied CR, becomes a free-form code editor, or accepts arbitrary CRD kinds is a
 > **security/correctness/scope regression against §13/§12.3/R6/Story 1.3**, not a cosmetic bug. Read AC3
-> (declarative-not-an-IDE, R6), AC4 (RBAC maintainer-gate) and AC5 (credential Secret-ref) literally.
+> (declarative-not-an-IDE, R6), AC4 (RBAC write-tier gate) and AC5 (credential Secret-ref) literally.
 
 ## ⚠️ Scope reconciliation — 8.5 (the compose surface) vs 1.2/1.3 (CRD types + validation) vs 7.x (creds)
 
@@ -33,13 +34,13 @@ CRD *types*, their *validation*, and the *credential model* already exist — 8.
 | The **six v1alpha1 CRD types** (`Team`/`Agent`/`Role`/`Skill`/`Project` + `AgentRuntime`) — schema, fields, `modelEndpointRef` | **Story 1.2** (ISI-2188, DONE) | — (composed, not re-defined) |
 | The **CEL + ValidatingAdmissionWebhook validation** (same-object CEL, cross-object webhook, `failurePolicy: Fail`, open-ended runtime enum) | **Story 1.3** (ISI-2189, DONE) | — (the apiserver **re-runs** this on every compose apply; the console does **not** re-implement or weaken it) |
 | The **per-user Secret-ref credential model** (`oauth`/`apiKey`/`byoEndpoint`, `secret://user/name`, no shared master) | **Epic 7** (7.1–7.5, DONE) + **Story 5.4 injection** (ISI-2216) | — (compose **binds a ref**; the value never enters the console) |
-| The **BFF choke point** (browser→BFF→apiserver, never browser→kube) + **§12.3 deny-by-default RBAC** | **§13/ADR-013** + **8.4** (first mutating use) | the **compose** mutating verb behind the **same** wall, at the `maintainer` level |
+| The **BFF choke point** (browser→BFF→apiserver, never browser→kube) + **§12.3 deny-by-default RBAC** | **§13/ADR-013** + **8.4** (first mutating use) | the **compose** mutating verb behind the **same** wall, at the **write tier** (§12.3: maintainer/admin/contributor compose; viewer read-only) |
 | The **compose (authoring) surface**: a ≤N-step stepper form + live read-only YAML mirror that produces valid CRs for the five core kinds, RBAC-gated, credential-ref-bound, applied through the BFF | **THIS STORY (8.5)** | the whole UI compose edge (§A/§B/§C below) |
 
 **One-line boundary:** 1.2 answered *"what are the CRD shapes?"*, 1.3 answered *"how does the apiserver
 reject an invalid CR?"*, Epic 7 answered *"how is a credential referenced without a shared master?"* This
 story answers *"how does a squad author **compose** those CRs from the console — a declarative form whose
-output is a valid CR applied through the BFF, gated by the same RBAC wall at the maintainer level, with the
+output is a valid CR applied through the BFF, gated by the same RBAC wall at the write tier (§12.3), with the
 credential bound as a ref not a value — **without** the console becoming an IDE, re-validating in a looser
 client path, or ever holding the secret value?"* The console **authors declarative intent**; the apiserver
 validates and the reconciler acts.
@@ -55,9 +56,9 @@ inline value)**,
 so that **I can author a whole squad declaratively without hand-writing YAML or touching `kubectl` — trusting
 that the apiserver re-runs the same validation as a raw apply (an invalid CR is rejected by the server, not
 just my form), that the form and the YAML are the same resource, and that the credential I bind is a
-`secret://` ref KSquad never stores the value of — while a teammate who is only a `viewer` or `contributor`
-on that Project never even sees the compose affordance, and the console stays a composition surface, not an
-IDE (R6).**
+`secret://` ref KSquad never stores the value of — while a teammate who is only a `viewer`
+on that Project never even sees the compose affordance (a `contributor` is write-tier and CAN compose, §12.3),
+and the console stays a composition surface, not an IDE (R6).**
 
 ## Context & prerequisites (read first)
 
@@ -78,10 +79,15 @@ IDE (R6).**
   - **§11 credential model (ADR-010/026/032)** — the credential is a **per-user Secret ref**
     (`secret://user/name`); the **value** is never held by the console, never in the YAML mirror, never in the
     CR spec (NFR-SEC3; Story 5.4 injection places the value at the runtime, out of every sink).
-  - **§12.3 RBAC / §12.1 tenancy / §15.3 per-project roles** — compose is a **`maintainer`-level** mutate
-    affordance: `maintainer` (per-project) and `admin` (global) compose CRDs in scope; `contributor` and
-    `viewer` have **no** compose affordance. The server **re-checks every call**. Out-of-scope Projects are
-    **existence-hidden**.
+  - **§12.3 RBAC / §12.1 tenancy (per-project roles, ADR-033/035)** — compose is a **write-tier** mutate
+    affordance: `maintainer` (per-project), `admin` (global), **and** `contributor` compose CRDs in scope —
+    arch §12.3 grants `contributor` *"compose (create/edit CRDs, start/kill Runs)"* (`03-architecture.md:161`,
+    `:1485-1487`); the maintainer↔contributor delta is **Project membership/settings administration**, NOT
+    CRD composition. Only **`viewer`** is read-only (no compose affordance). The server **re-checks every
+    call**. Out-of-scope Projects are **existence-hidden**. *(NB: arch §12.3 is authoritative here. The epics
+    prose enumeration "Story 15.3" (`04-epics-and-stories.md:716`) omits contributor-compose and is looser;
+    where they conflict §12.3/ADR-035 governs — see remediation ISI-2461. There is no arch §15.3: arch §15 is
+    the Coordination-Spine risk section.)*
   - **ADR-002 (desired-state reconciliation)** — compose applies **declarative** CRs the reconciler observes;
     the console never executes/orchestrates. **ADR-013** (Next.js BFF vs SPA-direct-to-kube).
 - **CRD validation (Story 1.3, ISI-2189, DONE):** the apiserver enforces **CEL (same-object)** + a
@@ -113,7 +119,8 @@ IDE (R6).**
     integration test with `TODO(15.4)`; the **authorization-decision + CR-build/apply core does not depend on
     the console** and must be fully implemented and tested with an injected caller-scope.
   - **8.4** (ISI-2267, DONE) — the **template** for a gated console mutate affordance (BFF choke point,
-    affordance-hiding, server re-check). 8.5 follows the same mutate-gate shape at the maintainer level.
+    affordance-hiding, server re-check). 8.5 follows the same mutate-gate shape at the write tier (§12.3 —
+    affordance hidden from `viewer` only; `contributor` composes).
 - **Blocks / feeds:** delivers the **FR-F5** console guarantee. It is the compose surface **8.12** (Settings
   → OTelConfig compose) and **8.15** (Users & Roles admin) point back to as *"a compose surface like 8.5"*;
   **8.10** (team-org diagram, read-only) explicitly defers edit to 8.5. Composed CRs feed every downstream
@@ -144,17 +151,22 @@ them — the reconciler acts. It does **not** edit orchestration code, **not** e
 open a free-form code editor, and **not** become a general dashboard. The console is a **composition surface,
 not an IDE** (R6 / PRD §11.5). *"No orchestration code, only CRDs"* (S3).
 
-## The RBAC mutate-gate — the crux (authoritative — §B, §12.3/§15.3/8.16)
+## The RBAC mutate-gate — the crux (authoritative — §B, arch §12.3/8.16)
 
-Compose is a **`maintainer`-level** mutate affordance — **stricter** than kill (§15.3: *"maintainer = full
-control … compose CRDs; contributor = create tickets, view all, kill own Runs; viewer = read-only"*):
+Compose is a **write-tier** mutate affordance. Arch §12.3 (ADR-033/035 — the single authoritative
+authorization wall, *"one enforcement point, every surface"*, r21) defines the per-project roles:
+**`contributor`** is *"project-scoped write … may act and **compose (create/edit CRDs, start/kill Runs)** and
+read, but **cannot** administer the Project's membership/settings"* (`03-architecture.md:1485-1487`; `:161`).
+The **only** role that cannot compose is **`viewer`** (read-only). The maintainer↔contributor delta is
+**membership/settings administration**, NOT CRD composition:
 
-- **`viewer`** and **`contributor`** (per-project) → **no compose affordance at all**: the compose entry is
-  **absent from the DOM** (not `display:none` — trivially re-enabled client-side, §9.15/8.16), **and** the
-  API **denies** a compose call if one is forged. (Kill let a `contributor` act on own Runs; **compose does
-  not** — a `contributor` cannot compose CRDs at all.)
-- **`maintainer`** (per-project) and **`admin`** (`global_role=admin` fleet bypass) → compose **any** core
-  kind in scope.
+- **`viewer`** (per-project) → **no compose affordance at all**: the compose entry is **absent from the DOM**
+  (not `display:none` — trivially re-enabled client-side, §9.15/8.16), **and** the API **denies** a compose
+  call if one is forged. `viewer` is the read-only tier (dashboards/Runs/build browser), never a writer.
+- **`contributor`**, **`maintainer`** (per-project), and **`admin`** (`global_role=admin` fleet bypass) →
+  compose **any** core kind in scope. `contributor` is **write-tier** (§12.3): it composes/edits the five
+  core CRDs and starts/kills Runs; it simply cannot administer the Project's membership/settings (that is the
+  `maintainer`/`admin` delta, out of 8.5's compose scope).
 - **Out-of-scope Projects are existence-hidden** — a Project the caller has no membership in is not visible
   and not composable (the compose decision returns deny **before** revealing existence, §12.3).
 - **The server re-checks every call.** The affordance-hiding is a legibility layer **over** the §12.3
@@ -202,11 +214,12 @@ reconciler acts, ADR-002) — it does **not** edit orchestration code, **not** e
 present a free-form code editor or a general dashboard. The console stays a **composition surface, not an
 IDE** (R6 / PRD §11.5). *"No orchestration code, only CRDs."*
 
-**AC4 — compose is a MAINTAINER-level mutate affordance, affordance-hidden, server-enforced (the crux, §12.3/§15.3/8.16).**
-Given the §12.3-resolved caller, When the console renders and a compose is fired, Then: a **`viewer`** and a
-**`contributor`** see **no** compose affordance (**absent from the DOM**, not `display:none`) **and** the API
-**denies** a forged compose (compose is **maintainer-level** — a `contributor` cannot compose CRDs); a
-**`maintainer`** and an **`admin`** (fleet bypass) can compose **any** core kind in scope; an **out-of-scope**
+**AC4 — compose is a WRITE-tier mutate affordance, affordance-hidden from viewer, server-enforced (the crux, arch §12.3/8.16).**
+Given the §12.3-resolved caller, When the console renders and a compose is fired, Then: a **`viewer`** sees
+**no** compose affordance (**absent from the DOM**, not `display:none`) **and** the API **denies** a forged
+compose (viewer is read-only); a **`contributor`**, a **`maintainer`**, and an **`admin`** (fleet bypass) can
+compose **any** core kind in scope (arch §12.3 grants `contributor` *"compose (create/edit CRDs, start/kill
+Runs)"* — the maintainer↔contributor delta is membership/settings admin, not composition); an **out-of-scope**
 Project is **existence-hidden** (not visible, not composable). The **server re-checks membership on every
 call** and never trusts a client-asserted role — the affordance-hiding is a legibility layer **over** the
 §12.3 enforcement (§9.15/8.16).
@@ -241,22 +254,24 @@ control drops below the touch target.
 **AC9 — runnable falsification (the compose-design core).**
 Given the compose-CRD design, When `docs/bmad/spikes/bench/run-compose-crd-check.py` runs (stdlib-only, no
 console, no cluster), Then it asserts **C1–C7** (valid CRs server-validated · BFF choke point · declarative
-CRs not an IDE · RBAC maintainer-gate · credential Secret-ref not inline · form≡YAML mirror · five core
-kinds) over the design a console would ship: the **naive raw-compose-editor** anti-pattern is **DETECTED**
-violating every invariant (real teeth), the **§13/FR-F5** design violates none, and each guard is
-**independently mutation-proven** — `--mutate=<CLIENT_ONLY_VALIDATION|DIRECT_API|CODE_EDITOR|EXECUTES|
-VIEWER_AFFORDANCE|CONTRIB_COMPOSE|NO_RECHECK|INLINE_SECRET|YAML_DRIFT|ARBITRARY_KIND>` flips the check **RED
-with exactly one violation** (no guard shadows another; the ISI-2346-F1 vacuous-tooth class excluded).
-Baseline exits 0; each mutation exits 1.
+CRs not an IDE · RBAC write-tier gate [contributor composes, viewer read-only] · credential Secret-ref not
+inline · form≡YAML mirror · five core kinds) over the design a console would ship: the **naive
+raw-compose-editor** anti-pattern is **DETECTED** violating every invariant (real teeth), the **§13/FR-F5**
+design violates none, and each **named guard** is **independently mutation-proven** — `--mutate=<SERVER_SKIP_
+VALIDATION|CLIENT_ONLY_VALIDATION|DIRECT_API|CODE_EDITOR|EXECUTES|VIEWER_AFFORDANCE|NO_RECHECK|INLINE_SECRET|
+YAML_DRIFT|EDITABLE_YAML|ARBITRARY_KIND|IMPERATIVE_EDIT>` flips the check **RED with exactly one violation**
+(one arm per sub-guard — two arms each on C1/C4/C6/C7 — so no guard shadows another and the ISI-2346-F1
+vacuous-tooth class is excluded by construction). Baseline exits 0; each of the 12 mutations exits 1.
 
 ## Tasks / Subtasks
 
 - [ ] **Task 1 — Compose authorization + CR-build/apply core (AC1, AC2, AC4, AC5, AC7).** *Do this first — it
   is the mutate-gate + CR-producer core and needs no console.*
   - [ ] `AuthorizeCompose(ctx, callerScope, projectRef, kind) (bool, reason)`: resolve the caller →
-    per-project role (§12.3/§15.3); `maintainer`/`admin` → any core kind in scope, `contributor`/`viewer` →
-    **deny** (compose is maintainer-level); out-of-scope → deny (existence-hidden); non-core kind → deny
-    (AC7). **Re-checked server-side on every call**, never client-trusted (8.16).
+    per-project role (arch §12.3); `maintainer`/`admin`/`contributor` (write-tier) → any core kind in scope,
+    `viewer` → **deny** (read-only); out-of-scope → deny (existence-hidden); non-core kind → deny (AC7).
+    **Re-checked server-side on every call**, never client-trusted (8.16). *(Compose is write-tier, not
+    maintainer-only: §12.3 grants `contributor` compose; the maintainer delta is membership/settings admin.)*
   - [ ] `BuildCR(kind, formModel) (unstructured, error)`: build a **declarative** CR for one of the five core
     kinds from the composed form model. For an Agent, bind runtime + role + skills + **credential
     `secretRef`** — **never** an inline value (NFR-SEC3; reject/panic if a raw value is ever set). The built
@@ -265,7 +280,7 @@ Baseline exits 0; each mutation exits 1.
     runs (CEL + webhook, `failurePolicy: Fail`); **surface the server's rejection** verbatim (AC1). Do **not**
     re-implement/weaken validation client-side. **Edit** = a declarative revision apply (AC7), not an
     imperative patch.
-  - [ ] Table-driven test: viewer-deny, contributor-deny, maintainer-any-allow, admin-bypass,
+  - [ ] Table-driven test: viewer-deny, contributor-any-allow, maintainer-any-allow, admin-bypass,
     out-of-scope-deny, non-core-kind-deny; invalid CR → server-rejected (not client-swallowed);
     credential-ref-only (a raw value in the model is rejected, never applied).
 - [ ] **Task 2 — Compose mutating endpoint on the apiserver (AC1, AC2, AC4, AC7).**
@@ -288,13 +303,13 @@ Baseline exits 0; each mutation exits 1.
     **rejection** verbatim in the form (AC1, never-opaque).
   - [ ] Bind the Agent credential as a **Secret ref** (`secret://user/name`, live-valid dot) — the value is
     **never** entered/shown/stored (AC5).
-  - [ ] **Affordance-hide by role** (AC4): the compose entry is **absent from the DOM** for a `viewer` and a
-    `contributor` (8.16 — not `display:none`).
+  - [ ] **Affordance-hide by role** (AC4): the compose entry is **absent from the DOM** for a `viewer`
+    (8.16 — not `display:none`); a `contributor` is write-tier and **sees** the compose affordance (§12.3).
   - [ ] Dark + light (8.9) + responsive (single-column stack, sticky apply bar, ≥44px, no hover-only) to
     360px (§13.1/ADR-038).
 - [ ] **Task 5 — Runnable falsification (AC9).** *(Already authored — keep green.)*
   - [ ] `docs/bmad/spikes/bench/run-compose-crd-check.py` — baseline exits 0; each `--mutate=NAME` exits 1
-    with exactly one violation (10 mutations, C1–C7).
+    with exactly one violation (12 mutations, C1–C7; one arm per sub-guard).
 
 ## Dev Notes
 
@@ -304,12 +319,16 @@ Baseline exits 0; each mutation exits 1.
   `*_test.go`, standard `testing`). Do **not** re-define the CRD types, re-implement the validation, or invent
   a new credential model — this story **composes** the existing types, **re-uses** the Story-1.3 admission
   chain, and **binds** the Epic-7 Secret-ref.
-- **The crux is the maintainer-gate, not the form (AC4).** Compose is the **second write affordance** in Epic
-  8 and **stricter** than kill: a `contributor` who could kill their own Run **cannot** compose CRDs
-  (§15.3). Mirror the 8.4 mutate-gate shape (BFF choke point, affordance-hidden, server re-checks every call)
-  but with the affordance hidden from **both** `viewer` **and** `contributor`. A `viewer`/`contributor` who
-  forges a compose call must be **denied by the API** — that is the `VIEWER_AFFORDANCE`/`CONTRIB_COMPOSE`/
-  `NO_RECHECK` mutation-proven tooth.
+- **The crux is the write-tier gate, not the form (AC4).** Compose is the **second write affordance** in Epic
+  8. Per arch §12.3 (ADR-033/035, the authoritative wall) a `contributor` is **project-scoped write** and
+  **can** compose CRDs (as it can kill Runs); the **only** role denied compose is `viewer` (read-only). The
+  maintainer↔contributor delta is **membership/settings administration**, not composition — so 8.5's gate
+  hides the affordance from **`viewer` only**. Mirror the 8.4 mutate-gate shape (BFF choke point,
+  affordance-hidden from viewer, server re-checks every call). A `viewer` who forges a compose call must be
+  **denied by the API** — that is the `VIEWER_AFFORDANCE`/`NO_RECHECK` mutation-proven tooth. *(Do NOT gate
+  compose to maintainer-only: that inverts §12.3 and 403s a legitimately write-authorized `contributor` — the
+  ISI-2461 regression. The looser epics-Story-15.3 prose is not authoritative; a genuine maintainer-only
+  policy would be a §12.3/ADR-035 change requiring Architect/CEO sign-off, not a story-level assertion.)*
 - **Valid CRs = the server's job, not the form's (AC1).** The apiserver re-runs the **same** Story-1.3
   admission chain as a raw `kubectl apply`. The console's inline validation is a UX nicety for fast feedback;
   it is **never** the enforcement point (a forged/invalid CR that skips it is still server-rejected). Do
@@ -354,8 +373,12 @@ Baseline exits 0; each mutation exits 1.
   middleware (r21 "one enforcement point, every surface").
 - [Source: docs/bmad/03-architecture.md#5.1–5.3 / #10.1 / #10.3 / #11] — the CRD model the form composes;
   Agent binds runtime + role + skills + credential ref; per-user Secret-ref credential model (ADR-010/026/032).
-- [Source: docs/bmad/03-architecture.md#12.3/#12.1/#15.3] — per-project roles: maintainer/admin compose any,
-  contributor + viewer none; server re-checks every call; out-of-scope existence-hidden.
+- [Source: docs/bmad/03-architecture.md#12.3/#12.1 (ADR-033/035), lines 161 + 1483-1490] — per-project roles:
+  maintainer/admin/**contributor** (write-tier) compose any core kind in scope — §12.3 grants `contributor`
+  *"compose (create/edit CRDs, start/kill Runs)"*; only **viewer** is read-only; server re-checks every call;
+  out-of-scope existence-hidden. The maintainer↔contributor delta is membership/settings admin, not
+  composition. *(There is no arch §15.3; the epics prose "Story 15.3" (`04-epics-and-stories.md:716`) is
+  looser and non-authoritative where it conflicts — ISI-2461.)*
 - [Source: docs/bmad/03-architecture.md ADR-002 / ADR-013] — desired-state reconciliation (declarative CRs,
   not imperative execution); Next.js BFF vs SPA-direct-to-kube.
 - [Source: docs/bmad/stories/1-3-crd-validation-defaulting-webhooks.md] — the CEL (same-object) + webhook
@@ -364,7 +387,7 @@ Baseline exits 0; each mutation exits 1.
   sink (NFR-SEC3); compose binds the ref, never the value.
 - [Source: docs/bmad/stories/8-4-kill-a-run-in-two-clicks.md] — the template for a gated console mutate
   affordance (BFF choke point, affordance-hidden, server re-checks every call); compose follows it at the
-  maintainer level.
+  write tier (§12.3 — affordance hidden from `viewer` only; `contributor` composes).
 - [Source: docs/bmad/ux/README.md §3.4 + images/04-compose-crd] — the stepper + split-view form/YAML mirror
   (same resource, kubectl-ready), credential as `secret://` ref; responsive matrix "Compose CRD (8.5)".
 - [Source: docs/bmad/04-epics-and-stories.md — Epic 8, story 8.5 + the responsive matrix "Compose CRD (8.5):
@@ -379,9 +402,11 @@ _(dev agent to fill)_
 
 ### Debug Log References
 
-- `docs/bmad/spikes/bench/run-compose-crd-check.py` — baseline exits 0; `--mutate=<CLIENT_ONLY_VALIDATION|
-  DIRECT_API|CODE_EDITOR|EXECUTES|VIEWER_AFFORDANCE|CONTRIB_COMPOSE|NO_RECHECK|INLINE_SECRET|YAML_DRIFT|
-  ARBITRARY_KIND>` each exits 1 with exactly one violation (C1–C7).
+- `docs/bmad/spikes/bench/run-compose-crd-check.py` — baseline exits 0; `--mutate=<SERVER_SKIP_VALIDATION|
+  CLIENT_ONLY_VALIDATION|DIRECT_API|CODE_EDITOR|EXECUTES|VIEWER_AFFORDANCE|NO_RECHECK|INLINE_SECRET|YAML_DRIFT|
+  EDITABLE_YAML|ARBITRARY_KIND|IMPERATIVE_EDIT>` each exits 1 with exactly one violation (C1–C7; one arm per
+  sub-guard — ISI-2461 remediation: dropped `CONTRIB_COMPOSE` [not a defect], re-pointed `CLIENT_ONLY_
+  VALIDATION`→client-only guard, added `SERVER_SKIP_VALIDATION`/`EDITABLE_YAML`/`IMPERATIVE_EDIT`).
 
 ### Completion Notes List
 
