@@ -68,6 +68,8 @@ class DurableStore:
     def __init__(self):
         self.reconcile_step = "pending"
         self.fence = 1
+        self.audit_log = []   # §6.5 coord.audit_log rows, one per COMMITTED transition (AC6)
+        self.outbox = []      # §6.6 transactional-outbox events, co-committed with the transition
 
     def advance(self, expected, new_step, fence):
         # Conditional UPDATE ... WHERE reconcile_step=:expected AND fence_token=:fence (§6.4).
@@ -75,16 +77,30 @@ class DurableStore:
         if self.reconcile_step == expected and (fence is None or fence >= self.fence):
             self.reconcile_step = new_step
             self.fence = fence
+            # AC6: the audit row (§6.5) + outbox event (§6.6) are written in the SAME
+            # transaction as the step advance. A pass that LOSES the conditional UPDATE
+            # (stale/zombie, below) reaches neither line — no phantom event, no orphaned
+            # transition. This is why they live inside the committed branch.
+            self.audit_log.append((expected, new_step, fence))
+            self.outbox.append(new_step)
             return True
-        return False  # stale pass / zombie leader loses
+        return False  # stale pass / zombie leader loses — writes NO audit row, NO event
 
 
 class Crash(Exception):
     pass
 
 
-def run_phase(step, world, store, fence, durable):
-    """Do one phase's external effect + advance the durable step. §6.4 idempotency."""
+def run_phase(step, world, store, fence, durable, crash_after_effect=None):
+    """Do one phase's external effect + advance the durable step. §6.4 idempotency.
+
+    `crash_after_effect` injects a crash at the §6.4 CRUX window: the external effect
+    has fired but the durable step-advance transaction has NOT committed. This is the
+    only crash point where re-entry re-drives an *already-performed* effect, so it is
+    the only one that actually exercises the deterministic-id dedup / content-addressed
+    upsert. A crash at a phase *boundary* (see `crash_before`) resumes trivially and
+    proves nothing about idempotency — the effect had already committed cleanly.
+    """
     idx = STEPS.index(step)
     if step == "dispatching":
         # DURABLE: deterministic id = run_id, shim dedups. NAIVE: fresh id each attempt, no dedup.
@@ -92,6 +108,8 @@ def run_phase(step, world, store, fence, durable):
         world.shim_submit(task_id, dedup=durable)
     elif step == "collecting":
         world.register_artifact("run-1/patch", "diff-bytes", upsert=durable)
+    if step == crash_after_effect:
+        raise Crash(step)  # effect applied, step NOT yet advanced — re-entry must be idempotent
     if idx + 1 < len(STEPS):
         nxt = STEPS[idx + 1]
         store.advance(step, nxt, fence)
@@ -99,13 +117,18 @@ def run_phase(step, world, store, fence, durable):
             world.terminal(nxt)
 
 
-def reconcile_durable(world, store, fence, crash_before):
-    """§6.4 reconciler: reads the durable step, resumes from it. Crash-safe."""
+def reconcile_durable(world, store, fence, crash_before, crash_after_effect=None):
+    """§6.4 reconciler: reads the durable step, resumes from it. Crash-safe.
+
+    `crash_before` = die at a phase boundary (pre-effect). `crash_after_effect` = die
+    mid-phase after the external effect but before the step-advance commits (the §6.4
+    crux window that forces an idempotent re-drive on failover).
+    """
     while store.reconcile_step not in TERMINAL:
         step = store.reconcile_step
         if step == crash_before:
             raise Crash(step)  # controller dies at this boundary
-        run_phase(step, world, store, fence, durable=True)
+        run_phase(step, world, store, fence, durable=True, crash_after_effect=crash_after_effect)
 
 
 def reconcile_naive(world, mem_step, crash_before):
@@ -130,9 +153,13 @@ def check_durable():
             reconcile_durable(world, store, fence=1, crash_before=crash_at)
         except Crash:
             pass
-        # Zombie old leader briefly issues a STALE-fence mutation (fence < current) — must lose.
+        # Zombie old leader briefly issues a STALE-fence mutation (fence < current) — must lose,
+        # and (AC6) must write NEITHER an audit row NOR an outbox event (no phantom event).
+        audit_before, outbox_before = len(store.audit_log), len(store.outbox)
         stale_ok = store.advance(store.reconcile_step, "succeeded", fence=0)
         assert not stale_ok, f"zombie stale-fence write WON at {crash_at} — fencing broken"
+        assert len(store.audit_log) == audit_before and len(store.outbox) == outbox_before, (
+            f"crash@{crash_at}: fenced-out zombie pass wrote a phantom audit/event (AC6 broken)")
         # Failover leader takes over with a fresh fence, re-reads durable step, continues.
         reconcile_durable(world, store, fence=2, crash_before=None)
 
@@ -144,8 +171,49 @@ def check_durable():
             f"crash@{crash_at}: duplicate/lost artifact {world.artifacts}")
         assert world.terminal_transitions == ["succeeded"], (
             f"crash@{crash_at}: {world.terminal_transitions} terminal transitions (want 1)")
+        # AC6: exactly one audit row + one outbox event per COMMITTED transition — never a
+        # double-audit across failover, never a transition with no audit trail / event.
+        assert len(store.audit_log) == len(STEPS) - 1 == len(store.outbox), (
+            f"crash@{crash_at}: {len(store.audit_log)} audit / {len(store.outbox)} outbox rows "
+            f"(want {len(STEPS)-1} each) — audit/event not co-committed 1:1 with transitions")
     print(f"[durable] §6.4: crash injected at all {len(STEPS)-1} boundaries + zombie stale-fence — "
-          f"exactly-once dispatch/collect/terminal, zero lost progress, fencing holds.")
+          f"exactly-once dispatch/collect/terminal, zero lost progress, fencing holds; "
+          f"audit+outbox co-committed 1:1 per transition, zero phantom on fenced-out pass (AC6).")
+    return True
+
+
+def check_durable_intraphase():
+    """The §6.4 CRUX: crash AFTER an effectful phase fires but BEFORE its step commits.
+
+    This is the only crash window that re-drives an already-performed external effect on
+    failover, so it is the only one that actually exercises the dedup / upsert mechanisms
+    (a boundary crash resumes from a cleanly-committed step and never re-runs the effect).
+    Neutering dedup or upsert MUST make this check fail — that is what gives it teeth.
+    """
+    for crash_at in ("dispatching", "collecting"):
+        world = World()
+        store = DurableStore()
+        # Leader 1 runs until the effect at `crash_at` has fired, then dies before commit.
+        try:
+            reconcile_durable(world, store, fence=1, crash_before=None, crash_after_effect=crash_at)
+        except Crash:
+            pass
+        # The durable step is still the SAME phase — the effect happened, the advance did not.
+        assert store.reconcile_step == crash_at, (
+            f"intraphase@{crash_at}: step advanced to {store.reconcile_step} before commit — "
+            f"effect and step-advance were not atomic")
+        # Failover leader re-enters the SAME phase and MUST re-drive it idempotently.
+        reconcile_durable(world, store, fence=2, crash_before=None)
+        assert store.reconcile_step == "succeeded", f"intraphase@{crash_at}: not terminal"
+        assert len(world.agent_executions) == 1, (
+            f"intraphase@{crash_at}: {len(world.agent_executions)} agent executions (want 1) — "
+            f"dedup did not suppress the re-driven dispatch")
+        assert world.artifacts == {"run-1/patch": "diff-bytes"}, (
+            f"intraphase@{crash_at}: duplicate/lost artifact {world.artifacts} — upsert not idempotent")
+        assert world.terminal_transitions == ["succeeded"], (
+            f"intraphase@{crash_at}: {world.terminal_transitions} terminal transitions (want 1)")
+    print("[durable] §6.4 crux: crash AFTER effect / BEFORE commit at dispatching+collecting — "
+          "re-driven effect suppressed by dedup/upsert (idempotency mechanisms exercised).")
     return True
 
 
@@ -173,7 +241,9 @@ def check_naive_detectably_breaks():
 
 if __name__ == "__main__":
     check_naive_detectably_breaks()   # (A) prove the harness can catch a double-drive
-    check_durable()                    # (B) prove §6.4 holds under every crash point
+    check_durable()                    # (B) prove §6.4 holds under every phase-boundary crash
+    check_durable_intraphase()         # (C) prove dedup/upsert hold at the mid-phase crux window
     print("OK — crash-safe reconcile falsification passed "
-          "(naive detectably breaks; §6.4 durable machine holds exactly-once).")
+          "(naive detectably breaks; §6.4 durable machine holds exactly-once at boundary AND "
+          "mid-phase crash windows).")
     sys.exit(0)
