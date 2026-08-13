@@ -54,6 +54,14 @@ POSITIVE in-tenant behavior (the caller sees/writes its OWN tenant's data), so n
 by denying everything — the inverse of the ISI-2346-F1 teeth-gap and the same non-vacuity bar the
 ISI-2375 review set. The mutations are orthogonal: `--mutate=X` reddens arm X and only arm X.
 
+Scope axis modeled: this harness exercises the TEAM tenancy axis (`scope_team_id`) — the squad
+boundary that is denied-by-construction. AC2's second clause ("the optional `scope_project_id`
+narrows FURTHER within the team; it can never widen beyond it") is NOT modeled here: `_effective_scope`
+fail-closes by returning the caller's team and dropping any requested project entirely (safe — a
+narrower project can only ever be a subset of the team it lives in, and dropping it widens toward the
+team, never past it). The in-team project-narrowing behavior is a query-shaping concern that rides the
+real ksquad-memory service (Epic 6.1 / ISI-2222); it is out of scope for this tenancy-boundary spike.
+
 stdlib-only; `python3 memory-scope-tenancy-check.py` (baseline) or `--mutate=S` … `--mutate=C`.
 Exit non-zero if the service issues an unscoped query, if a caller can widen scope past its
 authenticated tenant, if a cross-tenant write lands, if one principal can write/read another's diary,
@@ -124,7 +132,9 @@ class Caller:
 def _fresh_backend():
     """S1 holds a secret ranked BEST (rank 0); S2 holds its own record ranked worse (rank 1). With
     k=1 an unscoped top-k evicts S2's own match — the top-k-corruption teeth for arm S. Diaries: two
-    principals (A, B) in team S2, each with a private entry."""
+    principals (A, B) in team S2, each with a private entry — PLUS an S1 diary under the SAME principal
+    key (`agent-B`) in a DIFFERENT tenant, so arm C's cross-tenant `target_team` facet has real teeth
+    (bob@S2 reaching `("team-S1", "agent-B")` is a tenancy crossing, not just a per-principal one)."""
     records = [
         Record("s1-secret", "team-S1", "S1 launch codes: prod deploy key is HUNTER2", rank=0),
         Record("s2-own", "team-S2", "S2 note: our staging URL is stg.example", rank=1),
@@ -132,6 +142,7 @@ def _fresh_backend():
     diaries = {
         ("team-S2", "agent-A"): ["A private: I distrust the new coordinator"],
         ("team-S2", "agent-B"): ["B private: reviewing PR 42"],
+        ("team-S1", "agent-B"): ["S1 private: cross-tenant diary must never surface to S2"],
     }
     return MemoryBackend(records, diaries)
 
@@ -278,14 +289,22 @@ def arm_P_per_principal_diary_write():
 def arm_C_uniform_choke_no_bypass():
     """C. Every path resolves scope+principal from the caller through the same server-side derivation,
     above the backend seam. --mutate=C lets diary_read honor a caller-supplied target → a bypass read
-    path crosses the per-principal AND tenancy boundary."""
+    path crosses the per-principal AND tenancy boundary. Both facets carry teeth: the cross-PRINCIPAL
+    `target_agent` half AND the cross-TENANT `target_team` half of the mutation each drive their own
+    assertion, so a broken read that honors only one still reddens."""
     b = _fresh_backend()
     svc = ScopedMemoryService(b)
     bob = Caller("bob@s2", "team-S2", "agent-B")
-    # bob tries to read principal A's diary (cross-principal) and an S1 diary (cross-tenant).
+    # cross-PRINCIPAL: bob tries to read principal A's diary within his own tenant.
     a_diary = svc.diary_read(bob, target_agent="agent-A")
     assert all("A private" not in e for e in a_diary), \
         "diary_read must be bound to the caller's own principal — B read A's private diary (bypass)"
+    # cross-TENANT: bob tries to read an S1 diary by supplying target_team — the tenancy facet of the
+    # mutation. Honest: the team is clamped to the caller's own (S2), so ("team-S1", "agent-B") is
+    # unreachable; --mutate=C honors target_team → the S1 entry surfaces and this assertion reddens.
+    s1_diary = svc.diary_read(bob, target_team="team-S1")
+    assert all("S1 private" not in e for e in s1_diary), \
+        "diary_read must be bound to the caller's own tenant — B read an S1 diary cross-tenant (bypass)"
     # non-vacuous: bob reads his OWN diary through the same path.
     own = svc.diary_read(bob)
     assert any("B private" in e for e in own), "the caller must read its own diary through the uniform choke"
