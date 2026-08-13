@@ -37,10 +37,15 @@ Invariants (T1-T7, each mapped to an AC of story 8.9):
   T6  MIRROR, NOT DIVERGENCE (role inversion): light is a role-preserving luminance inversion of dark, not a
       new palette — the dark canvas navy `#0B1220` reappears in the light sibling in a TEXT role (t1). The
       toggle inverts luminance while preserving each token's ROLE (AC5).
-  T7  STATUS HUES RESERVED & THEME-INVARIANT: the reserved status dot hues (running=green `#34D399`,
-      paused=amber `#FBBF24`, blocked/failed=rose `#FB7185`, idle=slate `#64748B`) are kept VIVID and
-      IDENTICAL across both themes — like the single azure accent, only the surrounding bg tint changes on
-      toggle — and NONE of them ever collapses onto the accent (AC5 / §0 single-accent + reserved hues).
+  T7  STATUS HUES RESERVED & ON-TOKEN: the four status channels each own a reserved BASE hue
+      (running=green `#34D399`, paused=amber `#FBBF24`, blocked/failed=rose `#FB7185`, idle=slate
+      `#64748B`). The status *dot fill* is theme-ADAPTED for contrast on the light canvas (the light
+      running dot is `#059669`, not `#34D399` — console_kit LIGHT `g_dot`), but the status chip *border*
+      is the theme-INVARIANT BASE hue, drawn as `#{BASE}55` in BOTH themes (console_kit `status()` =
+      `BASE[s] + "55"`). That border is the file-grounded reserved channel: this check reads every status
+      pill in the committed SVGs and holds it on-token — a border must resolve to a canonical design
+      token, so a status hue silently recoloured to a non-token look-alike is caught in ONE sibling — and
+      no reserved hue ever collapses onto the accent (AC7 / §0 single-accent + reserved hues).
 
 Mutation-proof harness — each `--mutate=<NAME>` injects exactly ONE defect into the CONFORMANT (committed)
 model; the check then goes RED with the mapped invariant failing:
@@ -50,7 +55,7 @@ model; the check then goes RED with the mapped invariant failing:
   --mutate=DARK_LIGHT_CANVAS a "light" sibling keeps the dark #0B1220 canvas       -> T4 RED
   --mutate=RELAYOUT_LIGHT    a light sibling drops elements (redesign, not swap)   -> T5 RED
   --mutate=BREAK_INVERSION   strip the inverted-role navy from a light sibling      -> T6 RED
-  --mutate=STATUS_RECOLOR    collapse a reserved status hue onto the accent         -> T7 RED
+  --mutate=STATUS_RECOLOR    recolour a reserved status hue to an off-token look-alike (in one file) -> T7 RED
 """
 import os
 import re
@@ -66,14 +71,30 @@ LIGHT_BG = "#F6F8FC"    # light canvas
 ACCENT = "#3D7DFF"      # azure accent — theme-INVARIANT by design
 DARK_T1 = "#E8EEF9"     # dark primary text
 LIGHT_T1 = "#0B1220"    # light primary text == the dark CANVAS navy (role inversion)
-# reserved status dot hues — theme-INVARIANT (kept vivid across both themes, like the
-# accent; only the surrounding bg tint changes on toggle). Mirror console_kit BASE.
+# reserved status BASE hues (mirror console_kit BASE). These own the four status channels: the
+# status chip BORDER is this BASE hue drawn as `#{BASE}55` in BOTH themes (theme-INVARIANT —
+# console_kit `status()` returns `BASE[s] + "55"`), while the dot FILL is theme-ADAPTED for
+# contrast on the light canvas (the light running dot is #059669, not #34D399 — console_kit
+# LIGHT g_dot). T7 holds the invariant BORDER on-token, not the adapted dot fill.
 RESERVED_STATUS = {
-    "running": "#34D399",  # green
-    "paused":  "#FBBF24",  # amber
-    "blocked": "#FB7185",  # rose
-    "idle":    "#64748B",  # slate
+    "running": "#34D399",  # green  (light dot fill adapts to #059669)
+    "paused":  "#FBBF24",  # amber  (light dot fill adapts to #D97706)
+    "blocked": "#FB7185",  # rose   (light dot fill adapts to #E11D48)
+    "idle":    "#64748B",  # slate  (theme-invariant even as a dot fill)
 }
+
+# canonical design-token palette — mirror console_kit.py DARK u LIGHT u BASE. A status pill
+# border must resolve to one of these; an off-token hue (e.g. a non-token green #22C55E) is a
+# reserved-channel escape. Kept as a hardcoded mirror (stdlib-only, self-contained) like the
+# token anchors above; re-sync if console_kit's token maps change.
+TOKEN_HEXES = frozenset({
+    "#0B1220", "#0D1728", "#25324B", "#131D31", "#0E1626", "#1A2438", "#E8EEF9", "#B6C3D8",
+    "#7E8CA6", "#586581", "#3D7DFF", "#93B7FF", "#16244A", "#1A2842", "#34D399", "#0F2E24",
+    "#FBBF24", "#33280A", "#FB7185", "#331521", "#64748B", "#182234", "#A78BFA", "#241B3A",
+    "#F6F8FC", "#EEF2F8", "#D4DCEA", "#FFFFFF", "#F1F5FA", "#ECF1F8", "#33415C", "#6C7688",
+    "#2563EB", "#E5EDFF", "#E7ECF4", "#059669", "#E7F6EF", "#D97706", "#B45309", "#FCF3E2",
+    "#E11D48", "#FCE9EC", "#EEF1F6", "#7C3AED", "#F1EBFD", "#475569",
+})
 
 # 8-Crest official mark fingerprints (from apply-official-8crest.py OFFICIAL_MARK).
 MARK_RING = ('stroke="url(#ringBot)"', 'stroke="url(#ringTop)"')
@@ -85,6 +106,10 @@ NO_LOGOTYPE_OK = {"00-visual-system"}
 PLACEHOLDER_RING = re.compile(r'<rect x="29" y="45"[^>]*stroke="#[0-9A-Fa-f]{6}"')
 
 ELEM_RE = re.compile(r"<(rect|text|path|circle)\b")
+# a status pill is a rounded chip (rx="11") stroked with an 8-digit alpha border `#{BASE}55`
+# (console_kit `status()` border). Its 6-digit base is the theme-invariant reserved channel;
+# T7 asserts that base resolves to a canonical design token in the committed SVGs.
+PILL_BORDER = re.compile(r'<rect\b[^>]*\brx="11"\s+ry="11"[^>]*\bstroke="(#[0-9A-Fa-f]{8})"')
 
 
 def elem_count(svg):
@@ -220,30 +245,35 @@ def check_T6(model):
 
 
 def check_T7(model):
-    """Reserved status dot hues are theme-invariant and never collapse onto the accent."""
+    """Reserved status hues stay on-token (no off-token look-alike), survive the toggle, and
+    never collapse onto the accent.
+
+    The status *dot fill* is theme-ADAPTED (light running dot #059669, console_kit LIGHT g_dot),
+    so a strict "same hue in both siblings" line would be false by design. What IS theme-invariant
+    is the status chip *border*, drawn as `#{BASE}55` in BOTH themes (console_kit `status()` =
+    `BASE[s] + "55"`). So the file-grounded teeth reads every status pill border in the committed
+    set and holds it on the sanctioned token palette — catching a reserved hue silently recoloured
+    to a non-token look-alike in ONE sibling (the proven #34D399 -> #22C55E escape, ISI-2459 F1),
+    which the set-wide survival check (c) alone would miss.
+    """
     bad = []
-    reserved = {v.upper() for v in RESERVED_STATUS.values()}
-    # (a) no reserved status hue may equal the accent — distinct reserved channels (§0).
+    # (a) structural: no reserved status hue may equal the accent — distinct channels (§0).
     for fam, hue in RESERVED_STATUS.items():
         if hue.upper() == ACCENT.upper():
             bad.append(f"{fam}: reserved status hue collapsed onto the accent {ACCENT}")
-    # (b) theme-invariant reservation, grounded in the files: any reserved status hue a
-    # dark screen carries must ALSO be present, IDENTICAL, in its light sibling (kept vivid
-    # across the toggle — only the bg tint changes), and vice-versa.
+    # (b) FILE-GROUNDED reservation: every status pill border in the committed SVGs must resolve
+    # to a canonical design token. Tolerant of legit content asymmetry (a screen may render fewer
+    # status chips in one theme) — it checks the borders that ARE present, not per-pair symmetry —
+    # yet an off-token border (running-green #34D399 recoloured to #22C55E -> border #22C55E55) is
+    # RED even though the hue still survives elsewhere in the light half.
     for stem, pair in sorted(model.items()):
-        if "dark" not in pair or "light" not in pair:
-            continue
-        d = all_hexes(pair["dark"]) & reserved
-        l = all_hexes(pair["light"]) & reserved
-        shared = d & l
-        # a status hue shown in BOTH themes must be the SAME hex (invariant) — guaranteed by
-        # set intersection; the teeth is that dropping/recolouring it in one theme diverges.
-        only_dark = d - l
-        only_light = l - d
-        # tolerate content-level presence differences (a screen may simply not render an idle
-        # row in one theme); the CONTRACT teeth is (a) above + (c) below. `shared` documents.
-        _ = (only_dark, only_light, shared)
-    # (c) the reserved status channel survives the toggle: every reserved hue appears somewhere
+        for theme, svg in pair.items():
+            for stroke in PILL_BORDER.findall(svg):
+                base = stroke.upper()[:7]
+                if base not in TOKEN_HEXES:
+                    bad.append(f"{stem}/{theme}: status pill border {stroke} is not a design token "
+                               f"(reserved status hue jumped its channel)")
+    # (c) the reserved status channel survives the toggle: every reserved BASE hue appears somewhere
     # in the LIGHT half of the committed set (status legibility is not a dark-only affordance).
     light_all = set()
     for pair in model.values():
@@ -254,7 +284,8 @@ def check_T7(model):
         bad.append(f"reserved status hue(s) absent from the light set: {sorted(missing)}")
     if bad:
         return False, "; ".join(bad)
-    return True, "reserved status hues are theme-invariant, survive the toggle, and stay distinct from the accent"
+    return True, ("every status pill border resolves to a canonical token (reserved hues on-token & "
+                  "theme-invariant), the channel survives the toggle, and none collapses onto the accent")
 
 
 CHECKS = [
@@ -293,7 +324,12 @@ def apply_mutation(model, name):
         # strip the inverted-role navy from the light sibling -> role mirror broken.
         pair["light"] = pair["light"].replace(LIGHT_T1, "#111111")
     elif name == "STATUS_RECOLOR":
-        RESERVED_STATUS["paused"] = ACCENT  # collapse the reserved paused hue onto the accent
+        # recolour the running-green reserved hue to a non-accent, off-token look-alike
+        # (#34D399 -> #22C55E) in ONE light sibling -> its status pill border becomes the
+        # off-token stroke #22C55E55 -> T7 clause (b) RED. This is the proven single-sibling
+        # escape (ISI-2459 F1): it never strips the hue from the whole light half, so the
+        # set-wide survival check (c) still passes — only the file-grounded border teeth fires.
+        pair["light"] = pair["light"].replace("#34D399", "#22C55E")
     else:
         die(f"unknown mutation: {name}")
     return m
