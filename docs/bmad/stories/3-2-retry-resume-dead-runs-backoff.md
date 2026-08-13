@@ -27,12 +27,24 @@ the two stories own **different halves of the same edge**:
 | The `Failed → Claiming` transition + retry-lap re-entrancy (sandbox bind reattaches, dispatch dedups) | **Story 3.1** (AC5, check E) | — (consumed, not re-specified) |
 | **Detecting** that a `Running` Run died *without* transitioning (lease non-renewal + pod disappearance) | **THIS STORY (3.2)** | the two independent detectors (§A) |
 | **Confirming** death before reclaim (slow-holder vs dead-holder; the §6.3 GC-pause teeth) | **THIS STORY (3.2)** | the fence-first-with-confirmation reclaim on the death edge (§B) |
-| The concrete **exponential-backoff policy** (base·multiplier^n + jitter, cap, `retryPolicy.maxAttempts` budget) | **THIS STORY (3.2)** | the backoff function + its durable schedule (§C) |
+| The concrete **exponential-backoff DELAY FUNCTION** (base·multiplier^n + jitter, cap) + its durable crash-safe schedule | **THIS STORY (3.2)** | the delay function + `next_attempt_at`/`attempt_count` durability (§C) |
+| The **terminal-vs-requeue DECISION** on the `retryPolicy.maxAttempts` budget (`attempt_count >= maxAttempts → terminal Failed(RetryBudgetExhausted)`) | **Story 3.1** (AC5) | — (consumed, not re-specified — see the scope pin below) |
 | Distinguishing **failure backoff (FR-A5)** from **rate-limit `resume_at`** (§8 tier-2, ADR-031) | **THIS STORY (3.2)** | the two are separate clocks on the same Run (§C) |
+
+**⚠️ Scope pin (the budget decision lives in ONE place — 3.1).** The death edge this story owns
+transitions `Running → Failed(reason ∈ {SandboxDied, LeaseExpired, PodDisappeared})` after the fence-first
+reclaim. It does **not** itself evaluate the attempt budget or decide requeue-vs-terminate. **Story 3.1's
+single `Failed → (retryPolicy, backoff) → Claiming` lap (AC5, its check E) owns that decision and is the
+sole writer of `attempt_count`/`next_attempt_at`** — consulting `retryPolicy` exactly once, using **this
+story's §C delay function** to compute the delay. This keeps the budget check out of two divergent code
+paths: 3.2 = detection + fence-first reclaim + the delay-function *spec* + the two-clock distinctness;
+3.1 = the terminal-vs-requeue decision + the durable write. (Falsification (D) asserts the budget
+*invariant* 3.1 must uphold when it consumes §C, not a second implementation of it.)
 
 **One-line boundary:** 3.1 answered *"once a Run is Failed, how does it retry safely?"* This story answers
 *"how does a Run that died silently ever become Failed-and-retried in the first place, without a
-false-positive reclaim of a live holder, and with a backoff that survives an operator restart?"*
+false-positive reclaim of a live holder, and with a backoff that survives an operator restart?"* — it
+delivers the death to 3.1's doorstep as `Failed(reason)` and hands it the delay function; 3.1 decides.
 
 ## Story
 
@@ -77,8 +89,10 @@ detect.**
     (retryPolicy attempts vs Retry-After). Do not route a dead-sandbox retry through `Paused`.
   - **§5.1 `Run`** (r28) — `spec.retryPolicy` (the attempt budget + backoff params this story reads);
     `status.phase` (the pinned CEL enum — a requeue writes `Claiming`, **never a new phase**);
-    `status.conditions` (surfaces `reason=SandboxDied|LeaseExpired|PodDisappeared`, attempt count, and
-    `next_attempt_at`). This story **writes** status; it does not add CRD fields (Story 1.2 owns shape).
+    `status.conditions` (this story surfaces the death `reason=SandboxDied|LeaseExpired|PodDisappeared`
+    and the `Failed` transition; `attempt_count`/`next_attempt_at` are written by **3.1's lap**, not here —
+    see the scope pin). This story **writes** detection/reason status; it does not add CRD fields (Story 1.2
+    owns shape) and does not write the retry-budget fields (3.1 does).
   - **§6.4** — the re-entrancy spine (deterministic `a2a_task_id = run_id`, run_id-keyed sandbox bind,
     content-addressed artifact upsert, conditional step-advance). **This story relies on it**: a retry
     lap re-runs `claiming_sandbox`/`dispatching` and must not double-provision or double-dispatch. Story
@@ -168,9 +182,12 @@ next_attempt_at = now() + delay
   prevents a retry storm against a broken dependency (a persistently-failing image, a dead node pool).
 - **`jitter`** — a bounded random spread (e.g. ±20%) so a fleet of Runs that all died on the same node
   failure do not re-`Claiming` in a synchronized thundering herd against the `SandboxPool`.
-- **`retryPolicy.maxAttempts` is the budget.** When `attempt_count >= maxAttempts`, the Run does **not**
-  requeue — it transitions to terminal **`Failed`** with `reason=RetryBudgetExhausted` (Story 3.1's
-  terminal absorbing state, AC5). Retry is bounded in *count* and in *delay*.
+- **`retryPolicy.maxAttempts` is the budget — but the *decision* is 3.1's (scope pin).** This story's
+  death edge writes `Failed(reason)`; **Story 3.1's single Failed-handler lap (AC5)** is the one place that
+  reads `retryPolicy`, and when `attempt_count >= maxAttempts` it keeps the Run terminal **`Failed`** with
+  `reason=RetryBudgetExhausted` (its absorbing state) rather than requeuing — otherwise it computes the
+  delay via the function above and re-enters `Claiming`. 3.2 defines the delay math; 3.1 owns the budget
+  branch and the `attempt_count`/`next_attempt_at` write. Retry is bounded in *count* (3.1) and *delay* (this §C).
 
 **The schedule is durable (the crash-safety crux, mirrors §8 tier-2 `resume_at`).** `next_attempt_at` and
 `attempt_count` are persisted on the Run **in the same transaction** as the reclaim/step write. The
@@ -219,14 +236,18 @@ equality guard** (§6.3) — its renewal/write is rejected, not applied. So a fa
 that releases on `lease_expires_at < now()` alone (no pod confirmation, no fence bump) is a correctness
 failure.
 
-**AC4 — requeue uses bounded exponential backoff with jitter, budgeted by `retryPolicy.maxAttempts`.**
-Given a Run reclaimed after death, When it requeues, Then it re-enters `Claiming` after
-`delay = min(base * multiplier^(attempt_count-1), cap) + jitter` (params from `spec.retryPolicy`),
-incrementing a durable `attempt_count`. And the delay is **bounded** by `cap` (no unbounded wait) and the
-**multiplier** backs off a persistently-failing dependency (no retry storm), with **jitter** preventing a
-synchronized thundering herd after a shared node failure. And when `attempt_count >= maxAttempts` the Run
-**does not requeue** — it goes terminal `Failed` with `reason=RetryBudgetExhausted` (3.1 AC5 absorbing
-terminal), never an infinite retry loop.
+**AC4 — the death edge produces `Failed(reason)`; requeue uses this story's bounded backoff DELAY
+FUNCTION, and the terminal-vs-requeue DECISION is 3.1's single budget check (scope pin).**
+Given a Run reclaimed after death, When the death edge completes, Then it transitions
+`Running → Failed(reason ∈ {SandboxDied, LeaseExpired, PodDisappeared})` — it does **not** itself evaluate
+the attempt budget. And when **Story 3.1's Failed-handler lap** requeues, it re-enters `Claiming` after
+`delay = min(base * multiplier^(attempt_count-1), cap) + jitter` (this story's §C function, params from
+`spec.retryPolicy`), incrementing the durable `attempt_count` **that 3.1 writes**. And the delay is
+**bounded** by `cap` (no unbounded wait), the **multiplier** backs off a persistently-failing dependency
+(no retry storm), and **jitter** prevents a synchronized thundering herd after a shared node failure. And
+the budget is enforced in exactly one place — **3.1 AC5**: when `attempt_count >= maxAttempts` the Run
+stays terminal `Failed(RetryBudgetExhausted)`, never an infinite retry loop. This story does **not** add a
+second `retryPolicy` code path (see the scope pin above).
 
 **AC5 — the backoff schedule is durable and crash-safe; it is a single timed wake, not a poll loop.**
 Given a Run waiting out its backoff, When the reconciler schedules the retry, Then it persists
@@ -256,30 +277,50 @@ teeth (this story) on top of the *retry-lap* re-entrancy (3.1, assumed):
   with no pod confirmation and no fence bump. A **GC-paused-but-alive** holder wakes after the reclaim and
   writes → the check asserts the naive design **detectably double-writes** (two live holders on one item).
   If (A) ever stops breaking, the check fails **loud** — the harness lost its detecting power.
+- **(F1) confirmation-gate teeth (AC1/AC3).** Drives `pod_confirmed_gone=False` (a lease-expired but
+  network-partitioned, still-alive holder) and asserts the §6.3 reclaim returns **`held`** — the claim is
+  **not** released — plus a differential twin where a naive release-on-expiry path hands the claim to podB
+  while the live podA keeps writing → **two live holders**. *Mutation-proven:* deleting the
+  `if not pod_confirmed_gone: return "held"` gate turns the check **RED** (the load-bearing "suspicion, not
+  license" invariant now has teeth — the gap ISI-2363 F1 flagged).
 - **(B) §6.3 CONFIRMED-DEATH + FENCE-FIRST detector.** Requires **both** lease-expiry (A1) **and** pod
   gone/terminal (A2) before release; runs fence → confirm → release with a monotonic fence bump. The same
   GC-paused zombie wakes → its stale fence **loses the equality guard**; its write is **rejected**. The
   check asserts **exactly-one live holder, zero double-writes** across the false-positive scenario.
+- **(F2) release-time fence bump ISOLATED (AC2 §6.3 step 1).** The reclaim advances the resource fence
+  barrier **fence-first** (`db.fence_resource`), so a woken zombie that writes **after release but before
+  any new holder acquires/writes** is fenced out by the reclaim **alone** — no new-holder write masks it.
+  *Mutation-proven:* deleting the barrier advance turns the check **RED** (the gap ISI-2363 F2 flagged: the
+  old model let acquire's re-bump mask a deleted release bump).
 - **(C) false-negative teeth — wedged-but-present pod.** A pod that still `exists` (Running) but whose
-  agent hung and stopped renewing: pod-watch alone never fires; the check asserts the **lease sweeper**
-  still opens the case and (after fencing terminates the wedged pod) reclaims — the conjunction detector
-  does not silently wedge forever.
-- **(D) backoff monotonicity + cap + budget.** Asserts `delay(n)` is non-decreasing, **capped** (never
-  exceeds `cap + jitter`), **jittered** (two Runs at the same attempt get different delays), and that at
-  `attempt_count >= maxAttempts` the Run goes terminal **`Failed(RetryBudgetExhausted)`** — never a
-  `maxAttempts+1` requeue. Removing the cap or the budget makes it fail loud.
-- **(E) crash-safe backoff schedule.** Persists `next_attempt_at`, simulates an operator restart
-  mid-backoff, and asserts the failover reconciler **re-reads it and resumes the remaining delay** — not
-  from zero, not immediately. A variant that keeps the schedule in memory loses the wake on restart and
-  the check fails loud.
+  agent hung and stopped renewing: pod-watch alone never fires; the check asserts the **grace-aware lease
+  sweeper** (`lease_expires_at < now - grace`) still opens the case and (after fencing terminates the
+  wedged pod) reclaims — the conjunction detector does not silently wedge forever.
+- **(F6) grace window (AC1).** A single missed heartbeat **within grace** (`lease` lapsed but
+  `!(lease_expires_at < now - grace)`) asserts the sweeper does **not** open a reclaim — the transient-stall
+  false-positive guard has teeth.
+- **(F5) crash mid-reclaim (AC2 idempotency).** A crash **between** the fence marker (step 1) and the
+  release (step 3) re-enters via the durable `reclaim_fenced_at` marker and asserts the fence barrier is
+  **not double-advanced** — step 1 is idempotent.
+- **(D) backoff monotonicity + cap + budget INVARIANT.** Asserts `delay(n)` is non-decreasing, **capped**
+  (never exceeds `cap + jitter`), and **jittered** deterministically (two Runs at the same attempt get
+  different delays, reproducible across processes — `hashlib`, not salted `hash()`, the ISI-2363 F4 fix).
+  The `attempt_count >= maxAttempts → Failed(RetryBudgetExhausted)` assertion is the **invariant 3.1 must
+  uphold** when it consumes this §C function — **not** a second budget implementation here (scope pin).
+- **(E) crash-safe backoff schedule (AC5).** Persists `next_attempt_at` to Postgres, simulates an operator
+  restart mid-backoff via a **fresh in-memory reconciler with no timers**, and asserts the failover path
+  **re-reads durable state and resumes the remaining delay** (150s, not zero, not immediate) while the
+  naive in-memory wake is **dropped** on restart.
 - **(F) two-clock distinctness (AC6).** Asserts a dead-sandbox Run carries the **failure**
   `next_attempt_at`/`maxAttempts` budget and is **never** classified `Paused(rate_limited)`, and a
   rate-limited Run carries `resume_at`/Retry-After and **never** consumes the failure budget — merging the
   two clocks makes it fail loud.
 
-Exits non-zero if (B)–(F) ever releases a live holder, double-writes, false-negatives a wedged pod,
-exceeds the cap or the attempt budget, loses the backoff wake on restart, or conflates the failure and
-rate-limit clocks.
+Exits non-zero if the reclaim releases a live/unconfirmed holder, double-writes, lets a zombie write in the
+release window, false-negatives a wedged pod, reclaims within grace, double-advances the fence on re-entry,
+exceeds the cap, loses the backoff wake on restart, or conflates the failure and rate-limit clocks. **The
+two headline invariants are mutation-checked:** deleting the confirmation gate (F1) or the fence-first
+barrier advance (F2) each turns the check **RED** — the ISI-2363 blocking findings are closed.
 
 ## Out of scope (owned elsewhere)
 
