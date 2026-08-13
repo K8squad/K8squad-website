@@ -56,11 +56,15 @@ def validate_schema(body: dict) -> bool:
 class Coord:
     """In-process model of coord.claim + coord.artifact + audit/outbox + a memory mirror."""
 
-    def __init__(self, naive_mirror=False):
-        # naive_mirror=True → memory mirror stores bare text, no §7.3 provenance envelope (the hazard).
-        # (The custody-leak hazard is modeled in run_naive_custody_scenario, not via a flag here:
-        #  the advisory artifact write structurally cannot touch the claim row — that IS the point.)
+    def __init__(self, naive_mirror=False, naive_custody=False):
+        # naive_mirror=True   → memory mirror stores bare text, no §7.3 provenance envelope (hazard E).
+        # naive_custody=True  → the WRONG design: write_handoff has NO fixed schema and HONORS a
+        #   `grant_custody_to` field by mutating the claim row (hazard A, the forbidden P2P grant).
+        #   Routing the leak through the same SUT — not a hand-built dict — is what gives arm (A)
+        #   real teeth: if the advisory guard is (re)introduced, working_holder() stops showing the
+        #   leak and the teeth assertion fails loud. Mirrors the naive_mirror toggle exactly.
         self.naive_mirror = naive_mirror
+        self.naive_custody = naive_custody
         self.now = 0
         # one claim row per work item (§6.1 F3): fence monotonic, rewritten in place
         self.claim = {"holder": None, "fence": 0, "lease_expires_at": 0}
@@ -104,9 +108,17 @@ class Coord:
         """Register the handoff artifact in one txn with audit + outbox, then mirror to memory.
 
         Advisory design (default): the artifact carries content only — the `claim` row is NOT
-        touched here. Naive design: an extra `grant_custody_to` field is honored as a transfer.
+        touched here. Naive design (naive_custody=True): no fixed schema, and a `grant_custody_to`
+        field is honored as a transfer — the exact P2P leak AC3 forbids, run through this SUT.
         """
-        if not validate_schema(body):
+        if self.naive_custody:
+            # WRONG design: skip the fixed-schema gate AND honor a smuggled custody field by
+            # mutating the claim — B ends up holding W with NO fenced acquire of its own.
+            grantee = body.get("grant_custody_to")
+            if grantee is not None:
+                self.claim["holder"] = grantee
+                self.claim["lease_expires_at"] = self.now + LEASE
+        elif not validate_schema(body):
             raise ValueError("handoff schema invalid (AC1)")  # rejected before any write
 
         sha = canonical_sha256(body)
@@ -126,10 +138,10 @@ class Coord:
             # be a schema/content drift bug; assert content-addressing holds.
             assert self.artifacts[key]["sha256"] == sha, "content-address drift on re-entry"
 
-        # NOTE: there is deliberately NO custody-grant path here — the advisory artifact write
-        # cannot touch `self.claim` (AC3). The naive custody leak is modeled out-of-band in
-        # run_naive_custody_scenario(), because the fixed schema (D) structurally bars a custody
-        # field from ever reaching this write.
+        # NOTE: in the ADVISORY (default) design there is deliberately NO custody-grant path —
+        # the artifact write cannot touch `self.claim` (AC3), and the fixed schema (D) structurally
+        # bars a `grant_custody_to` field from ever reaching a real write. The naive custody leak
+        # above (naive_custody=True) exists ONLY to give arm (A) teeth against this same SUT.
 
         # memory mirror (§7.3) — best-effort; a memory outage must NOT roll back the artifact.
         if memory_up:
@@ -147,18 +159,23 @@ class Coord:
 
 
 def run_naive_custody_scenario():
-    """(A) NAIVE: the handoff 'hands' custody. B works the item on the artifact alone — no
-    fenced claim. This is the forbidden P2P back-channel; it MUST leak (teeth)."""
-    co = Coord()
+    """(A) NAIVE: the handoff 'hands' custody. B works the item on the artifact alone — no fenced
+    claim. This is the forbidden P2P back-channel; it MUST leak (teeth). The leak is driven THROUGH
+    the real write_handoff SUT (naive_custody=True) — not a hand-built dict — so that (re)introducing
+    the advisory guard makes working_holder() stop showing the leak and this arm fail loud."""
+    co = Coord(naive_custody=True)
     fa = co.acquire("A")
-    # A "hands off" to B via a naive custody grant carried out-of-band with the handoff.
-    grant_custody_to = "B"          # the naive artifact's custody field
-    a_released = co.release("A", fa)  # A yields
-    # NAIVE control plane: honors the grant directly — B "has" the item with NO acquire.
-    b_holds_via_grant = (grant_custody_to == "B")
-    b_own_fence = None               # B never acquired
-    return {"a_released": a_released, "b_holds_via_grant": b_holds_via_grant,
-            "b_own_fence": b_own_fence, "working_holder": "B" if b_holds_via_grant else None}
+    # The naive artifact smuggles a custody field alongside the 7 content fields (no fixed schema).
+    body = {"did": "impl X", "decisions": [], "next": "wire Z", "blockers": [],
+            "findings": [], "recommended_next": "add test", "artifacts_for_downstream": [],
+            "grant_custody_to": "B"}          # the naive artifact's custody field
+    a_released = co.release("A", fa)           # A yields its fenced claim
+    # NAIVE write HONORS the grant: it mutates the claim to B — with NO acquire by B.
+    co.write_handoff("W", run_id="runA", principal="A", fence=fa, body=body)
+    leaked_holder = co.working_holder()        # 'B' — holds W off the artifact alone
+    b_own_fence = None                         # B never called acquire()
+    return {"a_released": a_released, "b_holds_via_grant": leaked_holder == "B",
+            "b_own_fence": b_own_fence, "working_holder": leaked_holder}
 
 
 def run_advisory_scenario():
@@ -201,8 +218,11 @@ def run_reentry_idempotency():
     sha1, first1 = co.write_handoff("W", "runA", "A", fa, body)
     sha2, first2 = co.write_handoff("W", "runA", "A", fa, body)  # crash re-entry
     n_rows = sum(1 for k in co.artifacts if k[0] == "W" and k[1] == "runA" and k[2] == "handoff")
+    # The dict keying makes >1 handoff row impossible by construction, so n_rows alone is a weak
+    # witness; the observable re-entry regression is a DOUBLE audit/outbox append. Assert those =1
+    # too so dropping the ON CONFLICT (first_write) guard fails loud, not just changes a bool.
     return {"sha_equal": sha1 == sha2, "first_write": first1, "reentry_first_write": first2,
-            "handoff_rows": n_rows}
+            "handoff_rows": n_rows, "audit_rows": len(co.audit), "outbox_rows": len(co.outbox)}
 
 
 def run_schema_validation():
@@ -276,7 +296,9 @@ def main():
     assert idem["first_write"] is True and idem["reentry_first_write"] is False, \
         "re-entry must be a no-op (ON CONFLICT DO NOTHING)"
     assert idem["handoff_rows"] == 1, "exactly one handoff row per (work_item, run) — no duplicate (AC4)"
-    print("[model]        → re-entered collecting is a no-op; exactly one handoff row\n")
+    assert idem["audit_rows"] == 1 and idem["outbox_rows"] == 1, \
+        "re-entry must NOT double-append audit/outbox — the observable duplication regression (AC2/AC4)"
+    print("[model]        → re-entered collecting is a no-op; exactly one handoff/audit/outbox row\n")
 
     # (D) schema validity.
     sch = run_schema_validation()
