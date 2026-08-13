@@ -181,16 +181,23 @@ It encodes as assertions over the modeled schema/query-plan: **(INV1, AC2)** eve
 present with the right type — `embedding` a pgvector `vector(dim)`, not a blob; **(INV2, AC3 — the
 crux)** semantic search runs on pgvector: a `vector` column **and** an ANN index (`ivfflat`|`hnsw` +
 `vector_*_ops`) **and** a pgvector distance operator (`<=>`/`<#>`/`<->`) in the plan — an app-side
-cosine scan is a violation *even if it returns results*; **(INV3, AC2/§7.3)** the scope/provenance
-columns exist and the load-bearing ones are NOT NULL (unscoped/unattributed rows un-representable);
-**(INV4, AC4)** the migration is forward-only (no `DROP`/`DELETE`/`TRUNCATE` of the record) and
-`invalidated_at` gives soft-retract. It exits non-zero if the naive service *stops* violating (teeth
+cosine scan is a violation *even if it returns results* — **and** the v1 plan is **scoped by
+`squad_id`** (an integrated-but-unscoped search is still a violation; the tenancy *enforcement
+predicate* stays 6.5); **(INV3, AC2/§7.3)** the scope/provenance columns exist and the load-bearing
+ones are NOT NULL (unscoped/unattributed rows un-representable); **(INV4, AC4)** the migration is
+forward-only (no `DROP`/`DELETE`/`TRUNCATE` of the record), `invalidated_at` gives soft-retract, **and
+the default search plan filters `invalidated_at IS NULL`** so retracted facts do not resurface on read
+(soft-retract is the write *and* read side of §7.4). It exits non-zero if the naive service *stops* violating (teeth
 lost) or the §7 schema *ever* violates one invariant.
 
 **Mutation contract (teeth, verified):** starting from the §7 schema — delete the ANN index **and**
-swap the `<=>` plan for an app-side cosine scan → **RED** (3 INV2/OQ10 violations); make `principal_id`
-nullable → **RED** (INV3); make the migration `DROP TABLE memory_records` → **RED** (INV4). The
-integrate-not-invent crux (AC3) is the primary tooth.
+swap the `<=>` plan for an app-side cosine scan → **RED** (INV2/OQ10 violations); drop the ANN index
+alone (keep `<=>`) → **RED**; make `principal_id` nullable → **RED** (INV3); make the migration
+`DROP TABLE memory_records` → **RED** (INV4); strip `squad_id` from the search plan → **RED**
+(AC3/INV2 scope tooth); strip `invalidated_at IS NULL` from the search plan → **RED** (INV4
+soft-retract read tooth). The integrate-not-invent crux (AC3) is the primary tooth. (Scope +
+soft-retract read teeth added in ISI-2373 review remediation — the op/index checks alone green-lit a
+plan that integrated pgvector but ignored tenancy scoping and returned retracted rows.)
 
 **AC1 (service skeleton / fail-closed start) and AC5 (single-backend v1 / embedder seam)** are pinned
 in prose here and exercised by the **service integration test** the dev writes against a real

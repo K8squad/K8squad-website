@@ -155,6 +155,13 @@ def check_memory(model, provision_name):
     if app_side:
         viol.append(f"{provision_name}: search plan cosines rows app-side (bespoke vector engine) "
                     f"instead of ORDER BY embedding <=> $q in Postgres (OQ10/INV2)")
+    # AC3 also pins the v1 plan shape: the semantic search is *scoped by squad_id*. The tenancy-filter
+    # *enforcement predicate* (deny-by-construction) is 6.5, but the v1 default search plan this story
+    # ships must key on the tenancy root — a plan that pushes `<=>` into pgvector yet omits the scope
+    # is "integrated" but unscoped, and INV2's op/index checks alone would green-light it.
+    if not re.search(r"\bsquad_id\b", plan, re.I):
+        viol.append(f"{provision_name}: search plan is not scoped by `squad_id` — the v1 semantic "
+                    f"search must key on the tenancy root (AC3/INV2; enforcement predicate is 6.5)")
 
     # INV4 (§7.4): forward-only migration; retract is soft (invalidated_at), never a destructive drop.
     mig = model["migration"]
@@ -164,6 +171,12 @@ def check_memory(model, provision_name):
     if "invalidated_at" not in cols:
         viol.append(f"{provision_name}: no `invalidated_at` column — retraction can only be a hard "
                     f"delete, destroying the audit trail (§7.4/INV4)")
+    # Soft-retract is meaningless unless the *read path* honors it: the default search plan this story
+    # ships must filter `invalidated_at IS NULL`, else retracted facts resurface on every search and the
+    # whole soft-retract column is dead weight (§7.4 is the write *and* read side of durability).
+    elif not re.search(r"invalidated_at\s+is\s+null", plan, re.I):
+        viol.append(f"{provision_name}: search plan does not filter `invalidated_at IS NULL` — "
+                    f"soft-retracted rows resurface on read, defeating the §7.4 retraction path (INV4)")
 
     return viol
 
