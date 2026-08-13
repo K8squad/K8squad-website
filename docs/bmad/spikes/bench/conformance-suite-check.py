@@ -22,6 +22,8 @@ in-process; the buildable `conformance/` harness (Ollama lane, opencode 5.8) is 
 real-runtime promotion — this proves the *assertions have teeth* before they are built.
 """
 
+import inspect
+import re
 import sys
 
 PASS, FAIL = "PASS", "FAIL"
@@ -115,11 +117,36 @@ class Shim:
 
 
 # --------------------------------------------------------------------------- #
+# The CORE dispatch path — the thing C10 guards. It drives ANY shim through    #
+# the identical black-box surface and MUST NOT branch on shim.type. The C10    #
+# teeth arm injects `special_cased_dispatch` to prove the guard bites.         #
+# --------------------------------------------------------------------------- #
+def core_dispatch(shim, task_id, model_route=None):
+    """Reference CORE — agent-agnostic: drives every shim through the same surface,
+    NEVER reading shim.type (§C10, the zero-core-change invariant / K8squad's
+    headline differentiator). No dispatch branch keys off the runtime kind."""
+    return shim.submit(task_id, model_route)
+
+
+def special_cased_dispatch(shim, task_id, model_route=None):
+    """A CORE that special-cases a runtime kind — the zero-core-change VIOLATION
+    (models a runtime branch leaking into reconciler/coord). Reference shims still
+    round-trip C1-C9 through it; only C10's source gate catches the branch."""
+    if shim.type == "double":              # forbidden: core reads the runtime kind
+        return "special-cased"
+    return shim.submit(task_id, model_route)
+
+
+# --------------------------------------------------------------------------- #
 # The CONFORMANCE SUITE — §12 C1-C10. Each check returns PASS/FAIL against a   #
 # black-box shim. `vacuous` forces one named check to `return PASS` (the       #
-# no-teeth mutation) so we can prove the real body is load-bearing.            #
+# no-teeth mutation) so we can prove the real body is load-bearing. `dispatch` #
+# is the CORE path under test — default = the agent-agnostic reference core;   #
+# the C10 teeth arm swaps in a type-special-casing variant.                    #
 # --------------------------------------------------------------------------- #
-def run_suite(make_shim, ollama_base="http://ollama.svc:11434", vacuous=None):
+def run_suite(make_shim, ollama_base="http://ollama.svc:11434", vacuous=None,
+              dispatch=None):
+    dispatch = dispatch or core_dispatch
     results = {}
 
     def check(cid, fn):
@@ -134,7 +161,7 @@ def run_suite(make_shim, ollama_base="http://ollama.svc:11434", vacuous=None):
     # C1 — deterministic-id dedup: two submits, same id ⇒ one execution.
     def c1():
         s = make_shim()
-        s.submit("run-1"); s.submit("run-1")
+        dispatch(s, "run-1"); dispatch(s, "run-1")
         return s.executions == 1
 
     # C2 — artifact idempotency: re-emit same (wi,run,kind) ⇒ one row.
@@ -195,7 +222,7 @@ def run_suite(make_shim, ollama_base="http://ollama.svc:11434", vacuous=None):
     # C8 — cancel is terminal + idempotent.
     def c8():
         s = make_shim()
-        s.submit("run-1")
+        dispatch(s, "run-1")
         first = s.cancel("run-1")
         again = s.cancel("run-1")          # cancel of terminal = no-op success
         return first == "canceled" and again == "noop-success"
@@ -205,12 +232,12 @@ def run_suite(make_shim, ollama_base="http://ollama.svc:11434", vacuous=None):
         s = make_shim()
         if not s.card_wire()["capabilities"].get("byoModelEndpoint"):
             return True                    # runtime that lacks it is exempt (honest)
-        s.submit("run-1", model_route="provider-default")
+        dispatch(s, "run-1", model_route="provider-default")
         return ollama_base in s._model_calls
 
-    # C10 — zero-core-change: the suite's own dispatch has no `type ==` branch.
+    # C10 — zero-core-change: the CORE dispatch under test has no shim.type branch.
     def c10():
-        return _no_type_special_casing()
+        return _no_type_special_casing(dispatch)
 
     for cid, fn in [("C1", c1), ("C2", c2), ("C3", c3), ("C4", c4), ("C5", c5),
                     ("C6", c6), ("C7", c7), ("C8", c8), ("C9", c9), ("C10", c10)]:
@@ -238,14 +265,17 @@ def _leaks_secret(card):
     return walk(card)
 
 
-def _no_type_special_casing():
-    # The C10 grep-gate: the suite runner drives every shim through the identical
-    # black-box surface with NO branch on shim.type. Assert the driver source is
-    # type-agnostic (models the CI grep gate: no `type ==` in reconciler/coord).
-    src = run_suite.__code__
-    # run_suite references shim methods only, never shim.type; a real gate greps
-    # the core source tree. Here: no dispatch branch reads `.type`.
-    return "type" not in [n for n in src.co_names if n == "type"] or True
+_TYPE_BRANCH = re.compile(r"\.type\s*(?:==|!=|\bin\b)")
+
+
+def _no_type_special_casing(dispatch_fn):
+    # The C10 grep-gate WITH TEETH: inspect the CORE dispatch SOURCE (the reconciler/
+    # coord path, modeled by `dispatch_fn`) for a branch keyed on shim.type. Models
+    # the CI grep of Story 5.1 (L79): a type-agnostic core has none; a special-cased
+    # one does. Detecting power is DERIVED from the source under test, not hardcoded —
+    # PASS iff no `.type ==/!=/ in` branch exists, RED the moment one appears.
+    src = inspect.getsource(dispatch_fn)
+    return _TYPE_BRANCH.search(src) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -303,6 +333,15 @@ class DishonestInteractiveShim(Shim):    # breaks C6
         self.append_event("input-required")   # advertised false, yet emits it
 
 
+class WideningInteractiveShim(Shim):     # breaks C5 (widening) — card over-advertises
+    type = "widening"
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.card["capabilities"]["interactive"] = True   # claims interactive…
+    def run_needs_input(self):
+        self.append_event("status")            # …but the runtime never emits it
+
+
 class GenericAuthFailShim(Shim):         # breaks C7 (lifecycle) — auth → failed
     type = "authfail"
     def on_auth_error(self):
@@ -353,6 +392,7 @@ def main():
         "C3": lambda: NoFenceShim(ollama_base=ollama),
         "C4": lambda: OutOfOrderShim(ollama_base=ollama),
         "C5": lambda: OmitCapShim(ollama_base=ollama),
+        "C5w": lambda: WideningInteractiveShim(ollama_base=ollama),  # over-wide override (N1)
         "C6": lambda: DishonestInteractiveShim(ollama_base=ollama),
         "C7a": lambda: GenericAuthFailShim(ollama_base=ollama),
         "C7b": lambda: SecretLeakShim(ollama_base=ollama),
@@ -360,7 +400,7 @@ def main():
         "C9": lambda: BakedEndpointShim(ollama_base=ollama),
     }
     for label, mk in mutants.items():
-        cid = label.rstrip("ab")
+        cid = re.match(r"C\d+", label).group()   # C7a/C7b→C7, C5w→C5
         res = run_suite(mk, ollama_base=ollama)
         broke = res.get(cid) == FAIL
         # The teeth assertion: the target check MUST flip RED. Collateral extra
@@ -376,13 +416,36 @@ def main():
             failures.append(f"non-conformant shim {label} did NOT fail {cid} "
                             f"(suite has no teeth for {cid})")
 
+    # (A) C10 teeth — the zero-core-change arm is a CORE variant, not a shim: a
+    # dispatch that special-cases on runtime kind. The reference shim still honors
+    # C1-C9 through it, so ONLY C10 must flip RED (its detecting power is derived
+    # from the dispatch source, not hardcoded).
+    res = run_suite(lambda: Shim(ollama_base=ollama), ollama_base=ollama,
+                    dispatch=special_cased_dispatch)
+    broke = res.get("C10") == FAIL
+    others = {k: v for k, v in res.items() if k != "C10" and v == FAIL}
+    print(f"[A] C10  special-core -> C10={res.get('C10')}  "
+          + ("RED" if broke else "GREEN(!!)")
+          + (f"  also-red={list(others)}" if others else ""))
+    if not broke:
+        failures.append("type-special-cased core did NOT fail C10 "
+                        "(C10 has no teeth — the zero-core-change gate is a tautology)")
+    if others:
+        failures.append(f"type-special-cased core flipped non-C10 checks {list(others)} "
+                        f"(C10 arm should isolate C10; reference shim honors C1-C9)")
+
     # (C) VACUITY: stubbing a check to PASS lets its violating shim through. ----
-    # Proves each headline check body is load-bearing, not incidental.
+    # Proves each headline check body is load-bearing, not incidental. Every check
+    # with real teeth is represented (AC2 "every headline check load-bearing").
     vac_arms = {
         "C1": lambda: DoubleDispatchShim(ollama_base=ollama),
+        "C2": lambda: ArtifactAppendShim(ollama_base=ollama),
         "C3": lambda: NoFenceShim(ollama_base=ollama),
+        "C4": lambda: OutOfOrderShim(ollama_base=ollama),
+        "C5": lambda: OmitCapShim(ollama_base=ollama),
         "C6": lambda: DishonestInteractiveShim(ollama_base=ollama),
         "C7": lambda: SecretLeakShim(ollama_base=ollama),
+        "C8": lambda: NonTerminalCancelShim(ollama_base=ollama),
         "C9": lambda: BakedEndpointShim(ollama_base=ollama),
     }
     for cid, mk in vac_arms.items():
@@ -394,6 +457,18 @@ def main():
             failures.append(f"vacuating {cid} did not let its violating shim pass — "
                             f"the check is not the thing catching it")
 
+    # (C) C10 vacuity — stub C10 to PASS and run the type-special-cased core: the
+    # special-casing leaks through, proving the C10 body (source gate) is the only
+    # thing catching it, not an incidental side effect.
+    res = run_suite(lambda: Shim(ollama_base=ollama), ollama_base=ollama,
+                    dispatch=special_cased_dispatch, vacuous="C10")
+    leaked = res.get("C10") == PASS
+    print(f"[C] vacuous(C10) on special-core -> C10={res.get('C10')}"
+          f"  {'LEAKED-THROUGH (proves teeth)' if leaked else 'STILL-CAUGHT(!!)'}")
+    if not leaked:
+        failures.append("vacuating C10 did not let the type-special-cased core pass — "
+                        "the check is not the thing catching it")
+
     print()
     if failures:
         print("FALSIFICATION FAILED:")
@@ -401,8 +476,9 @@ def main():
             print("  -", f)
         sys.exit(1)
     print("OK — conformance suite has teeth: reference shim GREEN on C1-C10, each "
-          "non-conformant shim isolates its violated check, every headline check "
-          "load-bearing (vacuity-proven). Ollama lane, $0, zero paid credits.")
+          "non-conformant shim isolates its violated check (incl. C10 flipping RED "
+          "on a type-special-cased core and C5's widening-override path), every "
+          "headline check load-bearing (C1-C10 vacuity-proven). Ollama lane, $0.")
     sys.exit(0)
 
 
