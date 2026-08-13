@@ -270,7 +270,10 @@ def check_postgres(dsn):
         cur.execute(acquire, {"me": "H1", "run": "run-H1"}); f1 = cur.fetchone()[0]
         assert f1 == 1
         cur.execute(acquire, {"me": "H2", "run": "run-H2"})
-        assert cur.fetchone()[0] is None, "[pg-b] reclaimed a live lease"
+        # A rejected acquire updates zero rows -> RETURNING yields NO row, so
+        # fetchone() is None (not a (None,) tuple). `[0]` here would TypeError on
+        # the very case this asserts. Match scenario (c)'s `is None` pattern.
+        assert cur.fetchone() is None, "[pg-b] reclaimed a live lease"
         time.sleep(1.2)                              # let the 1s lease expire
         cur.execute(acquire, {"me": "H2", "run": "run-H2"}); f2 = cur.fetchone()[0]
         assert f2 == 2, f"[pg-b] reclaim should bump fence to 2, got {f2}"
