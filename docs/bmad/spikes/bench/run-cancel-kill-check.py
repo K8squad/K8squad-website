@@ -234,16 +234,24 @@ def scenario_crash_mid_teardown(db):
     db.write_item(wid, "podA", fence)
     # First pass: pod NOT yet confirmed gone -> step 1 stamps teardown_fenced_at + fences, then holds.
     kill_fence_first(db, wid, "run1", pod_confirmed_gone=False, now=250)
-    fence_after_step1 = db.max_fence_seen[wid]
-    marker = db.runs["run1"]["teardown_fenced_at"]
+    marker_before = db.runs["run1"]["teardown_fenced_at"]   # original stamp (250), held path -> no release
+    claim_fence_before = db.claims[wid]["fence"]             # unchanged on the held path
     # ---- CRASH ----  failover leader re-reconciles; pod now confirmed gone.
     kill_fence_first(db, wid, "run1", pod_confirmed_gone=True, now=300)
-    fence_after_reentry = db.max_fence_seen[wid]
+    # Re-READ the marker AFTER re-entry (do NOT trust the pre-crash capture): the step-1
+    # `teardown_fenced_at is None` idempotency guard must make step 1 a no-op on re-entry, so the
+    # marker stays the ORIGINAL 250 -- it must NOT be re-stamped to 300. (Capturing the marker
+    # before re-entry would hide a re-stamp -- the ISI-2346-F1 teeth gap this hardens; delete the
+    # guard and marker_after flips 250->300, turning this RED.)
+    marker_after = db.runs["run1"]["teardown_fenced_at"]
+    claim_fence_after = db.claims[wid]["fence"]
     released_holder = db.claims[wid]["holder"]
     phase = db.runs["run1"]["phase"]
-    # re-entry must NOT double-advance the barrier beyond the single release bump, marker stable,
-    # release happened exactly once (holder None), terminal Cancelled.
-    return marker == 250 and released_holder is None and phase == "Cancelled" and fence_after_reentry >= fence_after_step1
+    # marker stable across re-entry (stamped exactly once), the claim fence bumped EXACTLY once by the
+    # single release, release happened exactly once (holder None), terminal Cancelled.
+    return (marker_before == 250 and marker_after == 250
+            and claim_fence_after == claim_fence_before + 1
+            and released_holder is None and phase == "Cancelled")
 
 # ---------------------------------------------------------------------------
 # (F-DOUBLECLICK) idempotent intent (AC1): the SAME kill applied twice yields ONE
