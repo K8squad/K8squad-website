@@ -64,11 +64,20 @@ def compose_correct(agent, platform_catalog):
     if ns is not None and ns != own_ns:
         raise Rejected(f"{agent['name']}: credential ref points at namespace {ns!r} != own {own_ns!r} "
                        f"— cross-squad Secret ref rejected (AC3/§12.1)")
-    # AC2: never a control-plane (system-ns) Secret, never a well-known shared master.
+    # AC2: never a control-plane (system-ns) Secret, never a well-known shared master. This guard is
+    # reached by a name-only OR own-ns-qualified shared-master ref — so it is the *decisive* rejector
+    # for `master-grab-local` (F1: a system-ns master would be caught by the AC3 branch first, leaving
+    # this branch un-exercised / teeth-less; the name-only own-ns case forces it to fire).
     if name in SHARED_MASTER_NAMES:
         raise Rejected(f"{agent['name']}: ref names shared master {name!r} — KSquad holds no shared "
                        f"master credential (AC2/AD-9)")
-    return {"agent": agent["name"], "secretNamespace": own_ns, "secretName": name, "source": "per-user"}
+    # F2: the resolved namespace is *derived from the ref* (own_ns for a name-only ref, else the
+    # already-validated == own_ns), not hardcoded — so the AC3 admitted-resolution check is
+    # non-vacuous: a mutation that dropped the cross-ns guard above would surface a foreign namespace
+    # here, not silently collapse to own_ns.
+    resolved_ns = ns if ns is not None else own_ns
+    return {"agent": agent["name"], "secretNamespace": resolved_ns, "secretName": name,
+            "source": "per-user"}
 
 
 def compose_naive(agent, platform_catalog):
@@ -143,13 +152,18 @@ def main():
         # HOSTILE 1 — cross-squad ref: an alpha Agent points at bravo's Secret (AC3).
         {"name": "xsquad-leak", "ns": ns_alpha, "family": "claude",
          "credentialSecretRef": {"name": "bob-claude-oauth", "namespace": ns_bravo}},
-        # HOSTILE 2 — shared master in the control plane (AC2).
+        # HOSTILE 2 — shared master in the control plane (AC2 + AC3: it is *also* a cross-ns ref).
         {"name": "master-grab", "ns": ns_alpha, "family": "claude",
          "credentialSecretRef": {"name": "ksquad-master-creds", "namespace": SYSTEM_NS}},
+        # HOSTILE 2b — shared master named IN THE AGENT'S OWN NAMESPACE (name-only). This passes the
+        # AC3 cross-ns branch (ns == own), so ONLY the AC2 shared-master-name guard can reject it — the
+        # teeth for that guard (F1: `master-grab` alone is caught by AC3 first, leaving AC2 untested).
+        {"name": "master-grab-local", "ns": ns_alpha, "family": "claude",
+         "credentialSecretRef": "ksquad-master-creds"},
         # HOSTILE 3 — no credential ref at all; a naive composer falls back to the shared master (AC1).
         {"name": "no-cred", "ns": ns_alpha, "family": "claude", "credentialSecretRef": None},
     ]
-    expected_rejects = {"xsquad-leak", "master-grab", "no-cred"}
+    expected_rejects = {"xsquad-leak", "master-grab", "master-grab-local", "no-cred"}
 
     # Naive world: the platform maintains a shared master credential (the exact ADR-010 anti-pattern).
     naive_catalog = {"master": "ksquad-master-creds"}

@@ -172,17 +172,21 @@ detects a credential-isolation break — then proves the §11/§12.1 composer **
 **rejects exactly** the hostile Agents.
 
 ```
-[model] naive composer : 11 credential-isolation violation(s) -> DETECTED; rejected=[]
-[model] §11 composer    : 0 violations; rejected=['master-grab', 'no-cred', 'xsquad-leak']; admitted=3
+[model] naive composer : 12 credential-isolation violation(s) -> DETECTED; rejected=[]
+[model] §11 composer    : 0 violations; rejected=['master-grab', 'master-grab-local', 'no-cred', 'xsquad-leak']; admitted=3
 [model] PASS — naive detectably breaks credential isolation; §11/§12.1 composer holds AC1-AC3 (per-user Secret ref, no shared master, per-namespace never cross-squad).
 ```
 
 It encodes the AC1–AC3 invariants as assertions over the *resolution + admission decision a reconciler
 would produce* for sample Agents: (a) every admitted Agent resolves to a **per-user** Secret, and a missing
 ref is **rejected** — not defaulted to a shared master (AC1); (b) the platform holds **no shared master
-catalog**, and no resolved Secret is a control-plane / well-known-master Secret (AC2, the crux); (c) the
-resolved Secret's namespace **equals the Agent's own** — a cross-namespace ref is a violation the composer
-must **reject**, not resolve (AC3). The valid name-only Agents pass under **both** composers, so the signal
+catalog**, and no resolved Secret is a control-plane / well-known-master Secret (AC2, the crux) — the
+`master-grab-local` case (a shared-master name in the Agent's **own** namespace) is what gives the AC2
+name-guard **independent teeth**: a control-plane-qualified master (`master-grab`) would already be caught
+by the AC3 cross-namespace branch, so only a name-only own-ns master forces the shared-master-name check to
+be the decisive rejector (mutation-verified: dropping that guard admits `master-grab-local` → the check
+goes RED); (c) the resolved Secret's namespace **equals the Agent's own** — derived from the ref, not
+hardcoded — so a cross-namespace ref is a violation the composer must **reject**, not resolve (AC3). The valid name-only Agents pass under **both** composers, so the signal
 is crisply the hostile-ref handling; it exits non-zero if the naive composer *stops* violating (teeth lost),
 if the naive composer *rejects* a hostile ref (it must admit them, proving the teeth are real), or if the
 §11/§12.1 composer *ever* violates an invariant or fails to reject exactly the expected hostile set.
