@@ -23,15 +23,17 @@ blob into the response has NOT shipped the ADR-021 projection — it has rebuilt
 DoS/exfil edge.
 
 Unlike the sibling model-only checks, this one is a REAL runnable check (design §8.6 / AC "runnable
-check"): it builds a THROWAWAY git repo, touches 3 files (add / modify / delete), drives the SAME git
-commands the server uses, runs the read-model projection over that live git output, and asserts the
-projection matches an INDEPENDENT raw-git oracle byte-for-byte. It needs git and stdlib only — no cluster,
-no auth, no shim, no network (the AC's "no cluster, no auth").
+check"): it builds a THROWAWAY git repo, touches 4 files (add / modify / delete / rename-with-edit),
+drives the SAME git commands the server uses, runs the read-model projection over that live git output,
+and asserts the projection matches an INDEPENDENT raw-git oracle byte-for-byte. It needs git and stdlib
+only — no cluster, no auth, no shim, no network (the AC's "no cluster, no auth").
 
 Invariants (G1-G9, each mapped to an AC of story 8.7a):
   G1  TREE = CHANGED SET: `tree` returns EXACTLY the git changed set with the correct A/M/D/R status —
-      not a superset (unchanged files) and never a dropped/miscoded entry (a deleted file reported M, etc.).
-  G2  COUNTS: each file's additions/deletions equal `git diff --numstat`'s counts (binary -> None,None).
+      not a superset (unchanged files) and never a dropped/miscoded entry (a deleted file reported M, etc.);
+      a rename carries status R with the correct `renamedFrom` provenance.
+  G2  COUNTS: each file's additions/deletions equal `git diff --numstat`'s counts (binary -> None,None) —
+      including a rename's counts, which numstat encodes on the arrow-form field git attributes to it.
   G3  DIFF BYTE-FOR-FOR-BYTE: `diff(path).unifiedDiff` is IDENTICAL, byte-for-byte, to
       `git diff -M <base>...<runRef> -- <path>` — no normalization, re-wrap, or whitespace munging.
   G4  FILE CONTENT: `file(path).content` is IDENTICAL to `git show <runRef>:<path>` (the blob at runRef).
@@ -48,6 +50,7 @@ Mutation-proof harness (no vacuous guard — the ISI-2346-F1 class is excluded b
 EXACTLY the mapped invariant failing (no guard shadows another):
   --mutate=STATUS    drop/mis-code the delete in the changed set        -> G1 RED
   --mutate=COUNT     zero out add/del counts                            -> G2 RED
+  --mutate=RENAME    key rename counts on the raw "old => new" field    -> G2 RED (ISI-2437 F1)
   --mutate=DIFF      re-serialize the unified diff (strip trailing \\n)  -> G3 RED
   --mutate=CONTENT   return git-show with a byte mangled                -> G4 RED
   --mutate=DIFFCAP   ignore the 512 KiB diff cap (stream unbounded)     -> G5 RED
@@ -96,16 +99,50 @@ def git_bytes(repo, *args):
 # bounding markers on top — no diff engine, no re-serialization (ADR-021). `mut` names the single injected
 # defect for the mutation harness; conformant baseline passes mut=None.
 
+def _numstat_new_path(rest, mut=None):
+    """Map a `--numstat` path field to the NEW path, decoding git's rename encodings.
+
+    Unlike `--name-status` (which tab-splits a rename into `old\\tnew`), `--numstat` prints a
+    rename's path on a SINGLE field with an arrow — verified empirically against git:
+        plain rename : "old.txt => new.txt"              -> "new.txt"
+        brace rename : "dir/{old.txt => new.txt}"        -> "dir/new.txt"     (common prefix)
+        brace rename : "{a => b}/x.txt"                  -> "b/x.txt"         (common suffix)
+    A non-rename field has no " => " and is returned verbatim. Keying counts on this NEW path is
+    what makes G2 hold for renames — the raw `rest.split("\\t")[-1]` (ISI-2437 F1) keyed on the
+    whole `"old => new"` string, so the name-status lookup by new path missed and every rename
+    reported (0,0). The Go port (Task 2) MUST mirror this decode, not the split.
+    """
+    if mut == "RENAME":
+        # DEFECT (the shipped ISI-2271 F1): key on the raw field, so a rename's counts land under
+        # "old => new" and the new-path lookup falls through to (0,0) -> G2 RED for renames.
+        return rest.split("\t")[-1]
+    if " => " not in rest:
+        return rest
+    if "{" in rest and "}" in rest:                     # brace form: prefix{old => new}suffix
+        pre, _, tail = rest.partition("{")
+        inside, _, post = tail.partition("}")
+        if " => " in inside:
+            return pre + inside.split(" => ", 1)[1] + post
+    return rest.split(" => ", 1)[-1]                    # full arrow form: old => new
+
+
 def project_tree(repo, base, run_ref, mut=None):
     """git diff --name-status + --numstat -> the changed-set projection (G1, G2, G7)."""
     name_status = git(repo, "diff", "--name-status", "-M", f"{base}...{run_ref}")
     numstat = git(repo, "diff", "--numstat", "-M", f"{base}...{run_ref}")
+    return _tree_from(name_status, numstat, base, run_ref, mut=mut)
 
-    # add/del counts keyed by the path git attributes them to ("-"/"-" => binary).
+
+def _tree_from(name_status, numstat, base, run_ref, mut=None):
+    """Pure parse + cap over raw `git diff` output — the ONE code path both the live projection AND
+    the G7 cap fixture drive (no parallel copy to drift out of sync; ISI-2437 F2). Splitting fetch
+    from parse lets G7 exercise this REAL cap slice with a synthetic >5000-entry changed set instead
+    of paying to write 5000 files to git."""
+    # add/del counts keyed by the NEW path git attributes them to ("-"/"-" => binary).
     counts = {}
     for line in numstat.splitlines():
         add, dele, rest = line.split("\t", 2)
-        path = rest.split("\t")[-1]  # for renames git prints "old\tnew"; count keys on the new path
+        path = _numstat_new_path(rest, mut=mut)  # renames arrive as "old => new" on ONE field
         a = None if add == "-" else int(add)
         d = None if dele == "-" else int(dele)
         counts[path] = (a, d)
@@ -227,24 +264,37 @@ def write(repo, rel, data):
 
 
 def build_fixture(repo):
-    """base commit (3 files) -> worktree branch that ADDs / MODIFIEs / DELETEs. Returns (base, runRef)."""
+    """base commit (4 files) -> worktree branch that ADDs / MODIFIEs / DELETEs / RENAMEs.
+
+    The rename is edited too (git mv + content change) so BOTH additions and deletions are nonzero:
+    that gives AC1's `status=='R'`/`renamedFrom` and AC2's rename counts a non-vacuous fixture (the
+    old 3-file fixture never exercised the R branch — ISI-2437 F1). Returns (base, runRef).
+    """
     git(repo, "init", "-q", "-b", "main")
     git(repo, "config", "user.email", "check@ksquad.local")
     git(repo, "config", "user.name", "read-model-check")
 
-    # base commit — the Project default ref
+    # base commit — the Project default ref. renamed_old.txt is long enough that a small edit keeps
+    # it >50% similar to its renamed twin, so git's -M detects a rename (R) rather than an A+D pair.
+    renamed_base = "".join(f"payload line {i}\n" for i in range(1, 9))
     write(repo, "keep.txt", "unchanged line\n")
     write(repo, "mod.py", "def f():\n    return 1\n")
     write(repo, "gone.md", "delete me\n")
+    write(repo, "renamed_old.txt", renamed_base)
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "base")
     base = git(repo, "rev-parse", "HEAD").strip()
 
-    # the Run's worktree branch — the three canonical changes
+    # the Run's worktree branch — the four canonical changes
     git(repo, "checkout", "-q", "-b", "run/worktree")
     write(repo, "added.txt", "brand new file\nsecond line\n")             # A
     write(repo, "mod.py", "def f():\n    return 2  # changed\n")          # M
     os.remove(os.path.join(repo, "gone.md"))                             # D
+    git(repo, "mv", "renamed_old.txt", "renamed_new.txt")                # R (git mv, then edit)
+    renamed_run = renamed_base.replace(
+        "payload line 2\n", "payload line 2 -- edited by the run\n")     # 1 del + 1 add
+    renamed_run += "payload line 9 -- appended by the run\n"             # +1 add -> counts (2, 1)
+    write(repo, "renamed_new.txt", renamed_run)
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "run changes")
     run_ref = git(repo, "rev-parse", "HEAD").strip()
@@ -282,18 +332,41 @@ def run(mut=None):
             check("G1", by_path.get(p, {}).get("status") == st,
                   f"{p}: status {by_path.get(p, {}).get('status')} != git {st}")
 
-        # G2 — add/del counts equal numstat (oracle).
+        # G2 — add/del counts equal numstat (oracle). Decode via `-z`, where a rename's old/new
+        # arrive as SEPARATE NUL fields — an INDEPENDENT decode from project_tree's arrow/brace
+        # parse, so a common-mode bug in the rename keying can't mask itself in both (ISI-2437 F1).
         oracle_counts = {}
-        for line in git(repo, "diff", "--numstat", "-M", f"{base}...{run_ref}").splitlines():
-            add, dele, rest = line.split("\t", 2)
-            oracle_counts[rest.split("\t")[-1]] = (
-                None if add == "-" else int(add), None if dele == "-" else int(dele))
+        ztoks = git(repo, "diff", "--numstat", "-z", "-M", f"{base}...{run_ref}").split("\0")
+        i = 0
+        while i < len(ztoks):
+            tok = ztoks[i]
+            if not tok:
+                i += 1
+                continue
+            add, dele, path = tok.split("\t")
+            if path == "":                 # rename record: the next two NUL fields are old, new
+                path = ztoks[i + 2]        # oracle keys counts on the NEW path
+                i += 3
+            else:
+                i += 1
+            oracle_counts[path] = (None if add == "-" else int(add),
+                                   None if dele == "-" else int(dele))
         for p, (a, d) in oracle_counts.items():
             check("G2", (by_path[p]["additions"], by_path[p]["deletions"]) == (a, d),
                   f"{p}: counts {(by_path[p]['additions'], by_path[p]['deletions'])} != git {(a, d)}")
         # non-vacuous: the modify actually has a nonzero add AND del.
         check("G2", (by_path["mod.py"]["additions"] or 0) > 0 and (by_path["mod.py"]["deletions"] or 0) > 0,
               "modify must have nonzero add+del (fixture non-vacuous)")
+
+        # rename dimension (ISI-2437) — the R branch now actually executes against a live rename.
+        # AC1: status must be R with the correct provenance; AC2: counts must be nonzero and match
+        # the (independent -z) numstat oracle above — the exact axis the F1 keying bug zeroed out.
+        rn = by_path["renamed_new.txt"]
+        check("G1", rn["status"] == "R", f"renamed file status {rn['status']!r} != 'R' (AC1)")
+        check("G1", rn.get("renamedFrom") == "renamed_old.txt",
+              f"renamed file renamedFrom {rn.get('renamedFrom')!r} != 'renamed_old.txt' (AC1)")
+        check("G2", (rn["additions"] or 0) > 0 and (rn["deletions"] or 0) > 0,
+              f"renamed file must have nonzero add+del (got {(rn['additions'], rn['deletions'])}; AC2)")
 
         # G3 — unified diff byte-for-byte vs the raw git oracle, for every changed path.
         diffs = []
@@ -341,11 +414,12 @@ def run(mut=None):
               f"content={'set' if huge_file['content'] is not None else 'None'})")
 
         # ---- G7: tree cap (5000 entries) -> truncated -------------------------------------------
-        # Simulate a pathological changed set directly against the projection's cap logic (adding 5000
-        # real files to git is slow and adds nothing — the cap is a pure bound on the projection body).
+        # Drive the REAL `project_tree` cap slice (via its pure `_tree_from` core) with a synthetic
+        # pathological changed set — same cap code the live projection runs, no parallel copy (F2).
+        # Writing 5000 files to git is slow and adds nothing: the cap is a pure bound on the body.
         big_ns = "\n".join(f"A\tf{i}.txt" for i in range(TREE_CAP_ENTRIES + 250))
         big_num = "\n".join(f"1\t0\tf{i}.txt" for i in range(TREE_CAP_ENTRIES + 250))
-        capped = _project_tree_from(big_ns, big_num, base, run_ref, mut=mut)
+        capped = _tree_from(big_ns, big_num, base, run_ref, mut=mut)
         check("G7", capped["truncated"] is True and len(capped["files"]) == TREE_CAP_ENTRIES,
               f"tree beyond {TREE_CAP_ENTRIES} must truncate (got truncated={capped['truncated']}, "
               f"n={len(capped['files'])})")
@@ -381,29 +455,8 @@ def run(mut=None):
     return fails
 
 
-def _project_tree_from(name_status, numstat, base, run_ref, mut=None):
-    """Pure re-run of project_tree's parse/cap over synthetic git output (for the G7 cap bound)."""
-    counts = {}
-    for line in numstat.splitlines():
-        add, dele, rest = line.split("\t", 2)
-        counts[rest.split("\t")[-1]] = (None if add == "-" else int(add),
-                                        None if dele == "-" else int(dele))
-    files = []
-    for line in name_status.splitlines():
-        parts = line.split("\t")
-        status, path = parts[0][0], parts[-1]
-        a, d = counts.get(path, (0, 0))
-        files.append({"path": path, "status": status, "additions": a, "deletions": d})
-    truncated = len(files) > TREE_CAP_ENTRIES
-    if mut == "TREECAP":
-        truncated = False
-    if truncated:
-        files = files[:TREE_CAP_ENTRIES]
-    return {"base": base, "runRef": run_ref, "files": files, "truncated": truncated}
-
-
 MUTANTS = {
-    "STATUS": "G1", "COUNT": "G2", "DIFF": "G3", "CONTENT": "G4", "DIFFCAP": "G5",
+    "STATUS": "G1", "COUNT": "G2", "RENAME": "G2", "DIFF": "G3", "CONTENT": "G4", "DIFFCAP": "G5",
     "FILECAP": "G6", "TREECAP": "G7", "BINARY": "G8", "LEAK": "G9",
 }
 

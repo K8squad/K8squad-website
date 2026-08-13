@@ -109,16 +109,16 @@ Given the read-model implementation, When the self-contained runnable check runs
 (iii) asserts the `tree`/`diff`/`file` projection matches an **independent raw-git oracle** — plus the
 cap/binary/OBS cases (AC5–AC7). It needs **only git + stdlib** (no cluster, no auth, no network), lives
 next to the read-model, and **fails if the projection logic breaks**. The check is **mutation-proven**:
-baseline exits `0`; each `--mutate=<STATUS|COUNT|DIFF|CONTENT|DIFFCAP|FILECAP|TREECAP|BINARY|LEAK>` injects
-one defect and exits `1` with exactly the mapped invariant RED (no vacuous guard, no cross-shadowing).
+baseline exits `0`; each `--mutate=<STATUS|COUNT|RENAME|DIFF|CONTENT|DIFFCAP|FILECAP|TREECAP|BINARY|LEAK>`
+injects one defect and exits `1` with exactly the mapped invariant RED (no vacuous guard, no cross-shadowing).
 
 ## Tasks / Subtasks
 
 - [x] **Task 1 — runnable check (AC1–AC8).** `docs/bmad/spikes/bench/git-read-model-check.py`: throwaway
-  repo fixture (base → add/modify/delete worktree branch), the projection functions
+  repo fixture (base → add/modify/delete/rename-with-edit worktree branch), the projection functions
   (`project_tree`/`project_diff`/`project_file`/`build_span_attrs`) as the executable spec, the raw-git
   oracle assertions (G1–G4), the cap/binary/OBS cases (G5–G9), and the `--mutate` harness. **DONE — 9
-  invariants, baseline green, all 9 mutants RED, zero shadowing.**
+  invariants, baseline green, all 10 mutants RED (incl. RENAME→G2, ISI-2437), zero shadowing.**
 - [ ] **Task 2 — Go read-model service (AC1–AC7).** Implement `pkg/buildbrowser` (k8squad repo) mirroring
   the projection: shell the three git commands over a worktree, apply the 512 KiB / 2 MiB / 5 000 caps +
   binary markers, emit the unified diff verbatim (no re-serialization), and record the OBS-BB1 span attrs.
@@ -150,3 +150,4 @@ one defect and exits `1` with exactly the mapped invariant RED (no vacuous guard
 | Date       | Version | Description                                                        | Author |
 |------------|---------|--------------------------------------------------------------------|--------|
 | 2026-08-13 | 0.1     | Story authored; runnable check `git-read-model-check.py` shipped (9 invariants, mutation-proven). ISI-2271. | Dev (Claude) |
+| 2026-08-13 | 0.2     | ISI-2437 F1 remediation: fixed renamed-file (0,0) counts (numstat arrow/brace decode → NEW path), added rename-with-edit fixture + AC1/AC2 rename teeth, added `--mutate=RENAME`→G2 (10th mutant). Independent `-z` count oracle. | Dev (Claude) |
