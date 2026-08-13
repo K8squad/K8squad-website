@@ -1,6 +1,6 @@
 # Story 8.8e: Token-consumption widget + trend
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -99,10 +99,20 @@ Given any telemetry touched, When produced, Then: (a) `user.id`/`agent`/`run.id`
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (`token-consumption-widget-check.py`, Epic-8 model-check pattern).
 
 ### Debug Log References
 
+- `python3 token-consumption-widget-check.py` → exit 0 (billing-dashboard anti-pattern trips all 7; §8.8e conformant token widget holds C1-C7).
+- `--mutate={DIRECT_RAW_QUERY,NEW_COUNTER,FAKE_COST,LABEL_USER_ID,FAKE_ON_DEGRADE,ROLLUP_TABLE,MODEL_LABEL}` → each exit 1 with the mapped invariant RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented C1-C7 falsification check with teeth via a "billing dashboard" anti-pattern (raw store query, new metric instrument, fabricated cost, user.id as metric label, fake zero on degrade, rollup table, model label).
+- **Load-bearing cruxes proven mechanically:** (C2) the ADR-020 ponytail crux — trend = rate()/increase() over the EXISTING `ksquad.agent.tokens` counter (a query SHAPE, not a new instrument, not a stored rollup); (C4) NFR-OBS3 crux — per-user/agent/Run drill-down is the §15/§16.5 EXEMPLAR JOIN, never a metric label; (C5) no metrics backend → explicit "not configured" state, never a fabricated token count; (C6) no new metric instrument, no billing/rollup datastore.
+- Runtime proof (real metrics-seam query, trend window selector, exemplar drill-down, price-table cost) owned by console E2E + apiserver dashboard-package tests.
+
 ### File List
+
+- `docs/bmad/spikes/bench/token-consumption-widget-check.py` (new) — C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8e-token-consumption-widget-trend.md` (this file) — status→done + Dev Agent Record.

@@ -1,6 +1,6 @@
 # Story 8.8b: KPI card row + Recent Tickets + quick-access links
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -97,10 +97,20 @@ Given rendering, When it occurs, Then this story emits **only** ordinary console
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (`kpi-cards-recent-tickets-check.py`, Epic-8 model-check pattern).
 
 ### Debug Log References
 
+- `python3 kpi-cards-recent-tickets-check.py` → exit 0 (naive direct-query panel trips all 7; §8.8b conformant rendering holds C1-C7).
+- `--mutate={DIRECT_QUERY,NO_STATUS_BADGE,GLOBAL_LINK,FAKE_ZERO,CLIENT_AUTHZ,POLL_LIVE,PERITEM_LABEL}` → each exit 1 with exactly the mapped invariant (C1-C7) RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented the runnable falsification check encoding AC1-AC8 as C1-C7. Teeth via a "naive direct-query panel" that re-queries coord directly, has no status badges, uses global URLs, fabricates zeros for degraded cards, adds client-side authz, polls, and puts per-item ids on metric labels.
+- **Load-bearing cruxes proven:** (C1) KPI cards read from 8.8a sub-payloads, not direct coord/scm/metrics/Run-state; (C4) degraded card (metrics/SCM unavailable) renders explicit "not configured" state, NEVER a fabricated zero (FR-I3 provenance crux); (C5) the 8.8a RBAC wall is the sole authz — no second client-side predicate.
+- Runtime proof (real console rendering, SSE delta wire-up, live counter updates) is owned by the console E2E + 8.8a integration tests.
+
 ### File List
+
+- `docs/bmad/spikes/bench/kpi-cards-recent-tickets-check.py` (new) — C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8b-kpi-cards-recent-tickets-quick-access.md` (this file) — status→done + Dev Agent Record.

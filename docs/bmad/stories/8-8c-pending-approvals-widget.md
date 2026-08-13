@@ -1,6 +1,6 @@
 # Story 8.8c: Pending Approvals widget
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -99,10 +99,20 @@ Given the widget, When it renders/actions, Then it emits **only** ordinary conso
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (`pending-approvals-widget-check.py`, Epic-8 model-check pattern).
 
 ### Debug Log References
 
+- `python3 pending-approvals-widget-check.py` → exit 0 (naive bespoke-approval widget trips all 7; §8.8c conformant widget holds C1-C7).
+- `--mutate={FABRICATED_QUEUE,DIRECT_COORD_WRITE,AGENT_APPROVE_PATH,POLL_COUNT,NO_SERVER_403,FABRICATED_ROWS,EMIT_APPROVAL_METRIC}` → each exit 1 with the mapped invariant RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented C1-C7 falsification check with teeth via a "naive bespoke-approval widget" (writes coord directly, fabricates queue, exposes agent path, polls, fails open on viewer, emits approval metrics itself).
+- **Load-bearing cruxes proven:** (C2) approve/reject calls 2.12 action ONLY — no direct coord write or own approval mutation; (C3) no client path an agent could invoke to resolve a gate (no-P2P, FR-B3); (C5) viewer approve returns 403 server-side (2.12 is the gate, not the UI hide); (C7) the two approval metrics (ksquad.approval.pending / .decisions.total) are 2.12's, not this widget's.
+- Runtime proof (real approve/reject via 2.12 action, SSE count updates, viewer-403 integration) owned by console E2E + 2.12 apiserver tests.
+
 ### File List
+
+- `docs/bmad/spikes/bench/pending-approvals-widget-check.py` (new) — C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8c-pending-approvals-widget.md` (this file) — status→done + Dev Agent Record.

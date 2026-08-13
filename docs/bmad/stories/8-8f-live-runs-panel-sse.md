@@ -1,6 +1,6 @@
 # Story 8.8f: Live Runs panel (SSE)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -97,10 +97,20 @@ Given the panel, When it renders/streams, Then it emits **only** ordinary consol
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (`live-runs-panel-sse-check.py`, Epic-8 model-check pattern).
 
 ### Debug Log References
 
+- `python3 live-runs-panel-sse-check.py` → exit 0 (polling-claim-panel anti-pattern trips all 6; §8.8f conformant Live Runs panel holds C1-C7).
+- `--mutate={FAKE_ROWS,POLL_TRANSPORT,CLAIM_BUTTON,CLIENT_TIMER,CLIENT_AUTHZ,PERITEM_LABEL,HARD_FAIL_DEGRADE}` → each exit 1 with the mapped invariant RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented C1-C7 falsification check with teeth via a "polling-claim panel" anti-pattern (polling loop, claim/reassign button, client-invented resume timer, client-side authz, per-item metric labels, hard-fails on degraded source).
+- **Load-bearing cruxes proven:** (C2) SSE ONLY over the EXISTING EventSource + BFF proxy (§4.4/§13, same bus as Run stream + org diagram) — no polling, no new transport; this panel OWNS the live-Run delta stream that 8.8b/8.8c consume; (C3) read + navigate only, NO mutate/claim/transition affordance (no-P2P on the console, §13 r10 org-diagram precedent); (C5) resume_at countdown derived from the REAL coordination record (2.11, crash-safe), NOT a client-invented timer — reflects early resume (fallback switch, 5.11) and re-derived resume_at after controller restart.
+- Runtime proof (real SSE delta wire-up, rate-limit/fallback indicator streaming from 13.9, resume_at countdown from coord record) owned by console E2E + 8.8a/2.11 integration tests.
+
 ### File List
+
+- `docs/bmad/spikes/bench/live-runs-panel-sse-check.py` (new) — C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8f-live-runs-panel-sse.md` (this file) — status→done + Dev Agent Record.

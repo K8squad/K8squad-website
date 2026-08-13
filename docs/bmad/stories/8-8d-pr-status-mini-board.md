@@ -1,6 +1,6 @@
 # Story 8.8d: PR status mini-board
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -92,10 +92,20 @@ Given the board, When it renders, Then this story emits **only** ordinary consol
 
 ### Agent Model Used
 
-_(dev agent to fill)_
+claude-opus-4-8 (Claude Code, agent 2230b001) — construction-time contract via runnable falsification check (`pr-status-mini-board-check.py`, Epic-8 model-check pattern).
 
 ### Debug Log References
 
+- `python3 pr-status-mini-board-check.py` → exit 0 (naive second-github-integration panel trips all 7; §8.8d conformant mini-board holds C1-C7).
+- `--mutate={WRONG_GROUPS,FAKE_SHA_LINK,GITHUB_DIRECT,HARD_FAIL,CLIENT_AUTHZ,FAKE_PR,PERITEM_LABEL}` → each exit 1 with the mapped invariant RED; no vacuous survivors.
+
 ### Completion Notes List
 
+- Implemented C1-C7 falsification check with teeth via a "second GitHub integration panel" (calls GitHub API directly, wrong grouping, fabricates sha-correlations, hard-fails on no-repo, client-side authz, per-item metric labels).
+- **Load-bearing cruxes proven:** (C3) one SCM mirror, no second GitHub integration — the repo-sync reconciler (§5.4, ADR-018) is the only GitHub touch; (C4) no repo synced (Epic 11.3 absent) → explicit empty board ("No repository synced"), HTTP 200, never 5xx (8.8a per-tile degrade crux); (C2) uncorrelated PRs render without a fabricated Run link (head_sha→run.commit_sha correlation only, §13 r24).
+- Runtime proof (real scm_pr_mirror queries, four-state rendering, correlation wire-up) owned by console E2E + Epic 11 integration tests.
+
 ### File List
+
+- `docs/bmad/spikes/bench/pr-status-mini-board-check.py` (new) — C1-C7 runnable falsification check.
+- `docs/bmad/stories/8-8d-pr-status-mini-board.md` (this file) — status→done + Dev Agent Record.
