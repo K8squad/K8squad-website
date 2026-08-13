@@ -88,6 +88,21 @@ class Coord:
             self.completed_by = who
             return True
 
+    def renew(self, who, my_fence):
+        """§6.2 fence-guarded renew heartbeat. A stale holder MUST NOT resurrect its
+        lease: if this ever succeeded for a zombie, the `lease >= now()` term in
+        complete() would then pass and the fence would leak. Naive: unguarded (would
+        let the zombie extend its own lease). Returns True iff the lease was extended."""
+        with self.lock:
+            if self.guarded:
+                c = self.claim
+                if not (c["holder"] == who
+                        and c["fence"] == my_fence
+                        and c["lease_expires_at"] > self.now):
+                    return False  # zombie renew is a no-op (arch §6.3 renew guard)
+            self.claim["lease_expires_at"] = self.now + LEASE
+            return True
+
 
 def run_zombie_scenario(guarded):
     """
@@ -122,6 +137,39 @@ def run_zombie_scenario(guarded):
         "fence_A": fa, "fence_B": fb,
         "B_completed": b_ok, "A_zombie_completed": a_ok,
         "completed_by": co.completed_by, "final_state": co.state,
+    }
+
+
+def run_same_holder_reclaim(guarded):
+    """
+    The interleaving the A≠B scenario MASKS: §8 `Failed ──(retryPolicy)──► Claiming`
+    re-dispatches the SAME agent principal. So the reclaimer's holder identity EQUALS
+    the zombie's — `holder == who` is TRUE for both, and the ONLY thing separating the
+    stale run from the live one is the monotonic `fence_token` (AC4). This forces the
+    fence term to be the deciding guard, not the holder term.
+
+      1. A claims        (fence=1)
+      2. A is GC-paused; lease expires
+      3. sweeper reclaims → A is re-dispatched and RE-acquires as the same principal (fence=2)
+      4. the stale A@fence1 tries to renew (resurrect its lease), then to complete
+    Correct outcome: both stale-fence writes are rejected BY THE FENCE TERM (holder
+    matches); the live A@fence2 completes exactly once.
+    """
+    co = Coord(guarded=guarded)
+    f_stale = co.acquire("A")
+    for _ in range(LEASE + 2):
+        co.tick()
+    co.sweep_reclaim()
+    f_live = co.acquire("A")  # same principal, higher fence (retry-to-same-agent)
+
+    stale_renew = co.renew("A", f_stale)      # zombie tries to extend its own lease
+    stale_done = co.complete("A", f_stale)    # zombie tries to complete on stale fence
+    live_done = co.complete("A", f_live)      # the live re-dispatch completes
+    return {
+        "fence_stale": f_stale, "fence_live": f_live,
+        "stale_renew_ok": stale_renew, "stale_completed": stale_done,
+        "live_completed": live_done, "completed_by": co.completed_by,
+        "final_state": co.state,
     }
 
 
@@ -173,6 +221,27 @@ def main():
     assert guarded["completed_by"] == "B", "the item must be completed by its live holder, not the zombie"
     assert guarded["final_state"] == "done", "item must reach done via the live holder"
     print("[model]        → zombie A's stale-fence write REJECTED; B completed cleanly\n")
+
+    # Same-principal reclaim: forces the FENCE term (not the holder term) to be the
+    # decider — the A≠B scenario above rejects the zombie on holder mismatch, so it
+    # would still pass even if the fence_token guard were absent. This arm does not.
+    same = run_same_holder_reclaim(guarded=True)
+    print(f"[model] §6.3   (same-principal retry, fence is the only discriminator): {same}")
+    assert same["fence_live"] > same["fence_stale"], "reclaim must bump the fence (monotonic, AC4)"
+    assert same["stale_renew_ok"] is False, \
+        "FENCING BROKEN: a stale-fence renew must be a no-op (else it resurrects the lease)"
+    assert same["stale_completed"] is False, \
+        "FENCING BROKEN: same-principal stale fence must be rejected BY THE FENCE TERM"
+    assert same["live_completed"] is True, "the live re-dispatch (fresh fence) must complete"
+    assert same["completed_by"] == "A" and same["final_state"] == "done", \
+        "item completed exactly once by the live re-dispatch"
+    # teeth: prove the fence term is load-bearing here — with holder equal, dropping the
+    # fence guard WOULD let the stale write land. (Guarded here mirrors the naive gap.)
+    leak = run_same_holder_reclaim(guarded=False)
+    assert leak["stale_completed"] is True, \
+        "TEETH LOST: without the fence guard, a same-principal stale write must clobber"
+    print("[model]        → same-principal stale renew+complete REJECTED by the fence term; "
+          "naive leaks it (teeth)\n")
 
     race = run_reclaim_race(guarded=True)
     print(f"[model] reclaim race (16 claimants after expiry): {race}")

@@ -117,8 +117,9 @@ fence; the state-mutating services *additionally* reject stale tokens, so a fenc
 - **Renew** (§6.2): `… WHERE holder AND fence_token = :myFence AND lease_expires_at > now()` — a zombie
   cannot resurrect its lease (the `lease > now()` term fails, and once reclaimed the `holder`/`fence`
   terms fail).
-- **Complete / status / comment** (§6.5): every state-mutating write carries `(work_item_id, fence_token)`
-  and is guarded the same way — a stale token's write is a **no-op, not a clobber**.
+- **Complete / status / comment** (§6.3, audited to §6.5): every state-mutating write carries
+  `(work_item_id, fence_token)` and is guarded the same way — a stale token's write is a **no-op, not a
+  clobber**. (The fence guard lives in §6.3; §6.5 is where the resulting write is *audited*.)
 - **Memory write** (§7): validated against `coord.claim` inside the write txn; stale token rejected.
 - **Artifact registration** (§6.1): a fence-guarded `coord.artifact` upsert; a zombie's orphaned blob is
   unreferenced and GC-able.
@@ -158,7 +159,11 @@ legitimate holder B — with the current fence — **can** complete. And the ite
 by B**, never double-executed by A's stale run. **Verified by
 `docs/bmad/spikes/bench/reclaim-fencing-check.py`** (below), a *differential* check: it first proves a
 naive flip-on-timeout + unguarded-complete design **does** let the zombie clobber, then proves the §6.3
-design does not.
+design does not. The check exercises the guard on **both `complete` and `renew`** (an unguarded renew is
+the dangerous path — it would resurrect the zombie's lease and make a subsequent guarded complete *pass*)
+and includes a **same-principal reclaim arm** (§8 retry re-dispatches the *same* agent, so `holder`
+matches and the monotonic `fence_token` (AC4) is the *only* discriminator — this forces the fence term to
+be load-bearing, not merely the holder-identity term).
 
 **AC4 — the fence token is monotonic across reclaim (never reset, never reused).**
 Given N reclaims of the same work item over its lifetime, When each reclaim's acquire runs, Then
