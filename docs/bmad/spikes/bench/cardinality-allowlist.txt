@@ -1,0 +1,88 @@
+# Cardinality budget — the enforced metric-label allowlist (obs-plan §5.6)
+#
+# THIS FILE IS THE MACHINE MIRROR OF obs-plan §5.6. It is the single source of
+# truth the cardinality-lint (Story 13.6 / ISI-2238) reads. Edit §5.6 and this
+# file together — a drift between them is itself a review finding.
+#
+# Format: one token per line. Blank lines and `#` comments ignored.
+#   ALLOW <key>        a bounded-enum label domain that MAY appear as a metric label
+#   DENY  <key> <code> <reason...>   an explicitly-forbidden key (better error than
+#                                    a bare "unknown label"); <code> is OBS-9 (PII /
+#                                    per-actor id) or OBS-11 (privacy / fingerprint)
+#
+# Anything a metric emits that is neither ALLOWed nor a bare enum in ALLOW fails
+# the build as "out-of-allowlist". A DENY match fails with its specific code.
+# Namespace note: the lint strips a leading `ksquad.` before matching, and also
+# tests the final dotted segment, so `ksquad.runtime` -> `runtime` (ALLOW) and
+# `ksquad.user.id` -> `user.id` (DENY). Keys carry no cluster/tenant values.
+
+# ---- §5.6 bounded label domains (allowed as metric labels) ----
+ALLOW outcome
+ALLOW terminal_reason
+ALLOW phase
+ALLOW from
+ALLOW to
+ALLOW runtime
+ALLOW runtime_class
+ALLOW operation
+ALLOW result
+ALLOW state
+ALLOW kind
+ALLOW trigger
+ALLOW reason
+ALLOW decision
+ALLOW surface
+ALLOW capability
+ALLOW check
+ALLOW direction
+ALLOW pool_hit
+ALLOW cause
+ALLOW error_code
+ALLOW provenance_class
+ALLOW signal
+ALLOW endpoint
+ALLOW source
+ALLOW cache_hit
+ALLOW live
+# RBAC additions (§16)
+ALLOW role
+ALLOW auth_result
+ALLOW target_kind
+ALLOW action
+# console-RUM additions (§18)
+ALLOW breakpoint
+ALLOW viewport_bucket
+ALLOW orientation
+ALLOW route_class
+ALLOW interaction_kind
+ALLOW web_vital
+
+# ---- §5.6 forbidden as metric labels (trace / log / exemplar / resource-attr only) ----
+# Unbounded per-actor / per-entity identifiers — the cardinality bombs.
+DENY run.id            OBS-9  unbounded per-Run id — exemplar/span/log only, never a metric label
+DENY work_item.id      OBS-9  unbounded per-ticket id — exemplar/span/log only, never a metric label
+DENY principal.id      OBS-9  unbounded per-agent id — exemplar/span/log only, never a metric label
+DENY sandbox.pod       OBS-9  unbounded per-pod id — exemplar/span/log only, never a metric label
+DENY trace_id          OBS-9  the correlation key itself — exemplar/span/log only, never a metric label
+DENY session.id        OBS-9  unbounded per-session id — exemplar/span/log only, never a metric label
+# Scope NAMES ride as resource attributes, not per-series labels (they federate).
+DENY team              OBS-9  scope name — resource attribute, not a metric label
+DENY project           OBS-9  scope name — resource attribute, not a metric label
+# RBAC PII (§16.2 / OBS-9): user.id is never a label; usernames/emails never emitted at all.
+DENY user.id           OBS-9  = initiatedByUserId — per-actor id, exemplar only (§16.2). Explicit build failure.
+DENY initiatedByUserId OBS-9  raw RBAC user id — exemplar only (§16.2), never a metric label
+DENY initiated_by_user_id OBS-9 raw RBAC user id — exemplar only (§16.2), never a metric label
+DENY username          OBS-9  PII — never emitted at all (§1.4), least of all as a label
+DENY user_name         OBS-9  PII — never emitted at all (§1.4), least of all as a label
+DENY email             OBS-9  PII — never emitted at all (§1.4), least of all as a label
+DENY user_email        OBS-9  PII — never emitted at all (§1.4), least of all as a label
+DENY session_token     OBS-9  secret — never emitted at all (§1.4)
+# Console-RUM privacy (§18 / OBS-11): only bucketed dims may be emitted, never raw/fingerprint.
+DENY viewport_width    OBS-11 raw pixel width — emit the bucketed `viewport_bucket`, never the raw value (§18)
+DENY viewport_px       OBS-11 raw pixel width — emit the bucketed `viewport_bucket`, never the raw value (§18)
+DENY screen_width      OBS-11 raw pixel width — emit the bucketed `viewport_bucket`, never the raw value (§18)
+DENY user_agent        OBS-11 User-Agent string — fingerprint, never emitted (§18: bucketed not fingerprinted)
+DENY useragent         OBS-11 User-Agent string — fingerprint, never emitted (§18: bucketed not fingerprinted)
+DENY device_model      OBS-11 device model — fingerprint, never emitted (§18: bucketed not fingerprinted)
+DENY device_id         OBS-11 device id — fingerprint, never emitted (§18: bucketed not fingerprinted)
+DENY fingerprint       OBS-11 device fingerprint — never emitted (§18)
