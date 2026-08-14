@@ -33,7 +33,7 @@ Add the chart repository and install into a dedicated namespace. You must name a
 and pick an exposure mode.
 
 ```bash
-helm repo add ksquad https://charts.ksquad.io
+helm repo add ksquad https://k8squad.io/charts
 helm repo update
 
 helm install ksquad ksquad/ksquad \
