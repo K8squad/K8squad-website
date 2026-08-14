@@ -7,8 +7,17 @@
   <stop offset="0" stop-color="#3D7DFF"/><stop offset="1" stop-color="#2E4E8C"/>
  </linearGradient>
  <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-  <stop offset="0" stop-color="#3D7DFF" stop-opacity="0.28"/>
-  <stop offset="0.55" stop-color="#3D7DFF" stop-opacity="0.08"/>
+  <stop offset="0" stop-color="#3D7DFF" stop-opacity="0.30"/>
+  <stop offset="0.55" stop-color="#3D7DFF" stop-opacity="0.09"/>
+  <stop offset="1" stop-color="#3D7DFF" stop-opacity="0"/>
+ </radialGradient>
+ <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+  <stop offset="0" stop-color="#93B7FF" stop-opacity="0.16"/>
+  <stop offset="0.6" stop-color="#3D7DFF" stop-opacity="0.05"/>
+  <stop offset="1" stop-color="#3D7DFF" stop-opacity="0"/>
+ </radialGradient>
+ <radialGradient id="nodeGlow" cx="0.5" cy="0.5" r="0.5">
+  <stop offset="0" stop-color="#3D7DFF" stop-opacity="0.55"/>
   <stop offset="1" stop-color="#3D7DFF" stop-opacity="0"/>
  </radialGradient>
 </defs>
@@ -18,29 +27,29 @@
 <rect x="112.0" y="150" width="460" height="300" rx="16" fill="#131D31" stroke="#25324B" stroke-width="2"/>
 <rect x="140.0" y="178" width="52" height="52" rx="12" fill="#0B1220" stroke="#3D7DFF" stroke-width="2"/>
 <text x="166.0" y="213" font-family="DejaVu Sans" font-size="28" font-weight="bold" fill="#93B7FF" text-anchor="middle">1</text>
-<path d="M342.0 270 V306" stroke="#3D7DFF" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M326.0 292 L342.0 308 L358.0 292" stroke="#3D7DFF" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M312.0 326 H372.0" stroke="#3D7DFF" stroke-width="5" fill="none" stroke-linecap="round"/>
-<text x="342.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Install</text>
-<text x="342.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Helm-install the operator</text>
+<rect x="312.0" y="266" width="60" height="68" rx="10" fill="none" stroke="#3D7DFF" stroke-width="5"/><path d="M334.0 292 L324.0 302 L334.0 312" fill="none" stroke="#3D7DFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M350.0 292 L360.0 302 L350.0 312" fill="none" stroke="#3D7DFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="342.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Compose CRDs</text>
+<text x="342.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Declare a Team + agents in YAML</text>
 <line x1="1162.0" y1="300.0" x2="1226.0" y2="300.0" stroke="#3D7DFF" stroke-opacity="0.55" stroke-width="4"/>
 <path d="M1216.0 288.0 L1234.0 300.0 L1216.0 312.0" fill="none" stroke="#3D7DFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
 <rect x="684.0" y="150" width="460" height="300" rx="16" fill="#131D31" stroke="#25324B" stroke-width="2"/>
 <rect x="712.0" y="178" width="52" height="52" rx="12" fill="#0B1220" stroke="#3D7DFF" stroke-width="2"/>
 <text x="738.0" y="213" font-family="DejaVu Sans" font-size="28" font-weight="bold" fill="#93B7FF" text-anchor="middle">2</text>
-<rect x="880.0" y="286" width="20" height="28" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="906.0" y="286" width="20" height="28" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="932.0" y="286" width="20" height="28" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/>
-<text x="914.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Agents</text>
-<text x="914.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Plug in any agent runtime</text>
+<rect x="885.0" y="271" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="921.0" y="271" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="885.0" y="307" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="921.0" y="307" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/>
+<text x="914.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Squad spins up</text>
+<text x="914.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Operator reconciles into pods</text>
 <line x1="1734.0" y1="300.0" x2="1798.0" y2="300.0" stroke="#3D7DFF" stroke-opacity="0.55" stroke-width="4"/>
 <path d="M1788.0 288.0 L1806.0 300.0 L1788.0 312.0" fill="none" stroke="#3D7DFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
 <rect x="1256.0" y="150" width="460" height="300" rx="16" fill="#131D31" stroke="#25324B" stroke-width="2"/>
 <rect x="1284.0" y="178" width="52" height="52" rx="12" fill="#0B1220" stroke="#3D7DFF" stroke-width="2"/>
 <text x="1310.0" y="213" font-family="DejaVu Sans" font-size="28" font-weight="bold" fill="#93B7FF" text-anchor="middle">3</text>
-<rect x="1457.0" y="271" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="1493.0" y="271" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="1457.0" y="307" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="1493.0" y="307" width="22" height="22" rx="6" fill="none" stroke="#3D7DFF" stroke-width="5"/>
-<text x="1486.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Squad</text>
-<text x="1486.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Compose a squad as CRDs</text>
+<rect x="1452.0" y="284" width="20" height="32" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="1478.0" y="284" width="20" height="32" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/><rect x="1504.0" y="284" width="20" height="32" rx="5" fill="none" stroke="#3D7DFF" stroke-width="5"/>
+<text x="1486.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Agents work</text>
+<text x="1486.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Claim, hand off, coordinate</text>
 <rect x="1828.0" y="150" width="460" height="300" rx="16" fill="#131D31" stroke="#25324B" stroke-width="2"/>
 <rect x="1856.0" y="178" width="52" height="52" rx="12" fill="#0B1220" stroke="#3D7DFF" stroke-width="2"/>
 <text x="1882.0" y="213" font-family="DejaVu Sans" font-size="28" font-weight="bold" fill="#93B7FF" text-anchor="middle">4</text>
-<circle cx="2058.0" cy="300" r="30" fill="none" stroke="#3D7DFF" stroke-width="5"/><path d="M2049.0 285 L2076.0 300 L2049.0 315 Z" fill="#3D7DFF"/>
-<text x="2058.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">Run</text>
-<text x="2058.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Reconcile &amp; watch it work</text>
+<rect x="2020.0" y="272" width="76" height="56" rx="10" fill="none" stroke="#3D7DFF" stroke-width="5"/><path d="M2020.0 290 H2096.0" stroke="#3D7DFF" stroke-width="2" stroke-opacity="0.5"/><path d="M2034.0 314 L2050.0 314 L2058.0 300 L2068.0 322 L2076.0 314 L2088.0 314" fill="none" stroke="#3D7DFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="2058.0" y="382" font-family="DejaVu Sans" font-size="34" font-weight="bold" fill="#E8EEF9" text-anchor="middle">You monitor</text>
+<text x="2058.0" y="420" font-family="DejaVu Sans" font-size="20" fill="#7E8CA6" text-anchor="middle">Watch every run stream live</text>
 </svg>
