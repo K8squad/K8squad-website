@@ -14,10 +14,19 @@ the `k8squad` source repo.
   exposure + explicit StorageClass), hardened by ISI-2286.
 
 **Do not edit these files by hand.** They are the authoritative render source the
-bench (`../gateway-httproute-check.py`) reads for its file-grounded pass. To
-refresh, re-vendor from the k8squad branch and bump the commit above. The
-`k8squad` repo stays BMAD-free; the artifact lives here.
+benches read for their file-grounded pass. To refresh, re-vendor from the k8squad
+branch and bump the commit above. The `k8squad` repo stays BMAD-free; the artifact
+lives here.
 
-Story 9.1 (ISI-2250) pins the *construction-time contract* these templates must
-satisfy; the chart code lives and is CI-tested (`ci/test.sh`, needs `helm`) in
-`k8squad`.
+Two benches read this snapshot:
+
+- **Story 9.1 (ISI-2250)** — exposure — `../gateway-httproute-check.py` reads
+  `templates/{gateway,httproute,service,ingress}.yaml` + `_helpers.tpl`.
+- **Story 9.2 (ISI-2251)** — StorageClass — `../storage-class-check.py` reads
+  `templates/{postgres-cluster,operator-config}.yaml` + `_helpers.tpl`. These two
+  storage templates were vendored for 9.2 (same commit `5e6442d`); `_helpers.tpl`
+  and `values.yaml` were already present from 9.1 and are byte-identical to the
+  source at that commit.
+
+Each story pins the *construction-time contract* its templates must satisfy; the
+chart code lives and is CI-tested (`ci/test.sh`, needs `helm`) in `k8squad`.
