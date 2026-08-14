@@ -1,0 +1,13 @@
+# build output
+dist/
+.astro/
+
+# dependencies
+node_modules/
+
+# generated: docs mirror produced by scripts/sync-content.mjs (source of truth is docs/)
+src/content/docs/docs/
+
+# env / os
+.DS_Store
+*.log

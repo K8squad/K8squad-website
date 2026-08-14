@@ -1,0 +1,74 @@
+/* K8squad brand theme for Starlight.
+ *
+ * Locked design system (ISI-2469):
+ *   Dark  — bg #0F1117, cards #1A1D29, border #262B3A
+ *   Light — canvas #F6F8FC, cards #FFFFFF
+ *   Accent — Squad Azure #3D7DFF (single accent, theme-invariant)
+ *   Type — Geist Sans (UI), Geist Mono (code). Code blocks stay dark in both themes.
+ */
+
+:root {
+  --sl-font: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sl-font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+
+  /* Squad Azure accent ramp (theme-invariant). */
+  --k8-azure: #3d7dff;
+  --k8-azure-soft: #6b9bff;
+}
+
+/* ---- Dark theme (primary) ---- */
+:root {
+  --sl-color-accent-low: #16223f;
+  --sl-color-accent: #3d7dff;
+  --sl-color-accent-high: #b7ccff;
+
+  --sl-color-white: #e8eef9;
+  --sl-color-gray-1: #dbe3f1;
+  --sl-color-gray-2: #b6c3d8;
+  --sl-color-gray-3: #7e8ca6;
+  --sl-color-gray-4: #4a5670;
+  --sl-color-gray-5: #262b3a;
+  --sl-color-gray-6: #1a1d29;
+  --sl-color-black: #0f1117;
+
+  --sl-color-bg: #0f1117;
+  --sl-color-bg-nav: rgba(15, 17, 23, 0.85);
+  --sl-color-bg-sidebar: #12141c;
+  --sl-color-hairline: #262b3a;
+  --sl-color-hairline-light: #262b3a;
+}
+
+/* ---- Light theme ---- */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d6e3ff;
+  --sl-color-accent: #2f6bf0;
+  --sl-color-accent-high: #16336e;
+
+  --sl-color-white: #10131c;
+  --sl-color-gray-1: #1e2536;
+  --sl-color-gray-2: #38435c;
+  --sl-color-gray-3: #5a6883;
+  --sl-color-gray-4: #8c99b3;
+  --sl-color-gray-5: #d7deeb;
+  --sl-color-gray-6: #eef2f9;
+  --sl-color-gray-7: #f6f8fc;
+  --sl-color-black: #ffffff;
+
+  --sl-color-bg: #f6f8fc;
+  --sl-color-bg-nav: rgba(246, 248, 252, 0.85);
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-hairline: #e2e8f2;
+  --sl-color-hairline-light: #e2e8f2;
+}
+
+/* Code blocks stay dark in both themes (brand rule). */
+:root[data-theme='light'] .expressive-code,
+:root[data-theme='light'] pre.astro-code,
+:root[data-theme='light'] :not(pre) > code {
+  color-scheme: dark;
+}
+
+/* Numeral-8 azure accent for the wordmark, if the title text is shown. */
+.site-title {
+  letter-spacing: -0.01em;
+}
