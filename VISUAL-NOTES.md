@@ -152,16 +152,76 @@ font: Geist Sans (UI/headings) · Geist Mono (YAML, Run IDs, timestamps, secret 
 
 ---
 
-## 6. Final visual QA — status: PENDING THE BUILD
+## 6. Final visual QA — build EXISTS (Astro + Starlight); findings below
 
-The 5th ISI-2471 deliverable is "review the **built** site against the approved mocks." The repo
-currently holds content markdown + assets but **no site generator is scaffolded yet** (no Docusaurus /
-Astro config, no build output). So a pixel QA against `docs/bmad/ux/website-mocks/` can't run yet.
+The Architect scaffolded **Astro + Starlight** (ISI-2469). Assets are served from `public/` (the
+sync script only mirrors `docs/`). I reviewed the built landing (`src/pages/index.astro`) against the
+approved mock `docs/bmad/ux/website-mocks/01-landing` and CW's finalized `content/landing.md`.
 
-**What I've verified now (asset-level QA, all pass):** every asset renders on-brand — single azure,
-no purple, official 8-Crest geometry, border-forward, glyphs legible at small size, wordmark = K8squad
-(8 azure), icons map 1:1 to the finalized landing grid, how-it-works labels match the finalized copy.
+**Asset-level QA — all pass.** Every asset is on-brand: single azure, no purple, official 8-Crest
+geometry, border-forward, glyphs legible small, wordmark = K8squad (8 azure). `public/` already carries
+my finalized hero, OG, favicon, apple-touch-icon, mark (refreshed in `d5ee0f6`). I added my **8 feature
+icons** to `public/icons/feat-*.svg` this pass so they are deployable.
 
-**Hand-off:** @Architect — once you scaffold the generator and produce a build, ping me and I'll run
-the full pixel QA of the built landing + docs shell against the approved mocks (hero, 8-card grid,
-how-it-works, carousel, nav lockup, favicon/OG in `<head>`) and file any drift.
+**QA finding — feature grid is out of sync (7-vs-8 divergence).** Needs an owner decision:
+- The **approved mock** `01-landing` and **CW's finalized** `content/landing.md` (on branch
+  `content/website-finalize-isi2470`) both show the **8-card** grid: Project-scoped · Agent org ·
+  Build browser · Live runs · RBAC · OTel-native · Plugin SDK · Responsive. ISI-2471 explicitly asks
+  for **8 icons**.
+- The **built `index.astro`** still renders the **old 7 differentiators** (Orchestrate / Reconcile /
+  Work items / Credentials / Safe / Legible / Quickstart) with **no icons** at all.
+- I shipped the authoritative **8-icon set** (`feat-*` above). A parallel run produced a competing
+  **7-icon** set matching the stale 7-card build — that direction contradicts the issue + mock + final
+  copy, so it should be dropped once the grid lands as 8.
+
+**Recommendation:** adopt the **8-card** grid (issue + mock + final copy all agree). Owners: @Architect
+(owns `index.astro`) + @Content Writer (owns `content/landing.md` finalize, ISI-2470). I did **not**
+edit `index.astro` — it's actively being edited on the build branch and the grid content is a copy
+decision; wiring it mid-churn would collide. Ready-to-apply spec below.
+
+### Wiring spec — 8-card feature grid with icons (apply in `src/pages/index.astro`)
+Replace the `features` array with the approved 8 (copy verbatim from `content/landing.md`), each with an
+`icon`; icons live at `/icons/feat-*.svg` (deployed on my branch):
+
+```js
+const features = [
+  { n:'01', icon:'/icons/feat-project-scoped.svg', title:'Project-scoped squads',
+    body:"Every squad lives in its own project and namespace — RBAC-gated and NetworkPolicy-isolated. One team's agents can't see, or reach, another team's work, credentials, or cluster." },
+  { n:'02', icon:'/icons/feat-agent-org.svg', title:'Agent org views',
+    body:'A live org chart of your crew: who leads, who reports to whom, and what each agent is doing right now. Leadership and role views make a running squad legible at a glance.' },
+  { n:'03', icon:'/icons/feat-build-browser.svg', title:'Build browser',
+    body:'Every artifact an agent produces — diffs, files, logs — is browsable across every Run and addressable by content hash. Inspect exactly what changed, and where it came from.' },
+  { n:'04', icon:'/icons/feat-live-runs.svg', title:'Live runs',
+    body:'Follow a Run as it unfolds over SSE: each tool call, model response, and log line, in order. A controller restart never double-drives a run, so what you see is what actually happened.' },
+  { n:'05', icon:'/icons/feat-rbac.svg', title:'RBAC',
+    body:"Two global roles and three per-project access levels map cleanly onto Kubernetes RBAC — operators run the platform, authors compose the work, and everyone's access is auditable." },
+  { n:'06', icon:'/icons/feat-otel-native.svg', title:'OTel-native',
+    body:'Traces, metrics, and logs out of the box. An opt-in OTelConfig CRD fans each signal out to any OTLP backend — traces to one destination, metrics to another, logs to a third.' },
+  { n:'07', icon:'/icons/feat-plugin-sdk.svg', title:'Plugin SDK',
+    body:'Extend the console with sandboxed, least-privilege plugins that react to typed run events — run.started, tool.called, artifact.written, handoff, run.finished. A plugin can never block a run.' },
+  { n:'08', icon:'/icons/feat-responsive.svg', title:'Responsive',
+    body:'The full operator console — dashboards, kanban, agent org, build browser — adapts from a wide NOC display down to a phone, so you can check a squad from wherever you are.' },
+];
+```
+Feature card markup — add the icon above the title:
+```jsx
+<article class="feature">
+  <img class="feature-icon" src={f.icon} alt="" width="40" height="40" loading="lazy" />
+  <span class="feature-n">{f.n}</span>
+  <h3>{f.title}</h3>
+  <p>{f.body}</p>
+</article>
+```
+CSS (add near `.feature`):
+```css
+.feature-icon { display:block; width:40px; height:40px; margin-bottom:12px; }
+```
+Icons are stroke-only azure `#3D7DFF`, transparent — they read on both dark and light cards, no
+per-theme swap needed.
+
+**Also drifted from finalized copy (CW's lane — flagging, not editing):** the hero eyebrow
+(`index.astro` = "Kubernetes-native · Agent-agnostic · Open source" vs `landing.md` =
+"Multi-agent orchestration for Kubernetes"), the "What is KSquad" 3 cards, and the how-it-works step
+labels (`index.astro` still Install/Connect/Point/Start vs finalized Compose CRDs → Squad spins up →
+Agents work → You monitor — my `how-it-works` diagram already uses the finalized labels). @Content
+Writer / @Architect to reconcile.
