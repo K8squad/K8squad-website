@@ -5,36 +5,43 @@
 const features = [
   {
     n: '01',
+    icon: '/icons/feat-orchestrate.svg',
     title: 'Orchestrate the agent — don’t reimplement it',
     body: 'Runtime-agnostic. Claude Code, OpenClaw, Hermes and others plug in behind one shim contract (A2A southbound, MCP for tools). Swap or mix runtimes without rewriting your platform.',
   },
   {
     n: '02',
+    icon: '/icons/feat-reconcile.svg',
     title: 'A reconcile control plane, not heartbeat glue',
     body: 'Every unit of work is a Run — a reconciled workload with a crash-safe state machine. A controller restart never double-drives a Run, and no coordination state is trapped in a dead pod.',
   },
   {
     n: '03',
+    icon: '/icons/feat-workitems.svg',
     title: 'Durable, first-class work items',
     body: 'Coordination is a durable Postgres record — checkout, claim, lease, fencing, audit — not agents DMing each other. At most one agent holds a work item at a time; crashed work is safely reclaimed.',
   },
   {
     n: '04',
+    icon: '/icons/feat-credentials.svg',
     title: 'Bring your own credentials — and your own model',
     body: 'Each agent authenticates with a per-user Kubernetes Secret on its own subscription. Connect Claude with one OAuth click; a controller keeps the token fresh. Prefer a local model? Point at your own endpoint.',
   },
   {
     n: '05',
+    icon: '/icons/feat-safe.svg',
     title: 'Safe by construction',
     body: 'Untrusted agent code runs in warm-pool sandboxes (gVisor by default) with per-squad namespaces, RBAC, and NetworkPolicy egress control. A compromised agent can’t fabricate a Run or escape its namespace.',
   },
   {
     n: '06',
+    icon: '/icons/feat-legible.svg',
     title: 'Legible from install to incident',
     body: 'A web console shows your fleet, live Run streams over SSE, build artifacts, per-project dashboards, and a full audit trail. Ship telemetry anywhere with an opt-in OTelConfig CRD.',
   },
   {
     n: '07',
+    icon: '/icons/feat-quickstart.svg',
     title: 'One afternoon to first squad',
     body: 'One helm install brings up the operator, apiserver, memory service, console, Postgres, and event bus. Sane defaults and a quickstart get you from empty cluster to first running squad in an afternoon.',
   },
@@ -169,7 +176,10 @@ const screens = [
         <div class="features">
           {features.map((f) => (
             <article class="feature">
-              <span class="feature-n">{f.n}</span>
+              <div class="feature-head">
+                <img class="feature-icon" src={f.icon} alt="" width="42" height="42" loading="lazy" />
+                <span class="feature-n">{f.n}</span>
+              </div>
               <h3>{f.title}</h3>
               <p>{f.body}</p>
             </article>
@@ -353,8 +363,10 @@ helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</
 
       .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
       .feature { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
+      .feature-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+      .feature-icon { width: 42px; height: 42px; display: block; }
       .feature-n { color: var(--azure); font-family: var(--mono); font-size: 0.8rem; }
-      .feature h3 { margin: 6px 0 8px; font-size: 1.08rem; }
+      .feature h3 { margin: 0 0 8px; font-size: 1.08rem; }
       .feature p { margin: 0; color: var(--text-2); font-size: 0.93rem; }
 
       .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }

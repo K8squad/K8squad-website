@@ -99,3 +99,35 @@ font: Geist Sans (UI/headings) · Geist Mono (YAML, Run IDs, timestamps, secret 
    azure-line glyph per feature card in the same style as the `how-it-works` glyphs.
 4. **Generator sign-off** — once we agree on Docusaurus vs Starlight I'll finalize favicon sizes and any
    theme CSS you need.
+
+---
+
+## 6. ISI-2471 — website visual polish pass (shipped 2026-08-14)
+
+Design → build handoff, wired directly into the Astro site (`src/pages/index.astro` + `public/`).
+
+1. **Enriched hero** — `hero-art.svg/png` (2400×1350, text-free). The sparse v1 is replaced by the
+   8-Crest mark left-of-centre tied by a dashed coordination spine into a denser, depth-layered squad
+   formation (3 clusters, live/glowing SSE nodes, radar rings, faint NOC dot-grid, border frame). Site
+   overlays the headline in real Geist, so the art stays wordmark-free. Wired at `public/hero-art.svg`.
+2. **Feature-card icons (7)** — one azure line-glyph per **live** landing card (the CW grid moved from
+   the stale 8-item mock to 7 cards). `assets/brand/icons/feat-{orchestrate,reconcile,workitems,
+   credentials,safe,legible,quickstart}.svg` (+ .png/@2x). Stroke 5, round, transparent, theme-invariant
+   (azure #3D7DFF reads on both dark #131D31 and light #FFFFFF cards). Mapping:
+   01 orchestrate=hub→shim→swappable runtimes · 02 reconcile=sync-loop around the Run · 03 workitems=
+   durable record + lease padlock · 04 credentials=key · 05 safe=shield+check · 06 legible=console+SSE
+   pulse · 07 quickstart=rocket. Added to each card via a `.feature-head` row (icon + number) in
+   `index.astro`; served from `public/icons/`.
+3. **OG / social card** — `og-image.svg/png` (1200×630): official banner lockup (8-Crest mark + outlined
+   Geist "K8squad" wordmark, verbatim from `banner-on-dark.svg`) + "Your agents, in formation." +
+   headline + k8squad.io/Apache-2.0/Open-source chips + formation motif. Wired at `public/og-image.png`
+   (matches the `og:image` absolute URL already in `index.astro`).
+4. **Logo/favicon** — refreshed `apple-touch-icon` (180px from the dark mark) + `mark-8crest-on-light-512.png`
+   for parity; `favicon.svg`, `mark-8crest.svg` unchanged (already correct in `public/`).
+5. **Visual QA** — `npm run build` clean (28 pages); all `/icons/feat-*.svg`, `/hero-art.svg`,
+   `/og-image.png`, `/apple-touch-icon.png` resolve in `dist/index.html`. Hero, OG, and both icon sheets
+   (dark + light) verified on-brand: single azure accent, border-forward, mark geometry crisp, glyphs
+   legible at card size. No purple, no second accent.
+
+Open item #3 above (feature glyphs) is now **shipped**. Regenerators: `/tmp/svgrender/gen_ksquad_assets.py`
+(hero/OG/how-it-works), `/tmp/svgrender/gen_icons_v2.py` (7 icons), `render_isi2471.js` (PNG export).
