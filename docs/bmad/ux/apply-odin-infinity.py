@@ -80,6 +80,27 @@ CREST_RE = re.compile(
     r'<rect x="44\.5" y="79\.5" width="11" height="11" rx="3" fill="[^"]*"/>'
 )
 
+# The branding-source 8-Crest emission (docs/bmad/branding/assets/*.svg). Same
+# geometry as CREST_RE but the branding generator writes 2-decimal coords and a
+# space before the self-closing slash on the filled nodes. 5-rect variant covers
+# mark-8crest-on-{dark,light}.svg and banner-on-light.svg.
+CREST_DEC_RE = re.compile(
+    r'<rect x="29\.00" y="45\.00" width="42\.00" height="42\.00" rx="13\.00" fill="none" stroke="[^"]*" stroke-width="9"/>'
+    r'<rect x="29\.00" y="13\.00" width="42\.00" height="42\.00" rx="13\.00" fill="none" stroke="[^"]*" stroke-width="9"/>'
+    r'<rect x="41\.00" y="41\.00" width="18\.00" height="18\.00" rx="5\.00" fill="[^"]*" />'
+    r'<rect x="44\.50" y="9\.50" width="11\.00" height="11\.00" rx="3\.00" fill="[^"]*" />'
+    r'<rect x="44\.50" y="79\.50" width="11\.00" height="11\.00" rx="3\.00" fill="[^"]*" />'
+)
+
+# The favicon subset (docs/bmad/branding/assets/favicon.svg): two rings + centre
+# node only, no top/bottom crest pips. Must be tried AFTER CREST_DEC_RE so the
+# 5-rect marks don't get partially matched (leaving two orphan pips).
+FAVICON_DEC_RE = re.compile(
+    r'<rect x="29\.00" y="45\.00" width="42\.00" height="42\.00" rx="13\.00" fill="none" stroke="[^"]*" stroke-width="9"/>'
+    r'<rect x="29\.00" y="13\.00" width="42\.00" height="42\.00" rx="13\.00" fill="none" stroke="[^"]*" stroke-width="9"/>'
+    r'<rect x="41\.00" y="41\.00" width="18\.00" height="18\.00" rx="5\.00" fill="[^"]*" />'
+)
+
 # The pre-8-Crest hand-drawn placeholder (defensive: covers any un-enforced doc).
 PLACEHOLDER_RE = re.compile(
     r'<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="[^"]*" stroke-width="9"/>'
@@ -98,8 +119,11 @@ WORDMARK_NEW = '>K<tspan fill="#3D7DFF">8</tspan>squad</text>'
 def process(path):
     src = open(path, encoding="utf-8").read()
     src, n_crest = CREST_RE.subn(ODIN_MARK, src)
+    # 5-rect decimal MUST run before the 3-rect favicon subset (prefix overlap).
+    src, n_dec = CREST_DEC_RE.subn(ODIN_MARK, src)
+    src, n_fav = FAVICON_DEC_RE.subn(ODIN_MARK, src)
     src, n_ph = PLACEHOLDER_RE.subn(ODIN_MARK, src)
-    marks = n_crest + n_ph
+    marks = n_crest + n_dec + n_fav + n_ph
 
     wordmarks = src.count(WORDMARK_OLD)
     if wordmarks:
