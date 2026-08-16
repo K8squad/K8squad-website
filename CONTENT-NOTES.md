@@ -123,3 +123,41 @@ Notes:
    final generator.
 
 Ping me on ISI-2367 when you've picked a direction and I'll align copy to it.
+
+---
+
+## 7. Finalization pass (ISI-2470)
+
+Second pass to match the copy to the **approved mocks** (`ksquad` repo
+`docs/bmad/ux/website-mocks/01–03`) and migrate the web domain.
+
+**Done:**
+- **Web domain → `k8squad.io`.** `charts.ksquad.io` → `charts.k8squad.io` (quickstart + operator
+  install). Landing footer/console refs now use `docs.k8squad.io` / `console.k8squad.io`. The GitHub org
+  is already `github.com/K8squad`.
+- **`content/landing.md` re-structured to the approved mock:** hero *"Your agents, in formation."* +
+  eyebrow *"Multi-agent orchestration for Kubernetes"* + approved subhead + Get started / View on GitHub
+  CTAs + hero helm one-liner; a **"What is KSquad?" 3-card band** (Kubernetes-native / Agents in
+  formation / Observable by default); the **8-card feature grid** in mock order (Project-scoped squads,
+  Agent org views, Build browser, Live runs, RBAC, OTel-native, Plugin SDK, Responsive); **4-step
+  how-it-works** with the mock's labels (Compose CRDs → Squad spins up → Agents work → You monitor); a
+  **"See it in action"** carousel section; a get-started command band; and a footer nav block. Prior
+  problem/trust/microcopy bands kept as supporting copy.
+
+**Kept deliberately (copy follows real architecture, per §5) — flagged for Architect confirmation:**
+- **CRD API group stays `ksquad.io/v1alpha1`** — it's the Go `+groupName` (and `PROJECT` domain) in the
+  operator, *not* a web address. Untouched in all YAML. If the brand rename is meant to reach the API
+  group too, that's a code change the Architect owns; docs will follow the code.
+- **Helm chart / release / namespace stay `ksquad` / `ksquad-system`** — packaging identifiers tied to
+  the `ksquad.io` group, matching the mock's own command. Not migrated with the web domain.
+- **CRD kind is `Team`, not `Squad`.** The mock renders `kind: Squad` illustratively; the real CRD is
+  `Team` (concepts + code). Docs keep `Team`; prose keeps the "squad" concept.
+- **Plugin event names.** The mock's event table (`run.started`, `tool.called`, `artifact.written`,
+  `run.finished`) is an illustrative placeholder. The real NATS taxonomy in
+  `docs/plugin-sdk/event-reference.md` is `run.succeeded` / `workitem.claimed` / `workitem.handoff` /
+  `artifact.registered` etc. Landing + docs use the **real** names. Designer may want to align the mock
+  table.
+- **Plugin SDK language.** The mock shows a TypeScript console SDK (`@ksquad/sdk`,
+  `create-ksquad-plugin`, UI panel); the docs describe a **Go** NATS-subscriber worker. No SDK exists in
+  code yet, and the two describe different surfaces (console-UI plugin vs backend event consumer). Left
+  the Go docs as-is; **Architect to confirm the intended plugin surface/language** before I rewrite.
