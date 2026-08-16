@@ -1,6 +1,6 @@
 # Story 9.3: Access-mode behavior documented per storage-class
 
-Status: in_review
+Status: Done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -125,8 +125,9 @@ Full render/lint + schema gate (needs `helm`): `k8squad` `deploy/helm/ksquad/ci/
       (`access-mode-check.py`, exit 0).
 - [x] Pinned chart snapshot extended with `values.schema.json` + the NOTES/README delta;
       `PROVENANCE.md` records the Story 9.3 branch.
-- [ ] `k8squad` PR `feature/isi-2252-access-mode-docs` reviewed + merged (Code Reviewer / merge
-      train) — chart delta lands on `main`.
+- [x] `k8squad` PR #45 reviewed (APPROVE, ISI-2657) + merged — chart delta on `main` as
+      merge `15b2a3d` (feat `09d6770`). `ci/test.sh` schema assertions + `access-mode-check.py`
+      re-verified GREEN on merged `main`.
 
 ## Notes
 
