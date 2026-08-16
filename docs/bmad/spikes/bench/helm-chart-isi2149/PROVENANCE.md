@@ -16,6 +16,15 @@ the `k8squad` source repo. It backs both the Story 9.1 bench
   JetStream event bus). Chart impl: ISI-2149 (exposure+storage) + ISI-2253
   (event bus).
 
+**Story 9.3 delta (ISI-2252, `feature/isi-2252-access-mode-docs` off `main`, PR
+pending):** added `values.schema.json` (validates `storage.workspace.accessMode`
+against the enum `ReadWriteOnce|ReadWriteMany|ReadWriteOncePod` — a typo fails
+`helm install` up front), a conditional RWX warning block in `templates/NOTES.txt`
+(warn-not-reject: RWX is a valid enum member the chart cannot verify offline), a
+README "Access-mode behavior per StorageClass (§9.4)" subsection, and four
+`ci/test.sh` schema assertions. Chart landing on `k8squad` is via that PR; the
+`access-mode-check.py` bench reads this snapshot for its file-grounded pass.
+
 **What changed vs the prior 5e6442d snapshot:** added `templates/nats.yaml`
 (parent-rendered JetStream StatefulSet), `templates/event-relay.yaml` (apiserver
 outbox→NATS relay ConfigMap), the `nats:`/`events:` values blocks, the NATS

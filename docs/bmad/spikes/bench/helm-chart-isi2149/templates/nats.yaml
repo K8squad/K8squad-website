@@ -25,7 +25,7 @@ data:
     http: 8222
     jetstream {
       store_dir: "/data/jetstream"
-      max_file_store: {{ .Values.nats.jetstream.maxFileStore | quote }}
+      max_file_store: {{ .Values.nats.jetstream.maxFileStore }}
     }
     {{- if .Values.nats.ha.enabled }}
     cluster {

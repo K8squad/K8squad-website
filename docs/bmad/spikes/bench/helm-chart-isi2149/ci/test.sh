@@ -89,6 +89,9 @@ echo "== NATS / JetStream event bus (ISI-2253) =="
 render_ok "nats: JetStream enabled StatefulSet renders by default" 'jetstream {' "${CORE[@]}"
 render_ok "nats: single-replica default" 'replicas: 1' "${CORE[@]}"
 render_ok "nats: JetStream PVC uses values StorageClass (never cluster-default)" 'storageClassName: "std"' "${CORE[@]}"
+# ISI-2621: max_file_store must render UNQUOTED NATS syntax (4G, not "4Gi"/"4G")
+# — a quoted or Gi-suffixed value CrashLoops nats-server on JetStream init.
+render_ok "nats: max_file_store renders unquoted NATS syntax (ISI-2621)" 'max_file_store: 4G' "${CORE[@]}"
 render_ok "nats: JetStream PVC uses per-family StorageClass override" 'storageClassName: "nats-class"' \
   "${CORE[@]}" --set storage.nats.storageClassName=nats-class
 render_ok "relay: apiserver outbox→NATS relay ConfigMap renders" 'event-relay' "${CORE[@]}"
@@ -114,5 +117,15 @@ render_fail "nats HA with even replicas fails (RAFT quorum)" "must be ODD" \
   "${CORE[@]}" --set nats.ha.enabled=true --set nats.ha.replicas=4
 render_fail "nats HA with <3 replicas fails (RAFT quorum)" "must be >= 3" \
   "${CORE[@]}" --set nats.ha.enabled=true --set nats.ha.replicas=1
+
+echo "== access-mode schema (ISI-2252, §9.4) =="
+render_ok "accessMode RWO (default) passes schema" 'workspace.accessMode: "ReadWriteOnce"' \
+  "${CORE[@]}"
+render_ok "accessMode RWX passes schema (valid enum, warned not rejected)" 'workspace.accessMode: "ReadWriteMany"' \
+  "${CORE[@]}" --set storage.workspace.accessMode=ReadWriteMany
+render_ok "accessMode RWOncePod passes schema" 'workspace.accessMode: "ReadWriteOncePod"' \
+  "${CORE[@]}" --set storage.workspace.accessMode=ReadWriteOncePod
+render_fail "invalid accessMode fails schema enum (no silent bad PVC)" "must be one of the following" \
+  "${CORE[@]}" --set storage.workspace.accessMode=ReadWriteMnay
 
 echo "ALL CHECKS PASSED"
