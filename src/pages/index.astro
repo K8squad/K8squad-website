@@ -3,47 +3,54 @@
 // Starlight, which owns `/docs/**`. Copy is sourced from content/landing.md; the
 // visual system follows the locked design (dark-primary, Squad Azure #3D7DFF).
 // The 8 product-console features follow the approved mock order (content/landing.md
-// @46bc2d6). Icons are intentionally NOT wired here: the old public/icons/feat-*.svg
-// glyphs are keyed to the retired value-props and the re-keyed 8-feature set is owned
-// by the Graphic Designer (ISI-2471 follow-up). Wire icons in once those land.
+// @46bc2d6). Each carries a re-keyed feature glyph from public/icons/feat-*.svg
+// (ISI-2480), rendered in .feature-head alongside the numeral.
 const features = [
   {
     n: '01',
+    icon: '/icons/feat-squads.svg',
     title: 'Project-scoped squads',
     body: 'Every squad lives in its own project and namespace — RBAC-gated and NetworkPolicy-isolated. One team’s agents can’t see, or reach, another team’s work, credentials, or cluster.',
   },
   {
     n: '02',
+    icon: '/icons/feat-org.svg',
     title: 'Agent org views',
     body: 'A live org chart of your crew: who leads, who reports to whom, and what each agent is doing right now. Leadership and role views make a running squad legible at a glance.',
   },
   {
     n: '03',
+    icon: '/icons/feat-builds.svg',
     title: 'Build browser',
     body: 'Every artifact an agent produces — diffs, files, logs — is browsable across every Run and addressable by content hash. Inspect exactly what changed, and where it came from.',
   },
   {
     n: '04',
+    icon: '/icons/feat-runs.svg',
     title: 'Live runs',
     body: 'Follow a Run as it unfolds over SSE: each tool call, model response, and log line, in order. A controller restart never double-drives a run, so what you see is what actually happened.',
   },
   {
     n: '05',
+    icon: '/icons/feat-rbac.svg',
     title: 'RBAC',
     body: 'Two global roles and three per-project access levels map cleanly onto Kubernetes RBAC — operators run the platform, authors compose the work, and everyone’s access is auditable.',
   },
   {
     n: '06',
+    icon: '/icons/feat-otel.svg',
     title: 'OTel-native',
     body: 'Traces, metrics, and logs out of the box. An opt-in OTelConfig CRD fans each signal out to any OTLP backend — traces to one destination, metrics to another, logs to a third.',
   },
   {
     n: '07',
+    icon: '/icons/feat-plugins.svg',
     title: 'Plugin SDK',
     body: 'Extend the platform with sandboxed, least-privilege plugins that react to typed events — run.succeeded, workitem.claimed, workitem.handoff, artifact.registered, and more, over durable NATS JetStream subjects. A plugin can never block a run; a flaky endpoint can never stall the platform.',
   },
   {
     n: '08',
+    icon: '/icons/feat-responsive.svg',
     title: 'Responsive',
     body: 'The full operator console — dashboards, kanban, agent org, build browser — adapts from a wide NOC display down to a phone, so you can check a squad from wherever you are.',
   },
@@ -179,6 +186,7 @@ const screens = [
           {features.map((f) => (
             <article class="feature">
               <div class="feature-head">
+                <img class="feature-icon" src={f.icon} alt="" width="42" height="42" loading="lazy" />
                 <span class="feature-n">{f.n}</span>
               </div>
               <h3>{f.title}</h3>
