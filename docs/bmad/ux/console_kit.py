@@ -69,11 +69,22 @@ def rect(x, y, w, h, fill, rx=0, stroke="none", sw=1):
             f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"/>')
 
 
-# --- official v2 8-Crest mark + K8squad logotype (ISI-2324) -------------------
-# Kept in sync with console_kit_ia.py. svg_open() injects LOGO_DEFS. After any
-# re-render, run apply-official-8crest.py (idempotent branding enforcement pass).
+# --- Odin Infinity mark (v12) + K8squad logotype (ISI-2515) -------------------
+# Henrik-approved 2026-08-14 (ISI-2514), replacing the v2 8-Crest. Blue-only.
+# Kept in sync with console_kit_ia.py / console_kit_rbac.py. svg_open() injects
+# LOGO_DEFS. For committed screens whose generators are gone, the idempotent
+# post-render pass apply-odin-infinity.py performs the same swap in place.
+# Asset source of truth: branding/assets/logo-v12/odin-infinity-glyph.svg
 LOGO_DEFS = (
     '<defs>'
+    # Odin Infinity glyph: blue link gradients + interlace clip paths
+    '<linearGradient id="odinL" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#3D7DFF"/></linearGradient>'
+    '<linearGradient id="odinR" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#3D7DFF"/><stop offset="1" stop-color="#2E4E8C"/></linearGradient>'
+    '<clipPath id="odinCB"><rect x="176" y="256" width="160" height="120"/></clipPath>'
+    '<clipPath id="odinCK"><rect x="166" y="256" width="180" height="120"/></clipPath>'
+    # legacy v2 8-Crest ring gradients (retained; harmless if unreferenced)
     '<linearGradient id="ringTop" x1="0" y1="0" x2="0" y2="1">'
     '<stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#3D7DFF"/></linearGradient>'
     '<linearGradient id="ringBot" x1="0" y1="0" x2="0" y2="1">'
@@ -82,14 +93,29 @@ LOGO_DEFS = (
 )
 
 
-def mark_8crest(cx, cy, scale):
-    """Official v2 8-Crest inner geometry centred at (cx,cy). Needs LOGO_DEFS."""
+def mark_odin(cx, cy, scale):
+    """Odin Infinity glyph centred at (cx,cy). Two rounded-square ring links
+    forming an infinity with a Valknut interlock knot + claimed/in-progress/done
+    task chain. Blue-only. Needs LOGO_DEFS. The scale(0.195313)=100/512 wrap maps
+    the 512 glyph artwork onto the same 0..100 box the 8-Crest used, so callers'
+    (cx,cy,scale) placements are unchanged."""
     return (f'<g transform="translate({cx},{cy}) scale({scale}) translate(-50,-50)">'
-            '<rect x="29" y="45" width="42" height="42" rx="13" fill="none" stroke="url(#ringBot)" stroke-width="9"/>'
-            '<rect x="29" y="13" width="42" height="42" rx="13" fill="none" stroke="url(#ringTop)" stroke-width="9"/>'
-            '<rect x="41" y="41" width="18" height="18" rx="5" fill="#93B7FF"/>'
-            '<rect x="44.5" y="9.5" width="11" height="11" rx="3" fill="#93B7FF"/>'
-            '<rect x="44.5" y="79.5" width="11" height="11" rx="3" fill="#2E4E8C"/></g>')
+            '<g transform="scale(0.195313)">'
+            '<path d="M300,148 h96 a60,60 0 0 1 60,60 v96 a60,60 0 0 1 -60,60 h-96 a60,60 0 0 1 -60,-60 v-96 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#odinR)" stroke-width="40" stroke-linejoin="round"/>'
+            '<path d="M116,148 h96 a60,60 0 0 1 60,60 v96 a60,60 0 0 1 -60,60 h-96 a60,60 0 0 1 -60,-60 v-96 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#odinL)" stroke-width="40" stroke-linejoin="round"/>'
+            '<g clip-path="url(#odinCB)"><path d="M300,148 h96 a60,60 0 0 1 60,60 v96 a60,60 0 0 1 -60,60 h-96 a60,60 0 0 1 -60,-60 v-96 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#odinR)" stroke-width="40" stroke-linejoin="round"/></g>'
+            '<g transform="rotate(45 256 256)">'
+            '<path d="M196,206 h64 a18,18 0 0 1 18,18 v64 a18,18 0 0 1 -18,18 h-64 a18,18 0 0 1 -18,-18 v-64 a18,18 0 0 1 18,-18 z" fill="none" stroke="url(#odinL)" stroke-width="26" stroke-linejoin="round"/>'
+            '<path d="M252,206 h64 a18,18 0 0 1 18,18 v64 a18,18 0 0 1 -18,18 h-64 a18,18 0 0 1 -18,-18 v-64 a18,18 0 0 1 18,-18 z" fill="none" stroke="url(#odinR)" stroke-width="26" stroke-linejoin="round"/>'
+            '<g clip-path="url(#odinCK)"><path d="M196,206 h64 a18,18 0 0 1 18,18 v64 a18,18 0 0 1 -18,18 h-64 a18,18 0 0 1 -18,-18 v-64 a18,18 0 0 1 18,-18 z" fill="none" stroke="url(#odinL)" stroke-width="26" stroke-linejoin="round"/></g>'
+            '<rect x="230" y="230" width="52" height="52" rx="9" fill="#2E4E8C"/>'
+            '<rect x="237" y="237" width="38" height="38" rx="7" fill="#4D8BFF"/>'
+            '</g></g></g>')
+
+
+# Back-compat alias — historical callers referenced mark_8crest; the mark is now
+# Odin Infinity (ISI-2515). Same signature, same 0..100 placement box.
+mark_8crest = mark_odin
 
 
 def logotype(x, y, size, T, anchor="start", ls="0.2"):
