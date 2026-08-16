@@ -36,15 +36,7 @@ spec:
 
 A Run moves through an explicit set of phases (its `status.phase`):
 
-```
- Pending ─► Claiming ─► Running ─┬─► Succeeded
-    ▲          │           │     ├─► Failed ──(retryPolicy, backoff)──► Claiming
-    │          │           │     └─► Cancelled (operator kill)
-    │          │           ▼
-    │          │        Paused ──(credential refreshed)──► Running
-    │          │        Paused(rate_limited) ──(window clears)──► Claiming
-    └──────────┴── retry / backoff on sandbox or agent failure ──┘
-```
+![Run state machine: Pending is admitted, then Claiming requests a warm sandbox, then Running invokes the agent; Running ends in Succeeded, Failed, or Cancelled; Failed retries back to Claiming with backoff per retryPolicy; Running can enter Paused on credential expiry or rate limit and then resume to Claiming via a durable timer.](./images/run-lifecycle.svg)
 
 - **Pending** — the Run is admitted and waiting to be scheduled.
 - **Claiming** — the Run reconciler requests a **warm sandbox** and **assembles the pod**: it stages

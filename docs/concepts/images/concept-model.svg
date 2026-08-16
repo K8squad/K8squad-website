@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" role="img"
+     aria-label="The ksquad.io/v1alpha1 object model: a Team (Squad) owns a Project and has Agents; each Agent uses a Role and Skills, runs on an AgentRuntime, and authenticates with a Secret; an Agent drives a Run, which claims a durable Work Item and executes in a Sandbox.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="arrow"/>
+    </marker>
+    <style>
+      .kind{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:600;fill:#e8eef9}
+      .sub{font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;fill:#6b9bff}
+      .edge{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:10.5px;fill:#b6c3d8}
+      .title{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:600;fill:#dbe3f1}
+      .box{fill:#1a1d29;stroke:#262b3a;stroke-width:1.2}
+      .box-accent{fill:#161d31;stroke:#3d7dff;stroke-width:1.4}
+      .box-dash{fill:#151824;stroke:#4a5670;stroke-width:1.2;stroke-dasharray:5 4}
+      .link{stroke:#7e8ca6;stroke-width:1.4;fill:none}
+    
+      .frame{fill:#12141c;stroke:#262b3a}
+      .arrow{fill:#7e8ca6}
+      .accent{fill:#6b9bff}
+      .muted{fill:#8c99b3}
+      @media (prefers-color-scheme: light){
+      .frame{fill:#FFFFFF;stroke:#D4DCEA}
+      .arrow{fill:#8697AE}
+      .link{stroke:#9FB0C8}
+      .title{fill:#16203A}
+      .kind{fill:#16203A}
+      .sub{fill:#2563EB}
+      .edge{fill:#5B6980}
+      .accent{fill:#2563EB}
+      .muted{fill:#5B6980}
+      .box{fill:#FFFFFF;stroke:#D4DCEA}
+      .box-accent{fill:#EAF1FF;stroke:#3D7DFF}
+      .box-dash{fill:#F4F7FC;stroke:#B7C2D4}
+      }
+
+            .force-light .frame{fill:#FFFFFF;stroke:#D4DCEA}
+            .force-light .arrow{fill:#8697AE}
+            .force-light .link{stroke:#9FB0C8}
+            .force-light .title{fill:#16203A}
+            .force-light .kind{fill:#16203A}
+            .force-light .sub{fill:#2563EB}
+            .force-light .edge{fill:#5B6980}
+            .force-light .accent{fill:#2563EB}
+            .force-light .muted{fill:#5B6980}
+            .force-light .box{fill:#FFFFFF;stroke:#D4DCEA}
+            .force-light .box-accent{fill:#EAF1FF;stroke:#3D7DFF}
+            .force-light .box-dash{fill:#F4F7FC;stroke:#B7C2D4}
+      
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="879" height="399" rx="14" class="frame"/>
+  <text class="title" x="28" y="34">The <tspan class="accent" style="font-family:'Geist Mono',monospace">ksquad.io/v1alpha1</tspan> object model</text>
+
+  <!-- Team (Squad) -->
+  <rect class="box" x="48" y="72" width="160" height="48" rx="9"/>
+  <text class="kind" x="128" y="93" text-anchor="middle">Squad</text>
+  <text class="sub"  x="128" y="109" text-anchor="middle">Team</text>
+
+  <!-- Project -->
+  <rect class="box" x="690" y="72" width="160" height="48" rx="9"/>
+  <text class="kind" x="770" y="93" text-anchor="middle">Project</text>
+  <text class="sub"  x="770" y="109" text-anchor="middle">Project · repo + workspace</text>
+
+  <!-- Agent -->
+  <rect class="box" x="48" y="196" width="160" height="48" rx="9"/>
+  <text class="kind" x="128" y="217" text-anchor="middle">Agent</text>
+  <text class="sub"  x="128" y="233" text-anchor="middle">Agent</text>
+
+  <!-- Role / Skill / Runtime / Secret cluster -->
+  <rect class="box" x="300" y="170" width="150" height="40" rx="9"/>
+  <text class="kind" x="375" y="188" text-anchor="middle">Role</text>
+  <text class="sub"  x="375" y="202" text-anchor="middle">behavior</text>
+
+  <rect class="box" x="500" y="170" width="150" height="40" rx="9"/>
+  <text class="kind" x="575" y="188" text-anchor="middle">Skill</text>
+  <text class="sub"  x="575" y="202" text-anchor="middle">tools · permissions</text>
+
+  <rect class="box" x="300" y="230" width="150" height="40" rx="9"/>
+  <text class="kind" x="375" y="248" text-anchor="middle">AgentRuntime</text>
+  <text class="sub"  x="375" y="262" text-anchor="middle">coding CLI flavor</text>
+
+  <rect class="box" x="500" y="230" width="150" height="40" rx="9"/>
+  <text class="kind" x="575" y="248" text-anchor="middle">Secret</text>
+  <text class="sub"  x="575" y="262" text-anchor="middle">per-user credential</text>
+
+  <!-- Run -->
+  <rect class="box-accent" x="48" y="320" width="160" height="48" rx="9"/>
+  <text class="kind" x="128" y="341" text-anchor="middle">Run</text>
+  <text class="sub"  x="128" y="357" text-anchor="middle">Run · unit of work</text>
+
+  <!-- Work Item -->
+  <rect class="box-dash" x="300" y="320" width="160" height="48" rx="9"/>
+  <text class="kind" x="380" y="341" text-anchor="middle">Work Item</text>
+  <text class="sub muted" x="380" y="357" text-anchor="middle">Postgres row · not a CRD</text>
+
+  <!-- Sandbox -->
+  <rect class="box" x="510" y="320" width="160" height="48" rx="9"/>
+  <text class="kind" x="590" y="341" text-anchor="middle">Sandbox</text>
+  <text class="sub"  x="590" y="357" text-anchor="middle">isolated · gVisor pod</text>
+
+  <!-- Edges -->
+  <path class="link" marker-end="url(#ah)" d="M208 90 H690"/>
+  <text class="edge" x="440" y="83" text-anchor="middle">owns</text>
+
+  <path class="link" marker-end="url(#ah)" d="M128 120 V196"/>
+  <text class="edge" x="140" y="162" text-anchor="start">has</text>
+
+  <path class="link" marker-end="url(#ah)" d="M128 244 V320"/>
+  <text class="edge" x="140" y="286" text-anchor="start">drives</text>
+
+  <path class="link" marker-end="url(#ah)" d="M208 210 H300"/>
+  <text class="edge" x="254" y="204" text-anchor="middle">uses</text>
+
+  <path class="link" marker-end="url(#ah)" d="M208 206 C 360 190, 420 190, 500 190"/>
+  <text class="edge" x="470" y="164" text-anchor="middle">grants</text>
+
+  <path class="link" marker-end="url(#ah)" d="M208 226 C 250 250, 270 250, 300 250"/>
+  <text class="edge" x="250" y="270" text-anchor="middle">runs on</text>
+
+  <path class="link" marker-end="url(#ah)" d="M208 232 C 380 250, 420 250, 500 250"/>
+  <text class="edge" x="470" y="270" text-anchor="middle">auth</text>
+
+  <path class="link" marker-end="url(#ah)" d="M208 344 H300"/>
+  <text class="edge" x="254" y="338" text-anchor="middle">claims</text>
+
+  <path class="link" marker-end="url(#ah)" d="M460 344 H510"/>
+  <text class="edge" x="485" y="338" text-anchor="middle">runs in</text>
+</svg>

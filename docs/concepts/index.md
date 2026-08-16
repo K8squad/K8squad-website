@@ -20,17 +20,12 @@ concepts do most of the work. Read them in order the first time; they build on e
 
 ## How they fit together
 
-```
-Team (Squad)  ── owns ──▶  Project (repo + workspace)
-   │
-   └── has ──▶ Agent ── uses ──▶ Role   (behavior)
-                  │      ── uses ──▶ Skill  (tools/permissions)
-                  │      ── runs on ──▶ AgentRuntime (which coding CLI)
-                  │      ── authenticates with ──▶ Secret (per-user credential)
-                  ▼
-                Run ── claims ──▶ Work Item (durable, in Postgres)
-                  └── executes in ──▶ Sandbox (isolated, warm-pool)
-```
+![The ksquad.io/v1alpha1 object model: a Squad (Team) owns a Project and has Agents; each Agent uses a Role and Skills, runs on an AgentRuntime, and authenticates with a Secret; an Agent drives a Run, which claims a durable Work Item and executes in an isolated Sandbox.](./images/concept-model.svg)
+
+A **Squad** (`Team`) owns one or more **Projects** and has **Agents**. Each Agent composes a **Role**
+(behavior) with **Skills** (tools and permissions), runs on an **AgentRuntime** (which coding CLI), and
+authenticates with its own **Secret**. An Agent drives a **Run**, which claims a durable **Work Item**
+(a Postgres row, not a CRD) and executes in an isolated **Sandbox**.
 
 ## Two records, one database
 

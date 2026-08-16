@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 340" role="img"
+     aria-label="The Run state machine. Pending is admitted, then Claiming requests a warm sandbox, then Running invokes the agent. Running ends in Succeeded, Failed, or Cancelled. Failed retries back to Claiming with backoff per retryPolicy. Running can enter Paused on credential expiry or rate limit, then resume to Claiming via a durable timer.">
+  <defs>
+    <marker id="ra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="arrow"/>
+    </marker>
+    <style>
+      .st{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:600;fill:#e8eef9}
+      .sub{font-family:'Geist Mono',ui-monospace,monospace;font-size:9.5px;fill:#8c99b3}
+      .lbl{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:10px;fill:#b6c3d8}
+      .title{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:600;fill:#dbe3f1}
+      .active{fill:#161d31;stroke:#3d7dff;stroke-width:1.4}
+      .term{fill:#1a1d29;stroke:#4a5670;stroke-width:1.2}
+      .pause{fill:#1a1d29;stroke:#6b9bff;stroke-width:1.2;stroke-dasharray:5 4}
+      .link{stroke:#7e8ca6;stroke-width:1.4;fill:none}
+    
+      .frame{fill:#12141c;stroke:#262b3a}
+      .arrow{fill:#7e8ca6}
+      .accent{fill:#6b9bff}
+      .muted{fill:#8c99b3}
+      @media (prefers-color-scheme: light){
+      .frame{fill:#FFFFFF;stroke:#D4DCEA}
+      .arrow{fill:#8697AE}
+      .link{stroke:#9FB0C8}
+      .title{fill:#16203A}
+      .st{fill:#16203A}
+      .sub{fill:#5B6980}
+      .lbl{fill:#5B6980}
+      .accent{fill:#2563EB}
+      .active{fill:#EAF1FF;stroke:#3D7DFF}
+      .term{fill:#F4F7FC;stroke:#B7C2D4}
+      .pause{fill:#F4F7FC;stroke:#3D7DFF}
+      }
+
+            .force-light .frame{fill:#FFFFFF;stroke:#D4DCEA}
+            .force-light .arrow{fill:#8697AE}
+            .force-light .link{stroke:#9FB0C8}
+            .force-light .title{fill:#16203A}
+            .force-light .st{fill:#16203A}
+            .force-light .sub{fill:#5B6980}
+            .force-light .lbl{fill:#5B6980}
+            .force-light .accent{fill:#2563EB}
+            .force-light .active{fill:#EAF1FF;stroke:#3D7DFF}
+            .force-light .term{fill:#F4F7FC;stroke:#B7C2D4}
+            .force-light .pause{fill:#F4F7FC;stroke:#3D7DFF}
+      
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="819" height="339" rx="14" class="frame"/>
+  <text class="title" x="28" y="34">Run lifecycle — <tspan class="accent" style="font-family:'Geist Mono',monospace">status.phase</tspan></text>
+
+  <!-- Happy path row (y=70) -->
+  <rect class="active" x="40"  y="70" width="120" height="46" rx="9"/>
+  <text class="st"  x="100" y="98" text-anchor="middle">Pending</text>
+
+  <rect class="active" x="230" y="70" width="120" height="46" rx="9"/>
+  <text class="st"  x="290" y="98" text-anchor="middle">Claiming</text>
+
+  <rect class="active" x="420" y="70" width="120" height="46" rx="9"/>
+  <text class="st"  x="480" y="98" text-anchor="middle">Running</text>
+
+  <rect class="term" x="640" y="70" width="140" height="46" rx="9"/>
+  <text class="st"  x="710" y="92" text-anchor="middle">Succeeded</text>
+  <text class="sub" x="710" y="106" text-anchor="middle">terminal</text>
+
+  <!-- Outcomes column -->
+  <rect class="term" x="640" y="150" width="140" height="42" rx="9"/>
+  <text class="st"  x="710" y="176" text-anchor="middle">Failed</text>
+
+  <rect class="term" x="640" y="252" width="140" height="42" rx="9"/>
+  <text class="st"  x="710" y="272" text-anchor="middle">Cancelled</text>
+  <text class="sub" x="710" y="286" text-anchor="middle">operator kill</text>
+
+  <!-- Paused -->
+  <rect class="pause" x="420" y="230" width="140" height="46" rx="9"/>
+  <text class="st"  x="490" y="252" text-anchor="middle">Paused</text>
+  <text class="sub" x="490" y="266" text-anchor="middle">cred / rate_limited</text>
+
+  <!-- Edges: happy path -->
+  <path class="link" marker-end="url(#ra)" d="M160 93 H230"/>
+  <text class="lbl" x="195" y="86" text-anchor="middle">admitted</text>
+
+  <path class="link" marker-end="url(#ra)" d="M350 93 H420"/>
+  <text class="lbl" x="385" y="86" text-anchor="middle">sandbox claimed</text>
+
+  <path class="link" marker-end="url(#ra)" d="M540 93 H640"/>
+  <text class="lbl" x="590" y="86" text-anchor="middle">done</text>
+
+  <!-- Running -> Failed -->
+  <path class="link" marker-end="url(#ra)" d="M540 108 C 600 130, 620 150, 645 162"/>
+  <text class="lbl" x="600" y="140" text-anchor="middle">error</text>
+
+  <!-- Running -> Cancelled -->
+  <path class="link" marker-end="url(#ra)" d="M540 110 C 640 200, 620 250, 660 252"/>
+
+  <!-- Failed -> Claiming (retry, backoff) -->
+  <path class="link" marker-end="url(#ra)" d="M640 178 C 380 210, 300 170, 290 116"/>
+  <text class="lbl" x="470" y="210" text-anchor="middle">retry · backoff (retryPolicy)</text>
+
+  <!-- Running -> Paused -->
+  <path class="link" marker-end="url(#ra)" d="M480 116 V230"/>
+  <text class="lbl" x="490" y="180" text-anchor="start">cred expiry / throttle</text>
+
+  <!-- Paused -> Claiming (resume, durable timer) -->
+  <path class="link" marker-end="url(#ra)" d="M420 250 C 300 250, 280 160, 285 116"/>
+  <text class="lbl" x="300" y="205" text-anchor="middle">resume · durable timer</text>
+</svg>
