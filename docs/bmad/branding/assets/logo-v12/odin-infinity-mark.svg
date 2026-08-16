@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" role="img" aria-label="KSquad — Odin Infinity">
+  <defs>
+    <linearGradient id="gLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#3D7DFF"/>
+    </linearGradient>
+    <linearGradient id="gRight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3D7DFF"/><stop offset="1" stop-color="#2E4E8C"/>
+    </linearGradient>
+    <linearGradient id="gKnot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#93B7FF"/><stop offset="1" stop-color="#2E4E8C"/>
+    </linearGradient>
+    <clipPath id="clipBottom"><rect x="290.0" y="200" width="140" height="140"/></clipPath>
+    <clipPath id="clipKnot"><rect x="270.0" y="200" width="180" height="120"/></clipPath>
+  </defs>
+
+  <!-- dotted task chain -->
+  <line x1="210" y1="200" x2="510" y2="200"
+        stroke="#2E4E8C" stroke-width="4" stroke-linecap="round"
+        stroke-dasharray="1 14" opacity="0.85"/>
+
+  <!-- interlocked links: right, then left over, then right-over-left at bottom -->
+  <path d="M425,95 h90 a60,60 0 0 1 60,60 v90 a60,60 0 0 1 -60,60 h-90 a60,60 0 0 1 -60,-60 v-90 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#gRight)" stroke-width="30" stroke-linejoin="round"/>
+  <path d="M205,95 h90 a60,60 0 0 1 60,60 v90 a60,60 0 0 1 -60,60 h-90 a60,60 0 0 1 -60,-60 v-90 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#gLeft)" stroke-width="30" stroke-linejoin="round"/>
+  <g clip-path="url(#clipBottom)"><path d="M425,95 h90 a60,60 0 0 1 60,60 v90 a60,60 0 0 1 -60,60 h-90 a60,60 0 0 1 -60,-60 v-90 a60,60 0 0 1 60,-60 z" fill="none" stroke="url(#gRight)" stroke-width="30" stroke-linejoin="round"/></g>
+
+  <!-- centre Valknut knot: two 45-rotated diamond loops interlaced -->
+  <g transform="rotate(45 360.0 200)">
+    <path d="M304.0,154 h60 a16,16 0 0 1 16,16 v60 a16,16 0 0 1 -16,16 h-60 a16,16 0 0 1 -16,-16 v-60 a16,16 0 0 1 16,-16 z" fill="none" stroke="url(#gLeft)" stroke-width="20" stroke-linejoin="round"/>
+    <path d="M356.0,154 h60 a16,16 0 0 1 16,16 v60 a16,16 0 0 1 -16,16 h-60 a16,16 0 0 1 -16,-16 v-60 a16,16 0 0 1 16,-16 z" fill="none" stroke="url(#gRight)" stroke-width="20" stroke-linejoin="round"/>
+    <g clip-path="url(#clipKnot)"><path d="M304.0,154 h60 a16,16 0 0 1 16,16 v60 a16,16 0 0 1 -16,16 h-60 a16,16 0 0 1 -16,-16 v-60 a16,16 0 0 1 16,-16 z" fill="none" stroke="url(#gLeft)" stroke-width="20" stroke-linejoin="round"/></g>
+  </g>
+
+  <!-- task boxes: claimed (bright) -> in-progress (centre diamond) -> done (dark) -->
+  <rect x="191.0" y="181.0" width="38" height="38" rx="8" fill="#3D7DFF"/>
+  <g transform="rotate(45 360.0 200)"><rect x="337.0" y="177" width="46" height="46" rx="8" fill="#2E4E8C"/></g>
+  <g transform="rotate(45 360.0 200)"><rect x="341.0" y="181.0" width="38" height="38" rx="7" fill="#4D8BFF"/></g>
+  <rect x="491.0" y="181.0" width="38" height="38" rx="8" fill="#2E4E8C"/>
+</svg>

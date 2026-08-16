@@ -2,6 +2,16 @@
 # K8squad logo system builder. Emits self-contained SVGs (wordmark outlined to
 # vector paths, marks are pure geometry) to out/. Palette inherited from console
 # ISI-2126 — azure-mono only, no status hues.
+#
+# NOTE (ISI-2515 / ISI-2662): the approved primary mark is now the **Odin
+# Infinity** glyph (v12, blue-only), NOT the 8-Crest emitted by mark_B() below.
+# mark_B is retained as heritage geometry. After any rebuild, run the idempotent
+# post-render pass to swap the 8-Crest -> Odin Infinity in the committed assets
+# (mirrors docs/bmad/ux/apply-odin-infinity.py for the website mocks):
+#     python3 ../apply-odin-infinity-branding.py
+# Wordmark rebuilds require fonts/GeistSans.ttf + GeistMono.ttf (not vendored);
+# the post-render pass preserves already-outlined wordmark paths, so it swaps the
+# mark without needing the fonts.
 import os
 from glyphs import layout
 
