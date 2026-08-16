@@ -267,3 +267,26 @@ runnable falsification check (`event-seam-outbox-check.py`, Epic-8/9/11 model-ch
 - `docs/bmad/spikes/bench/event-seam-outbox-check.py` (new) — C1–C6 runnable falsification
   check, 9-mutation broken-seam battery.
 - `docs/bmad/stories/12-1-domain-event-seam.md` (this file) — the first Epic-12 story.
+
+### Dev build delivered (ISI-2663, 2026-08-16) — PR #51 (K8squad/K8squad)
+
+The "runtime proof deferred to the Epic 12 build ticket" above is now built and pushed as
+**PR #51** (branch `feature/isi-2663-events-relay`, stacked on #49 `coord.outbox` substrate;
+retargets to `main` when #49 merges). It lands the C1–C6 red/green target above against real
+code:
+
+- **`pkg/events`** — `Capture` / `CaptureForWorkItem` (same-txn append, AC-a/C1), the
+  `Relay` worker (LISTEN/NOTIFY on `coord_outbox` + poll fallback → publish
+  `ksquad.{entity}.{project}.{squad}.{event_type}` composed from columns → set-once
+  `published_at` → at-least-once even if NATS down, AC-b/C2/C3/C5), the four §17.2 OTel
+  signals (AC-c/C6), and `PgWaker`/`SQLStore` bindings. The nats.go JetStream client is
+  isolated in **`pkg/events/jetstream`** so `pkg/events`/`pkg/coord` build without NATS.
+- **Capture wiring** — the production §6.2 claim (`coord.ProdClaimer`) co-commits one
+  `work_item`/`claimed` outbox event via `WithOutboxCapture()` (opt-in; on in the apiserver
+  run-loop, off for the 0001-only spine chaos gate).
+- **`cmd/event-relay`** — standalone worker driven by the Story 9.4 `event-relay` ConfigMap.
+- **Tests** — 15 pure-Go unit tests prove C1–C6 with in-memory fakes (default lane, green);
+  `-tags=integration` (DATABASE_URL) proves same-txn atomicity + set-once/append-only schema
+  guards on real Postgres; `-tags=chaos` `TestSpineProdOutbox` (0001+0003) proves the wired
+  claim co-commits one event 1:1 with the §6.5 audit row; `-tags=integration` (NATS_URL)
+  proves end-to-end JetStream publish + set-once.
