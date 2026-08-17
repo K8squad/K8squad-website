@@ -122,6 +122,41 @@ record is *where custody actually moves* (§7.5).
   **room** arm is already present; only add the additive room case if it is memory-only. Record the finding
   in the story's review notes so the L4 suite owner (this is a co-owned case) is not surprised.
 
+## Dev & review notes (ISI-2705 — the deliverable landed)
+
+**Confirm-then-augment finding (AC3, co-owned case — recorded so the L4 owner is not surprised):** I read
+the **merged** S4-6 in `docs/bmad/spikes/bench/blast-radius-check.py` (the 14.4 anchor, ISI-2245 on main).
+As merged, S4-6 exercised **only the memory arm** — `memory_read()` + `coordination_driveable_by_memory()`;
+the room appeared only in a comment ("room/memory grew claim/handoff semantics"), with **no distinct
+discussion-surface case**. Per AC3 I therefore added the **additive room arm THERE** (not a standalone
+harness): `room_read()` + `coordination_driveable_by_room()` and a second `run_case("S4-6 … room arm")`,
+modeled 1:1 with the memory arm off the same forgery fixture.
+
+**Two deliverables (both GREEN with teeth, stdlib-only, no cluster):**
+
+1. **AC1/AC2 static/structural guardrail** — `docs/bmad/spikes/bench/discussion-no-coordination-check.py`.
+   Differential over the 10.1 §7.5 surface: INV1 (no coordination/custody **column**), INV2 (no
+   custody-transfer **verb/endpoint**), INV3 (no discussion write mutates a `coord` row). Mutation
+   contract honored: the guard-off arm injects a `state`/`holder`/`fence_token` column, a `POST …/claim`
+   verb, and a post that upserts `coord.claim` → each caught RED; the §7.5 surface → GREEN. This is 10.1
+   AC4 promoted to a standing gate.
+2. **AC3/AC4 runtime covert-channel evidence** — the **room arm of S4-6** in `blast-radius-check.py`.
+   GUARD-ON: the hostile Run's forged room message is server-stamped to its **real** principal
+   (`hostile-run`, never the impersonated `victim-principal`), surfaced **untrusted**, and the
+   coordinator's dispatch rides **fenced work-items only** (`coordination_driveable_by_room` False).
+   GUARD-OFF (forged author honored **or** room message flips a claim) → RED. Verified: injecting either
+   bug flips the room arm RED and the suite exits 1.
+
+**AC mapping:** AC1 → INV1/INV2 · AC2 → INV3 · AC3 → S4-6 room arm present (was memory-only) · AC4 →
+`room_read` server-stamp (real principal, untrusted) · AC5 → honest framing is now *demonstrated* — the
+room carries talk+provenance (positive control) while custody moves only in the fenced `coord` record.
+
+**Kind-runtime gating (14.4 AC8):** the language-neutral anchor arm always runs; in `k8squad`'s
+`blast-radius.yml` the room arm **self-skips-with-reason** (`::notice::`) until the 10.1 discussion
+apiserver image is deployable in kind (Epic 9 install), exactly as the memory arm gates on a
+kind-deployable memory service. No silent drop; the 1:1 kind translation is a follow-on for the L4 owner
+when the apiserver is stood up.
+
 ## Out of scope (owned elsewhere)
 
 - **The room schema/API and its structural coordination-freeness *by construction*** (**10.1** — 10.4

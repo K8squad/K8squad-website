@@ -15,7 +15,7 @@ attempt and the primitive that bounds it:
   S4-3 cross-namespace isolation  — Team-A pod cannot reach Team-B svc/Secret                      (§12.1/NFR-SEC1, X.1)
   S4-4 reuse-residue              — teardown-and-replace leaves NO prior-Run scratch/secret/tree   (§9.3/NFR-SEC5, X.2)
   S4-5 cross-principal read-authZ — B GETs A's Run build view (same Team) ⇒ 404, existence-hiding  (§9.4/NFR-SEC5, 8.7d)
-  S4-6 poisoning + covert-channel — forged provenance rejected; memory ≠ coordination back-channel (§7.3/NFR-SEC6, X.3/10.4/12.4)
+  S4-6 poisoning + covert-channel — forged provenance rejected; memory AND room ≠ coordination back-channel (§7.3/§7.5/NFR-SEC6, X.3/10.4/12.4)
 
 A "the hostile pod ran and nothing obviously broke" demo passes even if egress is open, a Team-A pod can
 list Team-B Secrets, a torn-down PVC still holds a prior principal's worktree, a same-Team peer reads
@@ -98,6 +98,31 @@ def coordination_driveable_by_memory(guard_on):
     return False  # coordination rides shared work-items + fencing ONLY; memory is read-of-record
 
 
+# --- S4-6 ROOM arm (Story 10.4, additive to the memory arm above; 10.1 discussion surface) ---------
+# The merged S4-6 exercised only the MEMORY arm. 10.4 co-owns the DISCUSSION-ROOM arm of this same
+# case: a hostile Run posts a room message crafted to STEER a coordinator's next dispatch. The room
+# is talk, not custody (arch §7.5) — modeled here 1:1 with the memory arm so the same teeth bite it.
+# In the kind runtime (`blast-radius.yml`) this arm SELF-SKIPS-WITH-REASON (14.4 AC8) until the 10.1
+# discussion apiserver image is deployable in kind (Epic 9 install), exactly as the memory arm gates
+# on a kind-deployable memory service; the language-neutral anchor here always runs.
+
+def room_read(record, guard_on):
+    """S4-6 room arm (10.1 AC3 / §7.3.1/§7.3.2): a room message is surfaced with server-stamped,
+    un-forgeable provenance + `trust:"untrusted"`. off ⇒ a body-supplied (forged) author is honored."""
+    # record = {"claimed_author": ..., "stamped_author": ..., "trust": ...}
+    if not guard_on:
+        return {"author": record["claimed_author"], "trusted": True}  # forged author accepted
+    return {"author": record["stamped_author"], "trusted": record["trust"] == "trusted"}
+
+
+def coordination_driveable_by_room(guard_on):
+    """S4-6 room arm (10.4/F6): can a DISCUSSION write mutate a claim/handoff/state? The §7.5 fence:
+    the room schema/API has NO custody column/verb and NO write path into `coord` (10.4 AC1/AC2)."""
+    if not guard_on:
+        return True  # the room grew claim/handoff semantics: off-record steering via chat possible
+    return False  # a room post moves ZERO work items; the coordinator dispatches on fenced items ONLY
+
+
 def run_case(name, guard_off_escapes, guard_on_contains):
     """A case is valid iff guard-OFF escapes (teeth) AND guard-ON contains (conformance)."""
     print(f"\n{name}")
@@ -141,12 +166,25 @@ run_case(
 
 _forged = {"claimed_author": "victim-principal", "stamped_author": "hostile-run", "trust": "untrusted"}
 run_case(
-    "S4-6 poisoning/forgery + covert-channel",
+    "S4-6 poisoning/forgery + covert-channel (memory arm)",
     guard_off_escapes=lambda: memory_read(_forged, guard_on=False)["author"] == "victim-principal"
     or coordination_driveable_by_memory(guard_on=False) is True,
     guard_on_contains=lambda: memory_read(_forged, guard_on=True)["author"] == "hostile-run"
     and memory_read(_forged, guard_on=True)["trusted"] is False
     and coordination_driveable_by_memory(guard_on=True) is False,
+)
+
+# S4-6 ROOM arm (Story 10.4): a hostile Run posts a room message forging another principal AND crafted
+# to steer the coordinator. GUARD-ON: the read is server-stamped to the REAL hostile principal (not the
+# impersonated victim), surfaced untrusted, and the coordinator's dispatch rides fenced work-items ONLY
+# — the room message flips no claim/handoff/state. Same forgery fixture as the memory arm; same teeth.
+run_case(
+    "S4-6 covert-channel (room arm — 10.4; kind: self-skip-with-reason until 10.1 apiserver deployable)",
+    guard_off_escapes=lambda: room_read(_forged, guard_on=False)["author"] == "victim-principal"
+    or coordination_driveable_by_room(guard_on=False) is True,
+    guard_on_contains=lambda: room_read(_forged, guard_on=True)["author"] == "hostile-run"
+    and room_read(_forged, guard_on=True)["trusted"] is False
+    and coordination_driveable_by_room(guard_on=True) is False,
 )
 
 # Extra teeth: S4-5 must be 404, NEVER 403 (a 403 leaks existence — AC5).
