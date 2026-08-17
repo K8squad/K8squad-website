@@ -2,7 +2,11 @@ name: Deploy site to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # `main` is the intended long-term trunk. `visual/website-design-isi2369` is
+    # the branch GitHub Pages is currently sourced from (repo default); deploying
+    # from it is what the `github-pages` environment allows today. Once main is
+    # made the default + Pages source (admin action), the second entry can drop.
+    branches: [main, visual/website-design-isi2369]
   workflow_dispatch:
 
 permissions:

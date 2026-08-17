@@ -49,7 +49,58 @@ need a caption tweak).
 | `banner-on-light.svg` | wordmark lockup on light |
 | `favicon.svg` / `favicon-32.png` / `favicon-64.png` | browser favicon |
 | `hero-art.png` / `.svg` | **hero visual** — 8-Crest over a dark NOC-density node formation, azure glow |
-| `how-it-works.png` / `.svg` | **"How it works" band** — 4-step flow Install → Agents → Squad → Run |
+| `how-it-works.png` / `.svg` | **"How it works" band** — 4-step flow Compose CRDs → Squad spins up → Agents work → You monitor |
+
+---
+
+## 3b. Final design polish — ISI-2471 (this pass) — DONE
+
+Everything below is net-new / reworked this pass. Single azure `#3D7DFF`, dark-primary, no purple,
+official 8-Crest geometry reused verbatim.
+
+**Enriched hero** (`assets/brand/hero-art.svg` / `.png`, 2400×1350) — the earlier hero read *sparse*
+(mark floating left, a loose constellation floating right, a dead center gap). Reworked: the mark is
+now **tied into** the formation by a dashed coordination spine → a bridge node, the formation is three
+joined squad clusters (not a random mesh), with a far parallax depth layer, glowing "live" nodes,
+subtle radar rings, and a faint NOC dot-grid. Still **text-free** — set the headline in Geist over the
+upper-left negative space (the dot-grid fades out there so type stays clean).
+
+**8 feature-card icons** (`assets/brand/icons/feat-<name>.svg` + `.png` + `@2x.png`, 96px, transparent,
+azure line-glyph — **theme-invariant, works on dark and light cards**). Mapped 1:1 to the approved
+`content/landing.md` 8-card grid, in order:
+
+| # | Feature card (landing.md) | Icon file |
+|---|---------------------------|-----------|
+| 1 | Project-scoped squads | `feat-project-scoped` (namespace boundary + squad nodes) |
+| 2 | Agent org views | `feat-agent-org` (org chart) |
+| 3 | Build browser | `feat-build-browser` (artifact doc + content lines) |
+| 4 | Live runs | `feat-live-runs` (console frame + SSE pulse) |
+| 5 | RBAC | `feat-rbac` (shield + keyhole) |
+| 6 | OTel-native | `feat-otel-native` (one signal fanning to 3 OTLP backends) |
+| 7 | Plugin SDK | `feat-plugin-sdk` (plugin into a typed-event contract) |
+| 8 | Responsive | `feat-responsive` (monitor + phone) |
+
+**OG / social card** (`assets/brand/og-image.svg` / `.png`, **1200×630**) — for link previews when
+`k8squad.io` is shared. Official 8-Crest lockup + "Your agents, in formation." + tagline "A
+Kubernetes-native control plane for squads of AI agents." + `k8squad.io · Apache-2.0 · Open source`.
+Wire it once in the site `<head>`: `og:image`, `twitter:image` (`twitter:card=summary_large_image`).
+
+**Favicon set rounded out**: added `favicon-16.png` and `apple-touch-icon-180.png`; `mark-8crest-on-light-512.png`
+and `banner-on-light.png` rendered for light-surface parity. Full set now: `favicon.svg`,
+`favicon-16/32/64.png`, `apple-touch-icon-180.png`.
+
+**How-it-works realigned**: step labels updated from the old *Install → Agents → Squad → Run* to match
+your finalized copy — **Compose CRDs → Squad spins up → Agents work → You monitor** (new glyphs to
+match).
+
+### Integration spec (for the Architect building the site)
+- Landing feature grid: one `feat-*.svg` per card, order above. Icons are stroke-only azure — they
+  inherit nothing from card bg, so they read on both themes.
+- `<head>`: `<link rel="icon" href="/assets/brand/favicon.svg">`, `favicon-32/16.png`,
+  `<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon-180.png">`,
+  `<meta property="og:image" content="https://k8squad.io/assets/brand/og-image.png">` (+ `twitter:image`).
+- Hero: `hero-art` as a full-bleed background/left-anchored image, headline set live in Geist over it.
+- Nav lockup: `banner-on-dark.svg` (dark) / `banner-on-light.svg` (light).
 
 **Hero direction I picked:** the *8-Crest-over-dark-NOC-canvas* option from `CONTENT-NOTES.md §3`
 (not the framed console screenshot). `hero-art.png` is **text-free by design** — drop your headline /
@@ -95,39 +146,22 @@ font: Geist Sans (UI/headings) · Geist Mono (YAML, Run IDs, timestamps, secret 
 2. **Landing image wiring** — `content/landing.md`'s "Hero visual note" + "How it works" band are where
    `assets/brand/hero-art.png` and `how-it-works.png` go. You own that markdown; tell me the final
    relative asset path your generator expects and I'll move/rename to match.
-3. **Feature glyphs (7)** — optional per §3; not shipped this pass. Say the word and I'll add one
-   azure-line glyph per feature card in the same style as the `how-it-works` glyphs.
+3. ~~**Feature glyphs (7)**~~ — **DONE** (§3b): 8 icons shipped, mapped to the 8-card grid.
 4. **Generator sign-off** — once we agree on Docusaurus vs Starlight I'll finalize favicon sizes and any
    theme CSS you need.
 
 ---
 
-## 6. ISI-2471 — website visual polish pass (shipped 2026-08-14)
+## 6. Final visual QA — status: PENDING THE BUILD
 
-Design → build handoff, wired directly into the Astro site (`src/pages/index.astro` + `public/`).
+The 5th ISI-2471 deliverable is "review the **built** site against the approved mocks." The repo
+currently holds content markdown + assets but **no site generator is scaffolded yet** (no Docusaurus /
+Astro config, no build output). So a pixel QA against `docs/bmad/ux/website-mocks/` can't run yet.
 
-1. **Enriched hero** — `hero-art.svg/png` (2400×1350, text-free). The sparse v1 is replaced by the
-   8-Crest mark left-of-centre tied by a dashed coordination spine into a denser, depth-layered squad
-   formation (3 clusters, live/glowing SSE nodes, radar rings, faint NOC dot-grid, border frame). Site
-   overlays the headline in real Geist, so the art stays wordmark-free. Wired at `public/hero-art.svg`.
-2. **Feature-card icons (7)** — one azure line-glyph per **live** landing card (the CW grid moved from
-   the stale 8-item mock to 7 cards). `assets/brand/icons/feat-{orchestrate,reconcile,workitems,
-   credentials,safe,legible,quickstart}.svg` (+ .png/@2x). Stroke 5, round, transparent, theme-invariant
-   (azure #3D7DFF reads on both dark #131D31 and light #FFFFFF cards). Mapping:
-   01 orchestrate=hub→shim→swappable runtimes · 02 reconcile=sync-loop around the Run · 03 workitems=
-   durable record + lease padlock · 04 credentials=key · 05 safe=shield+check · 06 legible=console+SSE
-   pulse · 07 quickstart=rocket. Added to each card via a `.feature-head` row (icon + number) in
-   `index.astro`; served from `public/icons/`.
-3. **OG / social card** — `og-image.svg/png` (1200×630): official banner lockup (8-Crest mark + outlined
-   Geist "K8squad" wordmark, verbatim from `banner-on-dark.svg`) + "Your agents, in formation." +
-   headline + k8squad.io/Apache-2.0/Open-source chips + formation motif. Wired at `public/og-image.png`
-   (matches the `og:image` absolute URL already in `index.astro`).
-4. **Logo/favicon** — refreshed `apple-touch-icon` (180px from the dark mark) + `mark-8crest-on-light-512.png`
-   for parity; `favicon.svg`, `mark-8crest.svg` unchanged (already correct in `public/`).
-5. **Visual QA** — `npm run build` clean (28 pages); all `/icons/feat-*.svg`, `/hero-art.svg`,
-   `/og-image.png`, `/apple-touch-icon.png` resolve in `dist/index.html`. Hero, OG, and both icon sheets
-   (dark + light) verified on-brand: single azure accent, border-forward, mark geometry crisp, glyphs
-   legible at card size. No purple, no second accent.
+**What I've verified now (asset-level QA, all pass):** every asset renders on-brand — single azure,
+no purple, official 8-Crest geometry, border-forward, glyphs legible at small size, wordmark = K8squad
+(8 azure), icons map 1:1 to the finalized landing grid, how-it-works labels match the finalized copy.
 
-Open item #3 above (feature glyphs) is now **shipped**. Regenerators: `/tmp/svgrender/gen_ksquad_assets.py`
-(hero/OG/how-it-works), `/tmp/svgrender/gen_icons_v2.py` (7 icons), `render_isi2471.js` (PNG export).
+**Hand-off:** @Architect — once you scaffold the generator and produce a build, ping me and I'll run
+the full pixel QA of the built landing + docs shell against the approved mocks (hero, 8-card grid,
+how-it-works, carousel, nav lockup, favicon/OG in `<head>`) and file any drift.

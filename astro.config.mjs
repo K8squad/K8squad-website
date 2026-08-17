@@ -12,8 +12,8 @@ export default defineConfig({
       description:
         'Kubernetes-native, agent-agnostic control plane for running a squad of AI agents against a shared backlog.',
       logo: {
-        dark: './src/assets/mark-8crest-on-dark.svg',
-        light: './src/assets/mark-8crest-on-light.svg',
+        dark: './src/assets/logo-on-dark.svg',
+        light: './src/assets/logo-on-light.svg',
         replacesTitle: false,
       },
       favicon: '/favicon.svg',

@@ -2,71 +2,80 @@
 // K8squad landing page (k8squad.io). Standalone Astro page — sits at `/` outside
 // Starlight, which owns `/docs/**`. Copy is sourced from content/landing.md; the
 // visual system follows the locked design (dark-primary, Squad Azure #3D7DFF).
+// The 8 product-console features follow the approved mock order (content/landing.md
+// @46bc2d6). Each carries a re-keyed feature glyph from public/icons/feat-*.svg
+// (ISI-2480), rendered in .feature-head alongside the numeral.
 const features = [
   {
     n: '01',
-    icon: '/icons/feat-orchestrate.svg',
-    title: 'Orchestrate the agent — don’t reimplement it',
-    body: 'Runtime-agnostic. Claude Code, OpenClaw, Hermes and others plug in behind one shim contract (A2A southbound, MCP for tools). Swap or mix runtimes without rewriting your platform.',
+    icon: '/icons/feat-squads.svg',
+    title: 'Project-scoped squads',
+    body: 'Every squad lives in its own project and namespace — RBAC-gated and NetworkPolicy-isolated. One team’s agents can’t see, or reach, another team’s work, credentials, or cluster.',
   },
   {
     n: '02',
-    icon: '/icons/feat-reconcile.svg',
-    title: 'A reconcile control plane, not heartbeat glue',
-    body: 'Every unit of work is a Run — a reconciled workload with a crash-safe state machine. A controller restart never double-drives a Run, and no coordination state is trapped in a dead pod.',
+    icon: '/icons/feat-org.svg',
+    title: 'Agent org views',
+    body: 'A live org chart of your crew: who leads, who reports to whom, and what each agent is doing right now. Leadership and role views make a running squad legible at a glance.',
   },
   {
     n: '03',
-    icon: '/icons/feat-workitems.svg',
-    title: 'Durable, first-class work items',
-    body: 'Coordination is a durable Postgres record — checkout, claim, lease, fencing, audit — not agents DMing each other. At most one agent holds a work item at a time; crashed work is safely reclaimed.',
+    icon: '/icons/feat-builds.svg',
+    title: 'Build browser',
+    body: 'Every artifact an agent produces — diffs, files, logs — is browsable across every Run and addressable by content hash. Inspect exactly what changed, and where it came from.',
   },
   {
     n: '04',
-    icon: '/icons/feat-credentials.svg',
-    title: 'Bring your own credentials — and your own model',
-    body: 'Each agent authenticates with a per-user Kubernetes Secret on its own subscription. Connect Claude with one OAuth click; a controller keeps the token fresh. Prefer a local model? Point at your own endpoint.',
+    icon: '/icons/feat-runs.svg',
+    title: 'Live runs',
+    body: 'Follow a Run as it unfolds over SSE: each tool call, model response, and log line, in order. A controller restart never double-drives a run, so what you see is what actually happened.',
   },
   {
     n: '05',
-    icon: '/icons/feat-safe.svg',
-    title: 'Safe by construction',
-    body: 'Untrusted agent code runs in warm-pool sandboxes (gVisor by default) with per-squad namespaces, RBAC, and NetworkPolicy egress control. A compromised agent can’t fabricate a Run or escape its namespace.',
+    icon: '/icons/feat-rbac.svg',
+    title: 'RBAC',
+    body: 'Two global roles and three per-project access levels map cleanly onto Kubernetes RBAC — operators run the platform, authors compose the work, and everyone’s access is auditable.',
   },
   {
     n: '06',
-    icon: '/icons/feat-legible.svg',
-    title: 'Legible from install to incident',
-    body: 'A web console shows your fleet, live Run streams over SSE, build artifacts, per-project dashboards, and a full audit trail. Ship telemetry anywhere with an opt-in OTelConfig CRD.',
+    icon: '/icons/feat-otel.svg',
+    title: 'OTel-native',
+    body: 'Traces, metrics, and logs out of the box. An opt-in OTelConfig CRD fans each signal out to any OTLP backend — traces to one destination, metrics to another, logs to a third.',
   },
   {
     n: '07',
-    icon: '/icons/feat-quickstart.svg',
-    title: 'One afternoon to first squad',
-    body: 'One helm install brings up the operator, apiserver, memory service, console, Postgres, and event bus. Sane defaults and a quickstart get you from empty cluster to first running squad in an afternoon.',
+    icon: '/icons/feat-plugins.svg',
+    title: 'Plugin SDK',
+    body: 'Extend the platform with sandboxed, least-privilege plugins that react to typed events — run.succeeded, workitem.claimed, workitem.handoff, artifact.registered, and more, over durable NATS JetStream subjects. A plugin can never block a run; a flaky endpoint can never stall the platform.',
+  },
+  {
+    n: '08',
+    icon: '/icons/feat-responsive.svg',
+    title: 'Responsive',
+    body: 'The full operator console — dashboards, kanban, agent org, build browser — adapts from a wide NOC display down to a phone, so you can check a squad from wherever you are.',
   },
 ];
 
 const intro = [
   {
     title: 'Kubernetes-native',
-    body: 'Squads are CRDs. A Go operator reconciles them the way Kubernetes already reconciles Deployments and Jobs — same tooling, same RBAC, same operator surface.',
+    body: 'Squads, agents, and runs are CRDs. Deploy with Helm, manage with kubectl. If you can operate a cluster, you can operate a squad — same objects, same RBAC, same reconcile loop.',
   },
   {
-    title: 'Agent-agnostic',
-    body: 'Any coding agent plugs in behind one documented shim contract. KSquad orchestrates the crew; it never tries to be the agent.',
+    title: 'Agents in formation',
+    body: 'Compose teams that claim work, hand off, and coordinate over a shared, durable bus — never peer-to-peer DMs. At most one agent holds a work item at a time, and a crashed agent’s work is safely reclaimed.',
   },
   {
-    title: 'Credential-honest',
-    body: 'Every agent runs on its own user’s subscription. KSquad never holds a shared master credential, and your source never leaves your cluster.',
+    title: 'Observable by default',
+    body: 'Every run emits OpenTelemetry traces and streams live over SSE. No black boxes: follow each tool call, model response, and log line as it happens, and ship the telemetry to any OTLP backend you already run.',
   },
 ];
 
 const steps = [
-  { n: '1', title: 'Install the control plane', body: 'helm install KSquad. You get the operator, apiserver, memory service, and console, with Postgres and NATS bundled as boring subcharts.' },
-  { n: '2', title: 'Connect a credential & define agents', body: 'Click Connect Claude once, then declare 2–3 Agents from the bundled runtimes. Each has a Role and Skills.' },
-  { n: '3', title: 'Point at a repo & form a squad', body: 'Create a Project (a repo + a workspace) and group your agents into a Team. That’s your squad.' },
-  { n: '4', title: 'Start a Run', body: 'Kick off a Run from the console or with kubectl apply. Watch progress stream live and inspect the artifacts.' },
+  { n: '1', title: 'Compose CRDs', body: 'Declare a Team and its agents in YAML — each agent with a Role (how it behaves) and Skills (what tools it may use). Point a Project at a repo. kubectl apply.' },
+  { n: '2', title: 'Squad spins up', body: 'The operator reconciles your objects into running agents, scheduling them as pods and wiring the coordination bus. Reconciliation is level-based — edit and re-apply, and the crew converges to match.' },
+  { n: '3', title: 'Agents work', body: 'Agents claim work items, hand off, and coordinate through the durable bus. At most one holds an item at a time; a crashed agent’s work is reclaimed and re-dispatched. The coordination record is the audit trail.' },
+  { n: '4', title: 'You monitor', body: 'Watch runs stream live, follow the traces, and inspect the artifacts — from the console or straight from kubectl. No orchestration code to write.' },
 ];
 
 const screens = [
@@ -83,18 +92,18 @@ const screens = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>K8squad — Run a squad of AI agents as a Kubernetes-native workload</title>
+    <title>K8squad — Your agents, in formation</title>
     <meta
       name="description"
-      content="KSquad is a Kubernetes-native, agent-agnostic control plane for running a squad of AI agents against a shared backlog — reconciled, isolated, and legible like any other cluster workload."
+      content="KSquad is a Kubernetes-native control plane for teams of AI agents. Compose squads as CRDs, let them claim work and coordinate over a shared bus, and watch every run live with OpenTelemetry."
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="canonical" href="https://k8squad.io/" />
-    <meta property="og:title" content="K8squad — your agents, in formation" />
+    <meta property="og:title" content="K8squad — Your agents, in formation" />
     <meta
       property="og:description"
-      content="A Kubernetes-native, agent-agnostic control plane for running a squad of AI agents against a shared backlog."
+      content="A Kubernetes-native control plane for teams of AI agents. Compose squads as CRDs, let them claim work and coordinate over a shared bus, and watch every run live with OpenTelemetry."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://k8squad.io/" />
@@ -119,9 +128,12 @@ const screens = [
   <body>
     <header class="nav">
       <a class="brand" href="/">
-        <img src="/mark-8crest.svg" alt="" width="28" height="28" />
+        <img src="/logo-glyph.svg" alt="" width="28" height="28" />
         <span class="wordmark">K<span class="eight">8</span>squad</span>
       </a>
+      <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
+        <span class="hamburger"><span></span><span></span><span></span></span>
+      </button>
       <nav class="nav-links">
         <a href="/docs">Docs</a>
         <a href="/docs/concepts">Concepts</a>
@@ -138,19 +150,19 @@ const screens = [
       <!-- Hero -->
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Kubernetes-native · Agent-agnostic · Open source</p>
+          <p class="eyebrow">Multi-agent orchestration for Kubernetes</p>
           <h1>Your agents, in formation.</h1>
           <p class="lede">
-            KSquad is a Kubernetes-native control plane for running a <em>squad</em> of AI agents
-            against a shared backlog. It treats a crew of agents as a first-class, reconciled
-            workload — the way Kubernetes already treats Deployments and Jobs. You keep your
-            credentials, your source, and your runtime of choice.
+            Compose squads of AI agents as Kubernetes resources. They claim work, hand off, and
+            coordinate — and you watch every run, live, with OpenTelemetry. Bring your own runtime,
+            your own credentials, and your own model; KSquad reconciles the crew like any other
+            cluster workload.
           </p>
           <div class="cta-row">
-            <a class="btn btn-primary" href="/docs/quickstart">Get started in &lt;30 min →</a>
-            <a class="btn btn-ghost" href="/docs/concepts">Read the concepts</a>
+            <a class="btn btn-primary" href="/docs/quickstart">Get started →</a>
+            <a class="btn btn-ghost" href="https://github.com/K8squad">View on GitHub →</a>
           </div>
-          <pre class="helm"><code>helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</code></pre>
+          <pre class="helm"><code>helm install ksquad ksquad/ksquad -n ksquad-system</code></pre>
         </div>
         <div class="hero-art">
           <img src="/hero-art.svg" alt="KSquad fleet overview" loading="eager" />
@@ -159,7 +171,7 @@ const screens = [
 
       <!-- What is KSquad -->
       <section class="band">
-        <h2 class="section-title">What is KSquad</h2>
+        <h2 class="section-title">What is KSquad?</h2>
         <div class="cards-3">
           {intro.map((c) => (
             <article class="card">
@@ -172,7 +184,7 @@ const screens = [
 
       <!-- Features -->
       <section class="band">
-        <h2 class="section-title">What makes KSquad different</h2>
+        <h2 class="section-title">Everything you need to run agent squads</h2>
         <div class="features">
           {features.map((f) => (
             <article class="feature">
@@ -203,7 +215,7 @@ const screens = [
 
       <!-- Screenshots -->
       <section class="band">
-        <h2 class="section-title">See it running</h2>
+        <h2 class="section-title">See it in action</h2>
         <div class="carousel" role="region" aria-label="Console screenshots">
           {screens.map((s) => (
             <figure class="shot">
@@ -215,13 +227,12 @@ const screens = [
 
       <!-- Get started -->
       <section class="band get-started">
-        <h2 class="section-title">Get started</h2>
-        <p class="lede center">Empty cluster to first running squad in under an afternoon.</p>
-        <pre class="helm big"><code>helm repo add ksquad https://k8squad.io/charts
-helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</code></pre>
+        <h2 class="section-title">Get started in one command</h2>
+        <p class="lede center">Install the operator, then open the console.</p>
+        <pre class="helm big"><code>helm repo add ksquad https://charts.k8squad.io &amp;&amp; helm install ksquad ksquad/ksquad</code></pre>
         <div class="cta-row center">
-          <a class="btn btn-primary" href="/docs/quickstart">Read the quickstart →</a>
-          <a class="btn btn-ghost" href="/docs">Browse the docs</a>
+          <a class="btn btn-primary" href="/docs/quickstart">Read the docs →</a>
+          <a class="btn btn-ghost" href="https://github.com/K8squad">Star us on GitHub →</a>
         </div>
       </section>
     </main>
@@ -261,6 +272,35 @@ helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</
         const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
         document.documentElement.dataset.theme = next;
         localStorage.setItem('starlight-theme', next);
+      });
+      
+      // Hamburger menu toggle
+      const navToggle = document.getElementById('nav-toggle');
+      const navLinks = document.querySelector('.nav-links');
+      
+      navToggle?.addEventListener('click', () => {
+        const isExpanded = navToggle.getAttribute('aria-expanded') === 'true';
+        navToggle.setAttribute('aria-expanded', !isExpanded);
+        navToggle.classList.toggle('active');
+        navLinks.classList.toggle('active');
+      });
+      
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!navToggle?.contains(e.target) && !navLinks?.contains(e.target)) {
+          navToggle?.setAttribute('aria-expanded', 'false');
+          navToggle?.classList.remove('active');
+          navLinks?.classList.remove('active');
+        }
+      });
+      
+      // Close menu when clicking nav links
+      navLinks?.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          navToggle?.setAttribute('aria-expanded', 'false');
+          navToggle?.classList.remove('active');
+          navLinks?.classList.remove('active');
+        });
       });
     </script>
 
@@ -306,8 +346,8 @@ helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</
       /* Nav */
       .nav {
         position: sticky; top: 0; z-index: 50;
-        display: flex; align-items: center; gap: 24px;
-        padding: 14px 24px;
+        display: flex; align-items: center; gap: 16px;
+        padding: 14px 20px;
         background: var(--nav-bg); backdrop-filter: blur(12px);
         border-bottom: 1px solid var(--border);
       }
@@ -315,12 +355,47 @@ helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</
       .wordmark { font-size: 1.15rem; letter-spacing: -0.01em; }
       .wordmark.small { font-size: 1rem; }
       .eight { color: var(--azure); }
-      .nav-links { display: flex; gap: 22px; margin-left: 12px; color: var(--text-2); font-size: 0.95rem; }
+      .nav-toggle {
+        display: none; background: transparent; border: 1px solid var(--border); color: var(--text-2);
+        width: 40px; height: 40px; border-radius: 8px; cursor: pointer; padding: 8px;
+        flex-shrink: 0;
+      }
+      .nav-toggle:hover { color: var(--text); border-color: var(--azure); }
+      .nav-toggle .hamburger {
+        display: block; width: 20px; height: 14px; position: relative;
+      }
+      .nav-toggle .hamburger span {
+        display: block; width: 100%; height: 2px; background: var(--text-2);
+        border-radius: 1px; position: absolute; left: 0;
+        transition: all 0.2s ease;
+      }
+      .nav-toggle .hamburger span:nth-child(1) { top: 0; }
+      .nav-toggle .hamburger span:nth-child(2) { top: 6px; }
+      .nav-toggle .hamburger span:nth-child(3) { top: 12px; }
+      .nav-toggle[aria-expanded="true"] .hamburger span:nth-child(1) {
+        top: 6px; transform: rotate(45deg);
+      }
+      .nav-toggle[aria-expanded="true"] .hamburger span:nth-child(2) {
+        opacity: 0;
+      }
+      .nav-toggle[aria-expanded="true"] .hamburger span:nth-child(3) {
+        top: 6px; transform: rotate(-45deg);
+      }
+      .nav-links {
+        display: flex; gap: 20px; margin-left: 8px; color: var(--text-2); 
+        font-size: 0.95rem; align-items: center;
+      }
       .nav-links a:hover { color: var(--text); }
-      .nav-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+      .nav-actions { 
+        margin-left: auto; 
+        display: flex; 
+        align-items: center; 
+        gap: 12px;
+        flex-shrink: 0;
+      }
       .theme-toggle {
         background: transparent; border: 1px solid var(--border); color: var(--text-2);
-        width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 1rem;
+        width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 1rem;
       }
       .theme-toggle:hover { color: var(--text); border-color: var(--azure); }
 
@@ -397,12 +472,190 @@ helm install ksquad ksquad/ksquad --namespace ksquad-system --create-namespace</
       .muted { color: var(--text-3); font-size: 0.9rem; }
       .foot-legal { max-width: 1120px; margin: 28px auto 0; padding-top: 20px; border-top: 1px solid var(--border); }
 
-      @media (max-width: 880px) {
-        .hero { grid-template-columns: 1fr; padding-top: 40px; }
-        .hero-art { order: -1; }
-        .cards-3, .features, .steps { grid-template-columns: 1fr; }
-        .nav-links { display: none; }
-        .foot-cols { grid-template-columns: 1fr 1fr; }
+      @media (max-width: 768px) {
+        /* Navigation */
+        .nav-toggle { display: block; }
+        .nav-links {
+          position: fixed; top: 60px; left: 0; right: 0;
+          background: var(--nav-bg); backdrop-filter: blur(12px);
+          border-bottom: 1px solid var(--border);
+          padding: 20px;
+          flex-direction: column; gap: 16px;
+          transform: translateY(-100%);
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s ease;
+          margin-left: 0;
+          z-index: 40;
+        }
+        .nav-links.active {
+          transform: translateY(0);
+          opacity: 1;
+          visibility: visible;
+        }
+        .nav-links a {
+          display: block; padding: 12px 16px;
+          border-radius: 8px; transition: background 0.2s ease;
+          font-size: 1rem;
+        }
+        .nav-links a:hover {
+          background: var(--card);
+        }
+        
+        /* Hero */
+        .hero {
+          grid-template-columns: 1fr; 
+          padding: 48px 16px 32px;
+          gap: 32px;
+          text-align: center;
+        }
+        .hero-art { 
+          order: -1; 
+          max-width: 100%;
+        }
+        .hero-art img { 
+          width: 100%; 
+          height: auto; 
+          border-radius: 12px;
+        }
+        .hero h1 { 
+          font-size: clamp(1.8rem, 8vw, 2.5rem); 
+          line-height: 1.1; 
+          margin: 0 0 16px; 
+        }
+        .lede { 
+          font-size: 1rem; 
+          max-width: none; 
+          line-height: 1.5;
+        }
+        .cta-row { 
+          flex-direction: column; 
+          gap: 12px; 
+          margin: 20px 0; 
+        }
+        .cta-row.center { 
+          justify-content: center; 
+        }
+        
+        /* Bands */
+        .band { 
+          padding: 40px 16px; 
+        }
+        .section-title { 
+          font-size: 1.5rem; 
+          margin: 0 0 24px; 
+          text-align: center;
+        }
+        
+        /* Cards */
+        .cards-3 { 
+          grid-template-columns: 1fr; 
+          gap: 16px; 
+        }
+        .card { 
+          padding: 20px; 
+        }
+        
+        /* Features */
+        .features { 
+          grid-template-columns: 1fr; 
+          gap: 16px; 
+        }
+        .feature { 
+          padding: 20px; 
+        }
+        .feature-head { 
+          margin-bottom: 12px; 
+        }
+        .feature-icon { 
+          width: 36px; 
+          height: 36px; 
+        }
+        
+        /* Steps */
+        .steps { 
+          grid-template-columns: 1fr; 
+          gap: 16px; 
+        }
+        .step { 
+          padding: 20px; 
+        }
+        .step-n {
+          width: 36px; 
+          height: 36px; 
+          font-size: 0.9rem;
+          margin-bottom: 14px;
+        }
+        
+        /* Carousel */
+        .carousel {
+          flex-direction: column; 
+          gap: 20px; 
+        }
+        .shot { 
+          flex: none; 
+          width: 100%; 
+          max-width: none; 
+        }
+        .shot img { 
+          width: 100%; 
+          height: auto; 
+          border-radius: 8px;
+        }
+        
+        /* Buttons */
+        .btn {
+          padding: 12px 20px; 
+          font-size: 1rem; 
+          border-radius: 8px;
+        }
+        
+        /* Footer */
+        .footer { 
+          padding: 32px 16px 24px; 
+        }
+        .foot-cols { 
+          grid-template-columns: 1fr; 
+          gap: 24px; 
+        }
+        .foot-cols h4 { 
+          font-size: 0.75rem; 
+          margin: 0 0 10px; 
+        }
+        .foot-cols a { 
+          font-size: 0.9rem; 
+          padding: 4px 0; 
+        }
+        .foot-legal { 
+          margin-top: 24px; 
+          padding-top: 16px; 
+        }
+        
+        /* Code blocks */
+        .helm {
+          font-size: 0.8rem; 
+          padding: 12px 14px; 
+          border-radius: 8px;
+        }
+        .helm.big { 
+          margin: 16px auto 20px; 
+        }
+      }
+      
+      @media (max-width: 640px) {
+        .nav { 
+          padding: 12px 16px; 
+        }
+        .hero { 
+          padding: 32px 16px 24px; 
+        }
+        .band { 
+          padding: 32px 16px 24px; 
+        }
+        .section-title { 
+          font-size: 1.4rem; 
+          margin: 0 0 20px; 
+        }
       }
     </style>
   </body>
