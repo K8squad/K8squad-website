@@ -1,0 +1,226 @@
+{{- /* OpenTelemetry Collector — the export backstop + alert spine for Epic 13
+       (Story 13.7, ISI-2239; obs-plan §10 topology + §6 redaction). Gateway
+       Deployment in the system (release) namespace = the ONE governed egress to
+       the vendor (AC5). Optional node DaemonSet. Values-toggled (collector.enabled)
+       and ENDPOINT-GATED per §1.5: with no collector.endpoint the vendor OTLP
+       exporter is omitted and signals stay in-cluster.
+
+       The processor ORDER is the fixed §10 rule, validated by ksquad.collector.validate
+       (memory_limiter first, batch last, redaction upstream of every exporter and
+       before tail_sampling, k8sattributes never resourcedetection). The pipeline
+       config below renders that order from .Values.collector.pipeline.processors —
+       a reorder fails the config test. Redaction is MANDATORY on all three signal
+       pipelines, not a per-exporter opt-in (AC2/AC3). Exporter DESTINATIONS are
+       Story 13.8 (OTelConfig), wired DOWNSTREAM of redaction. */ -}}
+{{- if .Values.collector.enabled -}}
+{{- $fullname := include "ksquad.collector.fullname" . -}}
+{{- $gated := ne (trim .Values.collector.endpoint) "" -}}
+{{- $tracesProcs := .Values.collector.pipeline.processors | toJson -}}
+{{- $otherProcs := include "ksquad.collector.processorsNoTail" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-config
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-gateway
+data:
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:{{ .Values.collector.otlp.grpcPort }} }
+          http: { endpoint: 0.0.0.0:{{ .Values.collector.otlp.httpPort }} }
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: ksquad-self
+              scrape_interval: 30s
+              static_configs:
+                - targets: ["localhost:8888"]
+    processors:
+      # memory_limiter FIRST — shed load before any enrichment/redaction (§10).
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      # k8sattributes — KSquad is k8s-native; NEVER resourcedetection.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.pod.uid, k8s.deployment.name, k8s.node.name]
+      resource:
+        attributes:
+          - { key: service.namespace, value: ksquad, action: upsert }
+          - { key: telemetry.pipeline, value: gateway, action: upsert }
+      # transform/redaction-content — AC3: agent content → id/kind/len/hash only.
+      transform/redaction-content:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - set(attributes["content.hash"], SHA256(attributes["agent.content"])) where attributes["agent.content"] != nil
+              - set(attributes["content.length"], Len(attributes["agent.content"])) where attributes["agent.content"] != nil
+              - delete_key(attributes, "agent.content") where attributes["agent.content"] != nil
+              - set(attributes["content.hash"], SHA256(attributes["memory.body"])) where attributes["memory.body"] != nil
+              - set(attributes["content.length"], Len(attributes["memory.body"])) where attributes["memory.body"] != nil
+              - delete_key(attributes, "memory.body") where attributes["memory.body"] != nil
+              - set(attributes["content.hash"], SHA256(attributes["workitem.text"])) where attributes["workitem.text"] != nil
+              - set(attributes["content.length"], Len(attributes["workitem.text"])) where attributes["workitem.text"] != nil
+              - delete_key(attributes, "workitem.text") where attributes["workitem.text"] != nil
+              - set(attributes["content.hash"], SHA256(attributes["model.output"])) where attributes["model.output"] != nil
+              - set(attributes["content.length"], Len(attributes["model.output"])) where attributes["model.output"] != nil
+              - delete_key(attributes, "model.output") where attributes["model.output"] != nil
+        log_statements:
+          - context: log
+            statements:
+              - set(attributes["body.hash"], SHA256(body)) where body != nil
+              - set(attributes["body.length"], Len(body)) where body != nil
+              - set(body, "[redacted-content]") where body != nil
+      # redaction — AC2 (the crux): value-level PII/secret stripping on ALL
+      # pipelines, before any exporter. See docs/bmad/spikes/bench/collector-pipeline.yaml
+      # for the authoritative allowed_keys + blocked_values (guarded by redaction-leak-check.py).
+      redaction:
+        allow_all_keys: false
+        hash_function: sha256
+        allowed_keys: [user.id, run.id, work_item.id, team.id, project.id, trace_id, span_id, error_code, runtime, direction, pool_hit, reason, content.hash, content.length, body.hash, body.length, k8s.namespace.name, k8s.pod.name, k8s.pod.uid, k8s.deployment.name, k8s.node.name, service.namespace, telemetry.pipeline]
+        blocked_values:
+          - "CLAUDE_CODE_OAUTH_TOKEN[=:\\s]+\\S+"
+          - "(?i)authorization[=:\\s]+bearer\\s+\\S+"
+          - "(?i)bearer\\s+[A-Za-z0-9._~+/-]{16,}=*"
+          - "sk-[A-Za-z0-9]{16,}"
+          - "sk-ant-[A-Za-z0-9_-]{16,}"
+          - "AKIA[0-9A-Z]{16}"
+          - "gh[pousr]_[A-Za-z0-9]{20,}"
+          - "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"
+          - "(?i)(password|passwd|pwd)[=:\\s]+\\S+"
+          - "(?i)(session|sess|auth)[_-]?token[=:\\s]+\\S+"
+          - "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+      tail_sampling:
+        decision_wait: 10s
+        policies:
+          - { name: errors, type: status_code, status_code: { status_codes: [ERROR] } }
+          - { name: slow, type: latency, latency: { threshold_ms: 2000 } }
+          - { name: sample-rest, type: probabilistic, probabilistic: { sampling_percentage: 10 } }
+      # batch LAST — never batch un-redacted data (§10).
+      batch:
+        send_batch_size: 8192
+        timeout: 5s
+    exporters:
+      prometheus: { endpoint: 0.0.0.0:8889 }
+      {{- if $gated }}
+      # §1.5 endpoint gate satisfied — vendor OTLP exporter wired DOWNSTREAM of
+      # redaction. Real per-signal routing + Secret-ref auth = Story 13.8.
+      otlp/vendor:
+        endpoint: {{ .Values.collector.endpoint | quote }}
+        tls: { insecure: false }
+      {{- end }}
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: {{ $tracesProcs }}
+          exporters: [{{ if $gated }}otlp/vendor{{ else }}prometheus{{ end }}]
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: {{ $otherProcs }}
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp]
+          processors: {{ $otherProcs }}
+          exporters: [{{ if $gated }}otlp/vendor{{ else }}prometheus{{ end }}]
+      telemetry:
+        metrics: { address: 0.0.0.0:8888 }
+---
+{{- /* Gateway Service — the ONE endpoint sandboxes/shims OTLP-push to (AC5).
+       They have NO direct vendor egress; only this gateway reaches the backend. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: collector-gateway
+  ports:
+    - { name: otlp-grpc, port: {{ .Values.collector.otlp.grpcPort }}, targetPort: {{ .Values.collector.otlp.grpcPort }} }
+    - { name: otlp-http, port: {{ .Values.collector.otlp.httpPort }}, targetPort: {{ .Values.collector.otlp.httpPort }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-gateway
+spec:
+  replicas: {{ .Values.collector.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: collector-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "ksquad.labels" . | nindent 8 }}
+        app.kubernetes.io/component: collector-gateway
+      annotations:
+        checksum/config: {{ include "ksquad.collector.fullname" . }}-{{ .Values.collector.pipeline.processors | toJson | sha256sum | trunc 16 }}
+    spec:
+      containers:
+        - name: collector
+          image: {{ .Values.collector.image | quote }}
+          args: ["--config=/etc/otel/collector.yaml"]
+          ports:
+            - { name: otlp-grpc, containerPort: {{ .Values.collector.otlp.grpcPort }} }
+            - { name: otlp-http, containerPort: {{ .Values.collector.otlp.httpPort }} }
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}-config
+{{- if .Values.collector.nodeAgent.enabled }}
+---
+{{- /* Optional node DaemonSet — a per-node agent that forwards to the gateway
+       (never directly to the vendor). Shares the gateway ConfigMap's redaction;
+       kept minimal here (host-level receivers are 13.8's concern). */}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $fullname }}-node
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-node
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: collector-node
+  template:
+    metadata:
+      labels:
+        {{- include "ksquad.labels" . | nindent 8 }}
+        app.kubernetes.io/component: collector-node
+    spec:
+      containers:
+        - name: collector
+          image: {{ .Values.collector.image | quote }}
+          args: ["--config=/etc/otel/collector.yaml"]
+          resources:
+            {{- toYaml .Values.collector.nodeAgent.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}-config
+{{- end }}
+{{- end }}

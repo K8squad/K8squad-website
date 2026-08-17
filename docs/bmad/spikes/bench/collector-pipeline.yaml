@@ -1,0 +1,164 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Story 13.7 (ISI-2239) — OpenTelemetry Collector gateway reference pipeline.
+#
+# THIS IS THE BMAD REFERENCE / SPEC config (obs-plan §10). The shipping Helm
+# sub-chart (source repo `charts/.../collector`) renders this same shape; the
+# redaction-leak-check.py bench parses THIS file for its ruleset + processor
+# order, so a real edit that weakens a regex or reorders a pipeline flips the
+# bench RED. (AC1/AC2/AC6, §11 gate #3)
+#
+# HARD RULES (obs-plan §10 / persona critical rules — a config test enforces these):
+#   • memory_limiter is ALWAYS first  (backpressure before OOM)
+#   • batch is ALWAYS last            (batch only after every mutation)
+#   • k8sattributes, NEVER resourcedetection  (KSquad is Kubernetes-native)
+#   • the redaction stages sit BEFORE any exporter AND before tail_sampling
+#     (never batch un-redacted data; never sample on pre-redaction attributes)
+#   • redaction is MANDATORY on ALL THREE pipelines — not a per-exporter opt-in.
+#     Opting into an external endpoint (Story 13.8) never bypasses it.
+#
+# Endpoint-gated per obs-plan §1.5: with no configured export endpoint the
+# otlp/dynatrace + prometheusremotewrite exporters are omitted by the chart and
+# signals stay in-cluster — the redaction stages still run.
+# ─────────────────────────────────────────────────────────────────────────────
+
+receivers:
+  otlp:                                  # shims/agents OTLP-push here (via the one egress allowlist entry, AC5)
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:                            # scrape control-plane /metrics (apiserver, controllers)
+    config:
+      scrape_configs:
+        - job_name: ksquad-control-plane
+          kubernetes_sd_configs:
+            - role: pod
+
+processors:
+  # 1) MUST be first — shed load before the collector OOMs under backpressure.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # 2) k8s enrichment — used BECAUSE KSquad is Kubernetes-native (never resourcedetection).
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.node.name
+        - k8s.deployment.name
+
+  # 3) static resource stamps.
+  resource:
+    attributes:
+      - key: service.namespace
+        value: ksquad
+        action: upsert
+      - key: deployment.environment
+        from_attribute: ksquad.env
+        action: insert
+
+  # 4a) CONTENT redaction — untrusted agent-authored content is replaced by
+  #     {content.hash, content.length}; the raw body is dropped (AC3). Runs
+  #     BEFORE the key/value redaction so only the hash reaches the allowlist.
+  #     (In the shipping chart this is a `transform` processor with OTTL that
+  #     set(content.hash, SHA256(body)) / set(content.length, Len(body)) /
+  #     delete_key(body) over memory.body, workitem.text, model.output,
+  #     agent.content.)
+  transform/redaction-content:
+    error_mode: ignore
+    content_keys: [agent.content, memory.body, workitem.text, model.output]
+
+  # 4b) KEY + VALUE redaction (the crux, AC2) — MANDATORY, upstream of every
+  #     exporter on every pipeline. `redaction` community processor semantics:
+  #       • allow_all_keys=false ⇒ ONLY allowed_keys survive; every other
+  #         attribute (username, email-key, raw secret-ref key, …) is deleted.
+  #       • blocked_values ⇒ any surviving value matching a secret shape is
+  #         hashed (never emitted verbatim).
+  #     Only the opaque user.id survives as identity. Weakening a regex, adding
+  #     a secret key to allowed_keys, or setting allow_all_keys=true is a
+  #     config-test / bench failure.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      - user.id            # the ONLY identity that survives — opaque UUID (§16.1)
+      - run.id
+      - work_item.id
+      - team
+      - project
+      - error_code
+      - phase
+      - outcome
+      - http.status_code
+      - http.header        # kept on the allowlist ON PURPOSE so the value-regex battery is the SOLE
+                           # guard for a token in its value — the strongest test of blocked_values (AC6)
+      - contact            # ditto for PII: the email address is caught by the email regex, not the key
+      - content.hash       # produced by transform/redaction-content above
+      - content.length
+      - model.output       # survives the allowlist so the content-hash stage is its SOLE guard;
+                           # on the clean path it is already hashed→deleted upstream (AC3)
+    blocked_values:
+      - '(?i)bearer\s+[A-Za-z0-9._~+/=-]{8,}'          # Authorization: Bearer <token>
+      - '(?i)CLAUDE_CODE_OAUTH_TOKEN\s*=\s*\S+'        # Claude Code OAuth env leak
+      - 'sk-ant-[A-Za-z0-9]{12,}'                      # Anthropic API/OAuth key shape
+      - 'AKIA[0-9A-Z]{16}'                             # AWS access key id
+      - 'ghp_[A-Za-z0-9]{20,}'                         # GitHub personal access token
+      - '(?i)password\s*=\s*\S+'                       # password field
+      - '(?i)session_token\s*=\s*\S+'                  # session/auth token field
+      - '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'  # email (RBAC PII, §1.4)
+      - '(?i)api[_-]?key\s*=\s*\S+'                    # generic api-key field
+
+  # 5) tail sampling — AFTER enrichment + redaction (needs the final attributes),
+  #    BEFORE batch. Keep failed/paused/SLO-breach Runs 100% (§4.2). Traces only.
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code: {status_codes: [ERROR]}
+      - name: keep-slow-claims
+        type: latency
+        latency: {threshold_ms: 5000}
+      - name: base-rate
+        type: probabilistic
+        probabilistic: {sampling_percentage: 20}
+
+  # 6) MUST be last — batch only after every mutation.
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  prometheusremotewrite:                 # metrics — endpoint-gated (§1.5)
+    endpoint: ${env:PROM_RW_ENDPOINT}
+  otlp/dynatrace:                        # traces + logs — endpoint-gated (§1.5)
+    endpoint: ${env:DT_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:DT_API_TOKEN}
+  debug:                                 # dev only
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resource, transform/redaction-content, redaction, tail_sampling, batch]
+      exporters: [otlp/dynatrace]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, k8sattributes, resource, transform/redaction-content, redaction, batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resource, transform/redaction-content, redaction, batch]
+      exporters: [otlp/dynatrace]

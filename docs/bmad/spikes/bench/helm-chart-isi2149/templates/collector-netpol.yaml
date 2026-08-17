@@ -1,0 +1,65 @@
+{{- /* AC5 — the egress isolation invariant (obs-plan §10 + arch §9.2, Story 4.6).
+       Telemetry routes THROUGH the tenancy model, never around it. The per-squad
+       default-deny egress NetworkPolicy is extended with EXACTLY ONE allowlist
+       entry: sandboxes/shims may OTLP-push to the in-cluster collector gateway,
+       and get NO direct egress to the vendor backend. Only the gateway (system
+       namespace, governed egress) reaches Dynatrace/Prometheus remote-write.
+
+       This mirrors the egress-proxy pattern (fixtures 01/02): the sandbox EGRESS
+       to the gateway on the OTLP ports, plus the gateway INGRESS companion so the
+       push is not dropped at the gateway under its own default-deny. The vendor
+       endpoint stays unreachable from a sandbox — every export rides the gateway
+       (verified by egress-allowlist-check.py's collector case). */ -}}
+{{- if and .Values.collector.enabled .Values.collector.netpol.enabled -}}
+{{- $fullname := include "ksquad.collector.fullname" . -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-from-sandbox
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-gateway
+spec:
+  # The single allowlist entry over default-deny: sandbox Runs may egress to the
+  # collector gateway on the OTLP ports ONLY. No vendor egress is granted here —
+  # the sandbox cannot reach the backend directly.
+  podSelector:
+    matchLabels:
+      {{- toYaml .Values.collector.netpol.sandboxSelector | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: collector-gateway
+      ports:
+        - { protocol: TCP, port: {{ .Values.collector.otlp.grpcPort }} }
+        - { protocol: TCP, port: {{ .Values.collector.otlp.httpPort }} }
+---
+{{- /* Ingress companion: without this the sandbox→gateway push SYN is dropped at
+       the gateway (it sits under default-deny INGRESS), the export silently times
+       out, and nothing is telemetered. Grant the gateway ingress from sandbox
+       pods on the OTLP ports only. */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-ingress-from-sandbox
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: collector-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.collector.netpol.sandboxSelector | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.collector.otlp.grpcPort }} }
+        - { protocol: TCP, port: {{ .Values.collector.otlp.httpPort }} }
+{{- end }}
