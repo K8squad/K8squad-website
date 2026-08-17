@@ -55,7 +55,8 @@ contract.**
 - **What the interface MUST cover (enumerated from 11.2–11.4/11.6 needs):**
   1. **Issues** — list + get + (optional, direction-gated) status/label write. (11.2)
   2. **Pull requests** — list + get with `state ∈ {open, merged, closed}` + `review_state` +
-     `head_sha`. (11.3)
+     `head_sha` + `base_ref` (the target branch — 11.3 AC1 / `scm_pr_mirror` needs it to correlate a
+     PR against the Run branch). (11.3)
   3. **Checks / CI** — list check-runs per PR/ref with `conclusion` + published-artifact refs. (11.4)
   4. **Artifacts** — resolve a published artifact to a `scm_artifact_ref` (stable id + fetch
      descriptor; the seam returns a **reference**, never streams bytes through coord). (11.4)
@@ -96,7 +97,7 @@ is a **regression** (the seam failed its purpose).
 
 **AC4 — the interface is normalized, not GitHub-shaped (the vocabulary crux).**
 Given the interface types, When reviewed, Then they are **provider-neutral vocabulary** — `Issue`,
-`PullRequest{state,reviewState,headSHA}`, `CheckRun{conclusion}`, `ArtifactRef`, `Event{kind,ids,
+`PullRequest{state,reviewState,headSHA,baseRef}`, `CheckRun{conclusion}`, `ArtifactRef`, `Event{kind,ids,
 actor}` — with **no GitHub-specific enum values or field names** leaking into the signature (no
 `mergeable_state`, no GitHub node-id as the canonical id). Each provider adapter **maps** its native
 shape onto this vocabulary. A GitHub-shaped interface that a GitLab impl cannot satisfy without

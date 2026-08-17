@@ -118,7 +118,8 @@ e.g. `cardinality-lint`). Drop-in step (the tool + allowlist land in the source 
 ```yaml
   cardinality-lint:
     name: cardinality-lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]     # homelab has no hosted runners — ubuntu-latest queue-hangs
+                                           # (see stories/epic-14-ci-runner-constraints.md R1)
     steps:
       - uses: actions/checkout@v4
       - name: Enforce §5.6 metric-label cardinality budget
