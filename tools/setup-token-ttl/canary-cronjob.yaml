@@ -1,0 +1,89 @@
+# canary-cronjob.yaml — setup-token TTL as an AUTOMATED PROCESS (ISI-2293).
+#
+# Henrik's redirect on ISI-2293 was: the measurement "needs to be an automated process,"
+# not a human runbook. k8squad is k8s-native, so the automated form is a CronJob that:
+#   1. reads the setup-token from a Secret (minted ONCE by a human — OAuth browser consent
+#      is a deliberate human-in-the-loop control and is the only non-automatable atom),
+#   2. probes on a schedule, classifies (OK/RATELIMIT/OVERLOAD/AUTHFAIL/ERR),
+#   3. on the first real 401 computes the observed TTL and auto-reports it to the issue,
+#   4. persists state on a PVC so probes across days share one mint timestamp.
+#
+# This same canary is the reusable core of the credential-controller's token-health /
+# rotation alert (spike §4 → ADR-032 / Epic 7 Story 7.7): the rotation alert should be
+# canary-driven off live probes + any declared expiry, NOT a fixed 75%-of-assumption
+# threshold. Productization into the controller is the delegated child of ISI-2293.
+#
+# One-time human setup (~2 min, on a real Pro/Max seat):
+#   claude setup-token                                   # complete browser consent
+#   kubectl create secret generic setup-token-canary \
+#     --from-literal=CLAUDE_CODE_OAUTH_TOKEN='sk-ant-oat01-...'
+#   # (optional) let it auto-report:
+#   kubectl create secret generic paperclip-canary \
+#     --from-literal=PAPERCLIP_API_KEY='...'
+#   kubectl apply -f canary-cronjob.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: setup-token-ttl-state
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: setup-token-ttl-canary
+  labels: { app: setup-token-ttl-canary, issue: ISI-2293 }
+spec:
+  schedule: "0 */6 * * *"        # every 6h = measurement precision; tighten if you want a sharper bound
+  concurrencyPolicy: Forbid       # one probe at a time; a slow run must not overlap the next
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # a failed probe proves nothing (ERR) — just wait for the next tick
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: canary
+              # Image must carry the claude CLI + bash/curl/python3 and the mounted scripts.
+              image: ghcr.io/k8squad/claude-canary:latest
+              command: ["/bin/bash", "-lc"]
+              args:
+                - |
+                  set -euo pipefail
+                  cd /opt/canary
+                  # First run: record the mint timestamp (Tier 0 also grabs any declared expiry).
+                  [ -f "$OUTDIR/mint.json" ] || ./mint-capture.sh
+                  ./probe.sh            # probe + classify + (on 401) auto-report via report.sh
+              env:
+                - name: OUTDIR
+                  value: /state
+                - name: RESUME_ISSUE_ID          # ISI-2293 UUID — enables auto-report
+                  value: "465049a2-8477-4428-9740-0ae635832305"
+                - name: PAPERCLIP_API_BASE
+                  value: "http://127.0.0.1:3100"
+                - name: SEAT_LABEL
+                  value: "max-seat-canary"
+                - name: CLAUDE_CODE_OAUTH_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: setup-token-canary, key: CLAUDE_CODE_OAUTH_TOKEN }
+                - name: PAPERCLIP_API_KEY
+                  valueFrom:
+                    secretKeyRef: { name: paperclip-canary, key: PAPERCLIP_API_KEY, optional: true }
+              volumeMounts:
+                - { name: state,   mountPath: /state }
+                - { name: scripts, mountPath: /opt/canary, readOnly: true }
+          volumes:
+            - name: state
+              persistentVolumeClaim: { claimName: setup-token-ttl-state }
+            - name: scripts          # bake into the image instead if you prefer immutability
+              configMap: { name: setup-token-ttl-scripts, defaultMode: 0755 }

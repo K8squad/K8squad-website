@@ -84,8 +84,19 @@ This session had **no `CLAUDE_CODE_OAUTH_TOKEN`** set, so the *setup-token* TTL 
 not directly observed. `claude setup-token` requires an interactive browser consent
 and cannot be completed headless, so it could not be generated in-container. Its
 lifetime is documented/observed externally as **long-lived (~1 year order)**, but
-Anthropic publishes no guaranteed TTL — **treat as revocable at any time.** A quick
-human follow-up (generate one, inspect its `exp`) is recommended to pin the number.
+Anthropic publishes no guaranteed TTL — **treat as revocable at any time.**
+
+> **Update (ISI-2293, Architect 2026-08-17):** the follow-up is now an **automated
+> process**, not a one-off human measurement (per Henrik's redirect). A token-TTL canary
+> (`tools/setup-token-ttl/`: `canary-cronjob.yaml` + `probe.sh`/`classify.sh`/`report.sh`,
+> classification self-checked by `classify.test.sh`) probes the token on a schedule and
+> **auto-reports** the observed TTL on the first 401. The only manual atom is the one-time
+> `claude setup-token` browser consent (a deliberate human-in-the-loop control). **Because
+> a live canary self-measures, the rotation alert should be canary-driven — fire on an
+> actual/near AUTHFAIL or a declared-expiry threshold — rather than a fixed 75 %-of-an-
+> assumed-TTL threshold.** Productizing the canary into the leader-elected credential
+> controller (token-health/rotation alert) is the delegated child of ISI-2293; see
+> ADR-032 / Epic 7 Story 7.7.
 
 ---
 
