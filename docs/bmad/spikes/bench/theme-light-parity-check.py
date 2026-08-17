@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Story 8.9 falsification — dark + light mode + v2 8-Crest logo, across the whole mock set.
+"""Story 8.9 falsification — dark + light mode + logo v12 (Odin Infinity), across the whole mock set.
 
 Screen theming is the operator console's **whole-shell affordance**: given ANY console screen, when the
 operator toggles the theme, EVERY screen renders in **light mode mirroring the SAME design tokens** — the
 toggle is **v1** (a pure token swap), **not polish** (never a per-screen redesign). Two hard requirements
 ride on top: (a) **light-mode mocks exist for ALL screens** (a `*-light.svg` sibling for every screen), and
-(b) **every screen uses the v2 logo** — the official **8-Crest** mark (gradient-ring geometry, ISI-2137/
-ISI-2324) + the `K8squad` logotype — in **both** themes. Read every invariant literally: a screen with no
+(b) **every screen uses logo v12** — the official **Odin Infinity** mark (two blue-gradient ring links,
+ISI-2514/ISI-2515) + the `K8squad` logotype — in **both** themes, with NO legacy v2 8-Crest ring surviving.
+Read every invariant literally: a screen with no
 light sibling, a light sibling that is a *re-layout* rather than a token mirror, a re-tinted brand accent, a
 "light" screen that still paints the dark canvas, a status colour that jumps its semantic family, or a
 lingering placeholder glyph is a **theming-contract regression** (ISI-2150 CEO feedback / §0 visual system),
@@ -22,9 +23,10 @@ vacuous (the ISI-2346-F1 teeth-gap class is excluded by construction).
 Invariants (T1-T7, each mapped to an AC of story 8.9):
   T1  LIGHT-MODE PARITY: every console screen `NN-name.svg` has a `NN-name-light.svg` sibling and vice
       versa — light-mode mocks exist for ALL screens, no orphan either way (AC1).
-  T2  v2 8-CREST LOGO EVERYWHERE: every screen SVG embeds the official 8-Crest mark (gradient-ring geometry
-      `stroke="url(#ringTop|ringBot)"` + the ring gradient <defs>) in BOTH themes, the `K8squad` logotype on
-      every shell screen, and NO legacy placeholder glyph remains (AC2 / ISI-2137·ISI-2324).
+  T2  LOGO v12 (ODIN INFINITY) EVERYWHERE: every screen SVG embeds the official Odin Infinity mark
+      (ring-link geometry `stroke="url(#odinL|odinR)"` + the blue-gradient <defs>) in BOTH themes, the
+      `K8squad` logotype on every shell screen, and NO legacy v2 8-Crest ring or placeholder glyph
+      remains (AC2 / ISI-2514·ISI-2515).
   T3  ACCENT IS THEME-INVARIANT (single-accent discipline): the azure accent `#3D7DFF` appears in BOTH
       siblings of every pair with an IDENTICAL count — the toggle never re-tints the brand accent and light
       introduces no second brand hue (AC3).
@@ -50,7 +52,7 @@ Invariants (T1-T7, each mapped to an AC of story 8.9):
 Mutation-proof harness — each `--mutate=<NAME>` injects exactly ONE defect into the CONFORMANT (committed)
 model; the check then goes RED with the mapped invariant failing:
   --mutate=DROP_LIGHT        remove one screen's light sibling                     -> T1 RED
-  --mutate=PLACEHOLDER_LOGO  revert one screen's 8-Crest mark to the flat glyph    -> T2 RED
+  --mutate=PLACEHOLDER_LOGO  revert one screen's Odin v12 mark to the flat glyph   -> T2 RED
   --mutate=RETINT_ACCENT     re-tint the light accent to a different azure         -> T3 RED
   --mutate=DARK_LIGHT_CANVAS a "light" sibling keeps the dark #0B1220 canvas       -> T4 RED
   --mutate=RELAYOUT_LIGHT    a light sibling drops elements (redesign, not swap)   -> T5 RED
@@ -96,12 +98,16 @@ TOKEN_HEXES = frozenset({
     "#E11D48", "#FCE9EC", "#EEF1F6", "#7C3AED", "#F1EBFD", "#475569",
 })
 
-# 8-Crest official mark fingerprints (from apply-official-8crest.py OFFICIAL_MARK).
-MARK_RING = ('stroke="url(#ringBot)"', 'stroke="url(#ringTop)"')
-MARK_DEFS = ('linearGradient id="ringTop"', 'linearGradient id="ringBot"')
+# Logo v12 Odin Infinity mark fingerprints (from apply-odin-infinity.py ODIN_MARK/ODIN_DEFS,
+# source of truth docs/bmad/branding/assets/logo-v12/odin-infinity-glyph.svg). The two ring
+# links carry the blue diagonal gradients #odinL (light->primary) / #odinR (primary->dark).
+MARK_RING = ('stroke="url(#odinL)"', 'stroke="url(#odinR)"')
+MARK_DEFS = ('linearGradient id="odinL"', 'linearGradient id="odinR"')
 LOGOTYPE = "K<tspan"  # K<tspan fill="#3D7DFF">8</tspan>squad
 # the token-reference sheet shows the mark but not the wordmark lockup:
 NO_LOGOTYPE_OK = {"00-visual-system"}
+# the legacy v2 8-Crest ring geometry must be fully retired — no lingering gradient-ring mark:
+LEGACY_8CREST = re.compile(r'stroke="url\(#ring(Top|Bot)\)"')
 # a flat placeholder ring is a ring-shaped rect stroked with a literal hex, not a gradient url():
 PLACEHOLDER_RING = re.compile(r'<rect x="29" y="45"[^>]*stroke="#[0-9A-Fa-f]{6}"')
 
@@ -165,21 +171,24 @@ def check_T1(model):
 
 
 def check_T2(model):
-    """v2 8-Crest mark in both themes, logotype on every shell screen, no placeholder."""
+    """Logo v12 Odin Infinity mark in both themes, logotype on every shell screen, no placeholder,
+    and NO lingering legacy v2 8-Crest ring geometry."""
     bad = []
     for stem, pair in sorted(model.items()):
         for theme, svg in pair.items():
             if not all(t in svg for t in MARK_RING):
-                bad.append(f"{stem}/{theme}: missing 8-Crest gradient ring geometry")
+                bad.append(f"{stem}/{theme}: missing Odin Infinity ring-link geometry (v12)")
             if not all(d in svg for d in MARK_DEFS):
-                bad.append(f"{stem}/{theme}: missing ring gradient <defs>")
+                bad.append(f"{stem}/{theme}: missing Odin blue-gradient <defs>")
+            if LEGACY_8CREST.search(svg):
+                bad.append(f"{stem}/{theme}: legacy v2 8-Crest ring mark still present (must be v12)")
             if PLACEHOLDER_RING.search(svg):
                 bad.append(f"{stem}/{theme}: legacy placeholder ring (flat stroke) present")
             if stem not in NO_LOGOTYPE_OK and LOGOTYPE not in svg:
                 bad.append(f"{stem}/{theme}: missing K8squad logotype lockup")
     if bad:
         return False, "; ".join(bad)
-    return True, "every screen embeds the official 8-Crest mark (+logotype on shell screens), no placeholder"
+    return True, "every screen embeds the logo v12 Odin Infinity mark (+logotype on shell screens), no placeholder or legacy 8-Crest"
 
 
 def check_T3(model):
@@ -308,8 +317,9 @@ def apply_mutation(model, name):
     if name == "DROP_LIGHT":
         pair.pop("light", None)
     elif name == "PLACEHOLDER_LOGO":
-        # revert the 8-Crest mark to a flat placeholder ring: swap gradient stroke for a hex.
-        pair["light"] = pair["light"].replace('stroke="url(#ringBot)"', 'stroke="#93B7FF"', 1)
+        # revert this screen's v12 Odin mark to a flat placeholder: flatten every right-link
+        # gradient stroke to a literal hex (the whole mark reverts, not one segment).
+        pair["light"] = pair["light"].replace('stroke="url(#odinR)"', 'stroke="#93B7FF"')
     elif name == "RETINT_ACCENT":
         # re-tint one light accent instance to a DIFFERENT azure -> count diverges.
         pair["light"] = pair["light"].replace(ACCENT, "#2F6BE0", 1)
