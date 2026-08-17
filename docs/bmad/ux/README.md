@@ -27,6 +27,43 @@ Primary personas (PRD §5): **Priya — Platform Engineer** (operator; needs leg
 
 ---
 
+## 0l. Revision v12 — Odin Infinity logo + SCM synced-state screen (ISI-2515 / ISI-2749, board directive 2026-08-17)
+
+**Logo v12 (Odin Infinity).** Every console mock — all 22 screens × dark+light —
+now carries the **Odin Infinity** mark (v12), superseding the v2 8-Crest. The mark
+is two rounded-square ring links forming an ∞ with a Valknut interlock knot and a
+claimed→in-progress→done task chain, **blue-only** (`#93B7FF` / `#3D7DFF` /
+`#2E4E8C` / `#4D8BFF`). Asset source of truth:
+`docs/bmad/branding/assets/logo-v12/` (`LOGO-SPEC.md`, `odin-infinity-mark.svg`,
+`odin-infinity-glyph.svg`). The kit emits it via `mark_odin()` (aliased from the
+historical `mark_8crest`); `LOGO_DEFS` inject the blue gradients + interlace clips.
+
+**Enforcement:** after any re-render, run `python3 apply-odin-infinity.py` — the
+idempotent, generator-agnostic swap that reaches every screen uniformly (including
+early screens 00–07 whose generators no longer exist). It supersedes
+`apply-official-8crest.py` as the mandatory final render step.
+
+**New screen 22 — SCM synced-state + CI-failure auto-post (Story 11.6 / ISI-2741).**
+
+| # | Screen | File | Surface |
+|---|--------|------|---------|
+| 22 | SCM synced state | `images/22-scm-synced-state.png` | PR/CI read-model tiles (per-tile degrade) + provenance-tagged CI-failure auto-post into the Project room (10.3) |
+
+Generator `gen-22-scm-synced-state.py` (IA kit). It makes the two 11.6 guards
+visible for conformance: tiles as a **read model over the mirror** (no new store;
+one tile shown degraded-to-empty), and the auto-post as an **observer** —
+UNTRUSTED-EXTERNAL `external_origin`, bot-authored, **no claim/handoff/dispatch**,
+idempotent per `(check, head_sha, conclusion)`.
+
+**PNG rendering.** The repo's audited 1.5× PNGs (2160×1350) were produced with
+resvg. Where resvg is unavailable, `resvg-py` (pip) renders identically:
+`resvg_py.svg_to_bytes(svg_path=…, width=2160, height=1350)`.
+
+**Conformance.** The build target is pinned per-screen in
+`docs/bmad/ux/UI-CONFORMANCE-v12.md` (E8 shell · E10.3 room · E11.6 synced state).
+
+---
+
 ## 0j. Revision v10 — official v2 8-Crest branding (ISI-2324, CEO directive 2026-08-12)
 
 All mocks now embed the **official** K8squad logo (the v2 8-Crest mark from the
