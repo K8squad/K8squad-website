@@ -146,6 +146,47 @@ visible; the build must preserve them structurally, not just visually.
 
 ---
 
+## 3.5 Responsive viewports — website-fidelity (ISI-2757) · ref `Rvp-shell` · `Rvp-discussion` · `Rvp-synced`
+
+Board directive (ISI-2170, 2026-08-17): *"the E8 mocks were approved and used for version 0 of our
+website — the mocks need to follow the mocks used in our website: browser and mobile/tablet
+rendering."* The website (source of truth, `website-mocks/`) frames the console inside a **browser
+chrome** and advertises *"Full console on desktop, tablet, mobile."* Each in-flight surface now has a
+**viewport matrix** mock — **browser/desktop · tablet 768px · mobile 375px**, dark + light — pinning the
+reflow the build must match. Reference sheets (dark + `-light` sibling):
+
+| Surface | Matrix sheet | Owner |
+|---------|--------------|-------|
+| E8 console shell (fleet content) | `Rvp-shell{,-light}` | ISI-2180 |
+| E10.3 discussion room | `Rvp-discussion{,-light}` | ISI-2704 |
+| E11.6 SCM synced-state | `Rvp-synced{,-light}` | ISI-2741 |
+
+**Breakpoint contract (applies to every surface mounted in the shell)**
+- [ ] **R-1 Desktop (≥1280px).** Full **icon+label left rail** + top bar + multi-column content. On the
+  website it is shown inside a **browser frame** (traffic-light chrome + URL bar) — the console's own
+  desktop route is the same layout without the frame — ref each `Rvp-*` desktop column.
+- [ ] **R-2 Tablet (768px).** Rail **collapses to an icon-only rail** (~48–56px, no labels); content
+  reflows to **2 columns** (KPI/tiles 2-up); top bar keeps title + avatar, drops inline search into an
+  icon — ref each `Rvp-*` tablet column.
+- [ ] **R-3 Mobile (375px).** **No left rail.** Top **app-bar** = hamburger (☰) + **Odin mark** + title +
+  avatar; content is a **single column**, cards full-bleed; primary nav becomes a **bottom tab bar**
+  (Home · Runs · Rooms · Projects · More) with the active tab accent-underlined — ref each `Rvp-*`
+  mobile column.
+- [ ] **R-4 Brand at every breakpoint.** Odin Infinity v12 mark renders at desktop, tablet **and**
+  mobile; on mobile the wordmark may collapse to the **mark alone** — never absent, never the v2 crest.
+- [ ] **R-5 One accent + status law survive reflow.** Single accent `#3D7DFF` at all sizes; every Run/CI
+  state stays **dot + text label** (never color-alone) even in the compact mobile cards (G-T7).
+- [ ] **R-6 Density, not truncation.** Operator density preserved; data-dense tables **scroll
+  horizontally** on small screens rather than dropping columns/meaning (matches doc §5 a11y).
+- [ ] **R-7 Surface-specific reflow holds the guards.** The E11.6 **degraded tile** stays a per-tile
+  empty state at every width (never a full-dashboard failure); the E11.6 **CI-failure auto-post** stays
+  a single `EXTERNAL · CI` observer card with **no** claim/handoff/dispatch affordance at every width;
+  the E10.3 room stays append-of-record with an operator-note composer at every width.
+- [ ] **R-8 `-light` parity per viewport.** Each matrix sheet ships a token-mirrored `-light` sibling;
+  the reflow is identical, only neutrals + status tints remap (G-T3).
+
+---
+
 ## 4. Divergence flags (raised for Architect + implementers)
 
 - **D1 — Website vs repo mocks (source-of-truth reconciliation).** The board names *the mocks
@@ -170,10 +211,13 @@ visible; the build must preserve them structurally, not just visually.
 
 | Surface | Build owner (issue) | Mock reference | Checklist |
 |---------|--------------------|----------------|-----------|
-| E8 console shell | ISI-2180 | `08` + `01`–`21` | §0 + §1 |
-| E10.3 discussion room | ISI-2704 / ISI-2695 | `07` | §0 + §2 |
-| E11.6 synced-state + auto-post | ISI-2741 | `22` (new) | §0 + §3 |
+| E8 console shell | ISI-2180 | `08` + `01`–`21` + `Rvp-shell` | §0 + §1 + §3.5 |
+| E10.3 discussion room | ISI-2704 / ISI-2695 | `07` + `Rvp-discussion` | §0 + §2 + §3.5 |
+| E11.6 synced-state + auto-post | ISI-2741 | `22` (new) + `Rvp-synced` | §0 + §3 + §3.5 |
+| Responsive viewports (all three) | ISI-2757 | `Rvp-*{,-light}` | §3.5 |
 | Console-surface specs | Architect (ISI-2748) | this doc | §4 divergences |
 
 **Regeneration:** edit `gen-22-scm-synced-state.py` (or any `gen-*`) → re-run → then
 `python3 apply-odin-infinity.py images/*.svg` (idempotent v12 pass) → render PNGs at 2160×1350.
+The responsive matrix sheets regenerate self-contained: `python3 gen-responsive-viewports.py`
+(imports only the console token maps + Odin mark; writes `images/Rvp-*.{svg,png}` in dark + light).
