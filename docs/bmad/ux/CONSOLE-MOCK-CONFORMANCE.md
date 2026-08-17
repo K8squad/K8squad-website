@@ -134,13 +134,31 @@ Authoritative mock: **`07-discussion-room.svg` / `07-discussion-room-light.svg`*
 
 ### E11.6 — synced-state console + CI-failure auto-post · ISI-2741
 
-Authoritative mock: **`22-scm-synced-state.svg` / `22-scm-synced-state-light.svg`** (added this cycle).
+Story `11-6-console-tiles-ci-failure-autopost.md` places 11.6's UI across **three** surfaces
+(AC1 dashboard tiles · AC2 in-room auto-post · standalone sync view). All three are authoritative:
+
+| Mock screen | Governs (11.6 AC) |
+|-------------|-------------------|
+| `22-scm-synced-state` (+ `-light`) | standalone SCM sync-state view (branch/PR/CI status) |
+| `08-fleet-dashboard` (+ `-light`) | **AC1** PR/CI tiles as a read model over the mirror (shared with 8.8) |
+| `07-discussion-room` (+ `-light`) | **AC2** the CI-failure auto-post rendered **in the Project room** (shared with 10.3) |
 
 - [ ] SCM sync-state surface (branch/PR/CI status) matches screen 22's layout.
+- [ ] **AC1 tiles (screen 08):** PR/CI tiles are a read model over the mirror; an unsynced repo
+      degrades the tile **to empty per-tile — never a whole-dashboard failure** (spec calls a
+      hard-fail or new rollup store a regression).
+- [ ] **AC2 auto-post (screen 07):** the CI-failure message renders **inside the discussion room**
+      authored by a **system/bot principal**, styled **untrusted-external / provenance-tagged**
+      (`external_origin`) — **never as a trusted message** (explicit spec anti-goal).
 - [ ] CI-failure state uses the reserved **failed/blocked** hue (`#FB7185` dark / `#E11D48` light),
       success uses **running/succeeded** green — never the accent azure.
 - [ ] Auto-post/annotation affordance rendered exactly where the mock places it.
 - [ ] Header lockup = Odin glyph (§1); dark + light per the pair.
+
+> Coverage note (Architect, [ISI-2748](/ISI/issues/ISI-2748), 2026-08-17): screens 08 + 07 added
+> to this mapping because 11.6's load-bearing invariants (per-tile empty-degradation; untrusted
+> auto-post styling) live on the dashboard + room surfaces, not on screen 22 alone. Raised as a
+> spec↔mock reconciliation on the readiness track.
 
 ---
 
