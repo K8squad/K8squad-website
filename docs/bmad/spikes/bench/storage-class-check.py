@@ -522,6 +522,17 @@ def det_nats_class_from_values(texts):
         r'nats\.storageClassName:\s*\{\{\s*include "ksquad\.storageClass\.nats" \.\s*\|\s*quote\s*\}\}', t))
 
 
+def det_nats_pvc_class_from_values(texts):
+    """nats.yaml — the SHIPPED JetStream StatefulSet — sources the real PVC storageClass
+    from the helper include (a $sc var), never a literal, never omitted. FG3's operator-
+    config assertion only covers the reference copy; this asserts the live PVC stamper so a
+    regression on nats.yaml's volumeClaimTemplate can't leave FG3 GREEN (ISI-2648)."""
+    t = texts["templates/nats.yaml"]
+    resolves = re.search(r'\$sc\s*:=\s*include "ksquad\.storageClass\.nats" \.', t)
+    stamps = re.search(r'storageClassName:\s*\{\{\s*\$sc\s*\|\s*quote\s*\}\}', t)
+    return bool(resolves and stamps)
+
+
 def det_resolution_family_or_global(texts):
     """_helpers.tpl resolves each family as `family | default global` — the override-then-
     fallback chain (checked on the postgres helper; workspace/nats mirror it)."""
@@ -560,6 +571,10 @@ FG_DETECTORS = [
      det_nats_class_from_values,
      ('nats.storageClassName: {{ include "ksquad.storageClass.nats" . | quote }}',
       'nats.storageClassName: "gp2"')),
+    ("FG3b NATS PVC stamper from values",     "templates/nats.yaml",
+     det_nats_pvc_class_from_values,
+     ('storageClassName: {{ $sc | quote }}',
+      'storageClassName: "gp2"')),
     ("FG4 resolution family|default global",  "templates/_helpers.tpl",
      det_resolution_family_or_global,
      ('.Values.storage.postgres.storageClassName | default .Values.storage.storageClassName',
@@ -580,7 +595,7 @@ def run_layer_b():
     print("LAYER B — file-grounded pass over pinned real chart (helm-chart-isi2149/, k8squad@5e6442d)")
     print("=" * 92)
     names = ["templates/postgres-cluster.yaml", "templates/operator-config.yaml",
-             "templates/_helpers.tpl"]
+             "templates/_helpers.tpl", "templates/nats.yaml"]
     try:
         texts = {n: read(n) for n in names}
     except FileNotFoundError as e:
@@ -611,7 +626,7 @@ def main():
     b = run_layer_b()
     print("\n" + "=" * 92)
     if a and b:
-        print("✓ ALL GREEN — baseline passes C1–C6; all 11 mutations caught; 6 file-grounded "
+        print("✓ ALL GREEN — baseline passes C1–C6; all 11 mutations caught; 7 file-grounded "
               "detectors pass on the shipped chart and have teeth. Story 9.2 acceptance is falsifiable.")
         return 0
     print("✗ FAILURES ABOVE — see RED / SURVIVED / VIOLATED rows.")
