@@ -1,0 +1,7 @@
+# K8squad security disclosure policy (RFC 9116)
+# https://k8squad.io/.well-known/security.txt
+Contact: mailto:security@k8squad.io
+Expires: 2027-08-17T00:00:00.000Z
+Preferred-Languages: en, fr
+Canonical: https://k8squad.io/.well-known/security.txt
+Policy: https://github.com/K8squad/K8squad-website/blob/main/SECURITY.md
