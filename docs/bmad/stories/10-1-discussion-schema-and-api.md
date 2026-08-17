@@ -241,3 +241,37 @@ authenticated principal, not the forgery; read as a principal in Team B → zero
   wiring on Epic 6's `pkg/mcp` seam MAY be a 10.2/6.2 fast-follow. The REST endpoints are v1.
 - **The outbox→NATS `message_posted` event + CI-failure auto-post** (§6.6/§5.4/§17.4) — a downstream
   plugin-observer seam, not a v1 core AC.
+
+## Dev Agent Record (ISI-2702)
+
+**Delivered (this workspace, verifiable now):**
+- **Falsification bench — `docs/bmad/spikes/bench/discussion-schema-check.py` (stdlib-only, GREEN).**
+  Differential model: Layer A proves a **naive** discussion service (a `discussion_room`+`state` table,
+  client-supplied `author_type`/`author_name`, nullable `project_id`/`author_principal`, `ON DELETE
+  CASCADE` destructive retract, team-blind read) fails **all** of INV1–INV5, then proves the §7.5 schema
+  passes all five; Layer B is an 11-mutation battery where each single weakening flips its designated
+  invariant RED (add `state` col / add room table / add `claim` verb → INV1; null `author_principal` /
+  null `project_id` / drop `author_run_id` → INV2; author-from-body → INV3; hard retract / migration
+  `DELETE` / drop `invalidated_at` filter → INV4; drop Team-scope predicate → INV5). Run:
+  `python3 docs/bmad/spikes/bench/discussion-schema-check.py` → exit 0, all GREEN.
+- **Canonical reference DDL — `docs/bmad/implementation/10-1-discussion-schema.sql`.** The authoritative
+  `discussion` schema (`discussion_thread` + `discussion_message`, provenance triple, soft-retract, no
+  custody column, no room table) the Epic-10 apiserver build materializes verbatim as k8squad
+  `db/migrations/0003_discussion_schema.sql`. Kept in the BMAD workspace so k8squad stays BMAD-free.
+
+**⚠ Conflict flagged — a pre-existing anti-pattern migration is on the k8squad tree.**
+`k8squad migrations/001_create_discussion_rooms.sql` (landed via `feaf920`, ISI-2147/2253 helm-storage
+train) is the **exact shape this story forbids**: a `discussion_rooms` table (R1 violation),
+client-supplied `author_type`/`author_name`/`author_id` (AC3 impersonation violation), **no `team_id`**
+(AC5 tenancy violation), `ON DELETE CASCADE` + `edited_at` instead of soft `invalidated_at` (AC2
+append-only violation), a `metadata jsonb`/`kind` surface, and no `author_principal`/`author_agent_id`/
+`author_run_id` provenance triple. It predates the LOCKED `room = Project` decision (ADR-019). The
+Epic-10 Go build MUST supersede it with `0003_discussion_schema.sql` (this story's DDL), not extend it —
+10.4's covert-channel suite would go RED against the `discussion_rooms` shape. Tracked for the Epic-10
+implementer as a first-class blocker on that build.
+
+**Downstream (Epic-10 apiserver build, k8squad, substrate-gated — not this workspace):** materialize the
+reference DDL as the forward migration; implement the five REST endpoints behind the §13 BFF authz choke
+point with server-stamped provenance; add the apiserver integration test against real Postgres (forged
+`author` in body → stored row shows authenticated principal; read as Team B → zero rows from Team A's
+Project). The design is falsifiable and the DDL is canonical; the build consumes both.
