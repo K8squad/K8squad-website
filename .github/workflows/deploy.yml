@@ -2,13 +2,7 @@ name: Deploy site to GitHub Pages
 
 on:
   push:
-    # Deploys run on `visual/website-design-isi2369`: it is the branch the
-    # `github-pages` environment protection currently allows (legacy Pages
-    # source branch). `main` cannot deploy until a repo admin updates the
-    # Pages source / environment policy (ISI-2853). Until then, pushes to
-    # `main` fast-forward this branch and dispatch this workflow via
-    # sync-and-deploy.yml.
-    branches: [visual/website-design-isi2369]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
