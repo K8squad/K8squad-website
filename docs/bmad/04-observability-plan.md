@@ -218,7 +218,7 @@ rows are for forensic query. Do not duplicate the audit *content* into metric la
 | `ksquad.coord.lease.reclaim.total` | counter | `trigger` (expiry\|sweeper) | **crash-reclaim rate** — the NFR-REL correctness signal (§6.2) |
 | `ksquad.coord.fence.epoch.increments` | counter | — | fence-token (`lease_epoch`) increments; a spike = churn/thrash |
 | `ksquad.coord.workitem.state` | up/down gauge | `state` (open\|claimed\|done\|failed) | backlog depth by state (bounded enum) |
-| `ksquad.coord.workitem.blocked` | up/down gauge | `error_code` (curated bounded enum, §5.6) | **tasks currently blocked, labeled with the blocking error code** — the Paperclip "blocked-by" analogue (§15) |
+| `ksquad.coord.workitem.blocked` | up/down gauge | `error_code` (curated enum: `needs_approval`\|`blocked_by_dep`\|`awaiting_credential`\|`awaiting_input`\|`awaiting_review`\|`budget_exhausted`\|`upstream_failed`\|`other`, §5.6/§15) | **tasks currently blocked, labeled by the blocking reason** — up on enter-blocked, down on clear; uncurated reason → `other`. Projection of the coord `blocked_reason` condition (arch r24/r25); the Paperclip "blocked-by" analogue (§15). **Story 13.3 / ISI-2235.** |
 | `ksquad.coord.append.total` | counter | `kind` (comment\|artifact) | audit append rate |
 | `ksquad.coord.claim.contention.depth` | gauge | — | concurrent claimers losing the SKIP-LOCKED race |
 
@@ -623,11 +623,12 @@ plan against them:
 | CEO requirement | Verdict | Where / action taken |
 |-----------------|---------|----------------------|
 | **Token consumption** | ✅ already covered | `ksquad.agent.tokens{runtime, direction}` (§5.5), aligned to OTel `gen_ai.usage.*` (§7). Clarified: **per-ticket token rollups** are derived in the backend by aggregating on `work_item.id` via exemplars/traces — deliberately *not* a metric label (cardinality law §1.2). A cost/pricing rollup would be a backend computation over this signal; flag if a cost model is wanted. |
-| **Tasks blocked by (error code)** | ✅ spec added | New `ksquad.coord.workitem.blocked{error_code}` gauge (§5.1); `error_code` added to the §5.6 bounded-label allowlist as a curated enum. **Architecture follow-up (rides ISI-2151):** the work-item lifecycle enum (open\|claimed\|done\|failed, arch §6) has no `blocked` state and no error-code taxonomy — the signal is specced here; the state + taxonomy must land in the architecture revision for the instrumentation to be truthful. |
+| **Tasks blocked by (error code)** | ✅ **taxonomy landed (Story 13.3 / ISI-2235)** | `ksquad.coord.workitem.blocked{error_code}` **up/down gauge** (§5.1); `error_code` is a bounded curated enum on the §5.6 allowlist. **Gate closed:** the blocked *condition* now exists in the architecture (arch **r25** refined `blocked` from a lifecycle state to an orthogonal *condition* carrying a `blocked_reason`; **r24** landed the first reason `needs_approval`), and **Story 13.3 lands the curated `error_code` taxonomy** — `needs_approval` \| `blocked_by_dep` \| `awaiting_credential` \| `awaiting_input` \| `awaiting_review` \| `budget_exhausted` \| `upstream_failed` \| `other`. Any uncurated `blocked_reason` **collapses to `other`** (never leaks a free-form string as a label — the cardinality safety valve). The instrumentation is now truthful; the gauge is a pure observe-only projection of the coord condition (blocked/claimable identical with the gauge on/off). |
 | **Per-ticket activity on the trace perspective (Paperclip-style)** | ✅ spec added | §3 per-ticket activity view: `ksquad.work_item.id` (now registered in §7) on every span/log/exemplar + work-item-scoped `run_events` → the console joins traces + logs + audit rows on `work_item.id` for a Paperclip-style ticket timeline. P0 supports it via `run.id`/`work_item.id` log+audit correlation; P1 stitching (§4.1) upgrades it to one connected cross-boundary trace. |
 
-No new architectural decisions introduced. The single architecture touch (work-item `blocked` state +
-error-code taxonomy) is explicitly deferred to the architecture revision (ISI-2151).
+One architectural decision now landed (Story 13.3 / ISI-2235): the curated `error_code` (blocked-reason)
+taxonomy above. It rides the existing coord `blocked_reason` condition (arch r24/r25) — no new work-item
+state, no new subsystem; the gauge observes the condition, it does not create it.
 
 ---
 

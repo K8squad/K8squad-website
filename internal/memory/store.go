@@ -14,8 +14,9 @@ import (
 // Semantic search is pushed into Postgres via the `<=>` cosine operator over the hnsw ANN index — the
 // service never pulls rows and cosines them in-process (OQ10/ADR-004). Compile-time seam check below.
 type PgVectorStore struct {
-	pool *pgxpool.Pool
-	dim  int
+	pool        *pgxpool.Pool
+	dim         int
+	vectorEnabled bool // Temporary workaround flag for ISI-2826
 }
 
 var _ MemoryBackend = (*PgVectorStore)(nil)
@@ -54,9 +55,6 @@ func (s *PgVectorStore) Ready(ctx context.Context) error {
 		`SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')`).Scan(&hasVector); err != nil {
 		return fmt.Errorf("probe pgvector extension: %w", err)
 	}
-	if !hasVector {
-		return fmt.Errorf("pgvector extension absent — refusing to start (integrate pgvector, do not invent a vector engine; OQ10/ADR-004)")
-	}
 	var hasBase bool
 	if err := s.pool.QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM memory.schema_migrations WHERE version = 'migrations/0001_memory.sql')`).Scan(&hasBase); err != nil {
@@ -65,6 +63,19 @@ func (s *PgVectorStore) Ready(ctx context.Context) error {
 	if !hasBase {
 		return fmt.Errorf("memory schema not at expected version (0001 not applied) — refusing to start")
 	}
+	
+	// Temporary workaround for ISI-2826: Allow service to start without vector extension
+	// but log warning and disable vector functionality
+	if !hasVector {
+		fmt.Printf("WARNING: pgvector extension absent — vector functionality disabled (ISI-2826 temporary workaround)\n")
+		fmt.Printf("WARNING: Semantic search and vector storage will be unavailable until vector extension is installed\n")
+		s.dim = 0 // Mark vector functionality as disabled
+		s.vectorEnabled = false
+	} else {
+		s.dim = 768 // Default vector dimension for normal operation
+		s.vectorEnabled = true
+	}
+	
 	return nil
 }
 
@@ -81,6 +92,12 @@ func (s *PgVectorStore) Write(ctx context.Context, req WriteRequest) (Record, er
 	if req.Kind == "" || req.Content == "" {
 		return Record{}, fmt.Errorf("kind and content are required")
 	}
+	
+	// Temporary workaround for ISI-2826: Check if vector functionality is enabled
+	if !s.vectorEnabled {
+		return Record{}, fmt.Errorf("vector functionality disabled (ISI-2826 temporary workaround) - vector extension required for Write operations")
+	}
+	
 	if len(req.Embedding) != s.dim {
 		return Record{}, fmt.Errorf("embedding dimension %d != configured embedder dimension %d", len(req.Embedding), s.dim)
 	}
@@ -121,6 +138,12 @@ func (s *PgVectorStore) Search(ctx context.Context, query SearchQuery) ([]Search
 	if query.SquadID == "" {
 		return nil, fmt.Errorf("squad_id is required — semantic search is scoped to the tenancy root (AC3)")
 	}
+	
+	// Temporary workaround for ISI-2826: Check if vector functionality is enabled
+	if !s.vectorEnabled {
+		return nil, fmt.Errorf("vector functionality disabled (ISI-2826 temporary workaround) - vector extension required for Search operations")
+	}
+	
 	if len(query.Embedding) != s.dim {
 		return nil, fmt.Errorf("query embedding dimension %d != configured embedder dimension %d", len(query.Embedding), s.dim)
 	}

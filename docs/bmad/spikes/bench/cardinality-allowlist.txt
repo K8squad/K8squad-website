@@ -37,6 +37,9 @@ ALLOW check
 ALLOW direction
 ALLOW pool_hit
 ALLOW cause
+# error_code: curated enum (Story 13.3/§15) — needs_approval|blocked_by_dep|
+#   awaiting_credential|awaiting_input|awaiting_review|budget_exhausted|
+#   upstream_failed|other; an uncurated blocked_reason collapses to `other`.
 ALLOW error_code
 ALLOW provenance_class
 ALLOW signal

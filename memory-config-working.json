@@ -1,0 +1,23 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 54329,
+    "name": "ksquad",
+    "user": "postgres",
+    "password": "paperclip",
+    "ssl_mode": "disable"
+  },
+  "http": {
+    "port": 8080,
+    "host": "localhost"
+  },
+  "logging": {
+    "level": "info",
+    "file": "./logs/memory.log"
+  },
+  "backup": {
+    "health_check_interval": "30s",
+    "max_retries": 3,
+    "timeout": "10s"
+  }
+}

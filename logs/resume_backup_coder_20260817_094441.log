@@ -1,0 +1,14 @@
+[2026-08-17 09:44:41] Starting ISI-2765 backup_Coder resume process
+[2026-08-17 09:44:41] Starting ISI-2765 backup_Coder resume process
+[2026-08-17 09:44:41] === Checking System Health ===
+[2026-08-17 09:44:41] === Checking System Health ===
+[2026-08-17 09:44:41] ✅ Database health check passed
+[2026-08-17 09:44:41] ✅ Database health check passed
+[2026-08-17 09:44:41] ✅ Basic health endpoint available
+[2026-08-17 09:44:41] ✅ Basic health endpoint available
+[2026-08-17 09:44:41] ⚠️ Found processes in D state (uninterruptible sleep)
+[2026-08-17 09:44:41] ⚠️ Found processes in D state (uninterruptible sleep)
+[2026-08-17 09:44:41] ❌ System health check failed - aborting resume
+[2026-08-17 09:44:41] ❌ System health check failed - aborting resume
+[2026-08-17 09:44:41] === Cleaning up ===
+[2026-08-17 09:44:41] Resume process completed

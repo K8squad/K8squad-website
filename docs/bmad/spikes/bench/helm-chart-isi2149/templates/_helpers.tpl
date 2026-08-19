@@ -120,6 +120,9 @@ message rather than a dangling route or a cluster-default PVC.
 {{- if not (include "ksquad.storageClass.workspace" .) -}}
 {{- fail "storage.storageClassName (or storage.workspace.storageClassName) is REQUIRED — KSquad never relies on the cluster-default StorageClass (§16.2)" -}}
 {{- end -}}
+{{- if .Values.collector.enabled -}}
+{{- include "ksquad.collector.validate" . -}}
+{{- end -}}
 {{- if .Values.nats.enabled -}}
   {{- if not (include "ksquad.storageClass.nats" .) -}}
   {{- fail "storage.storageClassName (or storage.nats.storageClassName) is REQUIRED when nats.enabled — the JetStream PVC never relies on the cluster-default StorageClass (§16.2)" -}}
@@ -134,4 +137,65 @@ message rather than a dangling route or a cluster-default PVC.
     {{- end -}}
   {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+ksquad.collector.validate — the FIXED processor-order gate (Story 13.7, AC1/AC2).
+obs-plan §10: memory_limiter FIRST, batch LAST, mandatory redaction BEFORE any
+exporter and BEFORE tail_sampling, k8sattributes (k8s-native) NEVER
+resourcedetection. This is a hard rule, not a preference — reorder / drop
+redaction and `helm template` FAILS. ci/test.sh drives a bad order to prove the
+teeth. The order lives in .Values.collector.pipeline.processors so it is one
+auditable list.
+*/}}
+{{- define "ksquad.collector.validate" -}}
+{{- $p := .Values.collector.pipeline.processors -}}
+{{- if not $p -}}
+{{- fail "collector.pipeline.processors must be a non-empty list (the fixed §10 order) — an empty pipeline exports nothing" -}}
+{{- end -}}
+{{- $n := len $p -}}
+{{- if ne (first $p) "memory_limiter" -}}
+{{- fail (printf "collector: memory_limiter MUST be the FIRST processor (obs-plan §10) — got %q. Reordering risks OOM under backpressure." (first $p)) -}}
+{{- end -}}
+{{- if ne (index $p (sub $n 1)) "batch" -}}
+{{- fail (printf "collector: batch MUST be the LAST processor (obs-plan §10) — got %q. Batching before redaction exports un-redacted data." (index $p (sub $n 1))) -}}
+{{- end -}}
+{{- if has "resourcedetection" $p -}}
+{{- fail "collector: resourcedetection is for VM/bare-metal ONLY — KSquad is Kubernetes-native, use k8sattributes (obs-plan §10)" -}}
+{{- end -}}
+{{- if not (has "k8sattributes" $p) -}}
+{{- fail "collector: k8sattributes is REQUIRED (KSquad is k8s-native, obs-plan §10)" -}}
+{{- end -}}
+{{- if not (has "redaction" $p) -}}
+{{- fail "collector: the mandatory `redaction` processor is MISSING — redaction is upstream of every exporter, not a per-exporter opt-in (NFR-SEC3, R9, AC2)" -}}
+{{- end -}}
+{{- /* index arithmetic on the processor list to enforce the ordering rules */ -}}
+{{- $iRedact := -1 -}}{{- $iBatch := -1 -}}{{- $iTail := -1 -}}
+{{- range $idx, $proc := $p -}}
+  {{- if eq $proc "redaction" -}}{{- $iRedact = $idx -}}{{- end -}}
+  {{- if eq $proc "batch" -}}{{- $iBatch = $idx -}}{{- end -}}
+  {{- if eq $proc "tail_sampling" -}}{{- $iTail = $idx -}}{{- end -}}
+{{- end -}}
+{{- if ge $iRedact $iBatch -}}
+{{- fail "collector: redaction MUST precede batch/export — moving it after batch ships un-redacted data (AC2)" -}}
+{{- end -}}
+{{- if and (ge $iTail 0) (ge $iRedact $iTail) -}}
+{{- fail "collector: redaction MUST precede tail_sampling — never sample on attributes redaction is about to change (obs-plan §10)" -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Collector gateway service name + namespace. Gateway lives in the system
+     (release) namespace: the ONE governed egress to the vendor (AC5). */}}
+{{- define "ksquad.collector.fullname" -}}
+{{- printf "%s-collector-gateway" (include "ksquad.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/* Per-pipeline processor list: traces keep the full list; metrics/logs drop
+     tail_sampling (trace-only). Rendered into the collector config, order-locked. */}}
+{{- define "ksquad.collector.processorsNoTail" -}}
+{{- $out := list -}}
+{{- range .Values.collector.pipeline.processors -}}
+{{- if ne . "tail_sampling" -}}{{- $out = append $out . -}}{{- end -}}
+{{- end -}}
+{{- $out | toJson -}}
 {{- end -}}

@@ -148,7 +148,10 @@ nats:
   jetstream:
     enabled: true # JetStream ON — replay/catch-up for plugins (§17.4)
     # Max on-disk JetStream file store. Keep ≤ storage.nats.size.
-    # Use NATS syntax: 4G, 4GB, 4096M, etc. (NO unit suffix like Gi/MB).
+    # CRITICAL: Use NATS syntax: 4G, 4GB, 4096M, etc. (NO unit suffix like Gi/MB).
+    # Using Gi/MB causes CrashLoopBackOff because nats-server only strips last char:
+    # maxFileStore: "4Gi" → ParseInt("4G") → invalid syntax → pod crash.
+    # For Kubernetes PVC sizing, use Gi format (e.g., "5Gi").
     maxFileStore: 4G
   # SINGLE-REPLICA DEFAULT. HA = ha.enabled:true → a clustered JetStream RAFT
   # quorum (odd replicas ≥ 3). Same toggle SHAPE as storage.postgres.instances
@@ -181,3 +184,59 @@ events:
     subjectPrefix: ksquad
     # NATS client URL. Empty → derived from the release-local bus (nats.enabled).
     natsUrl: ""
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Collector — the OpenTelemetry export backstop + alert spine for Epic 13
+#   (Story 13.7 / ISI-2239; obs-plan §10 topology + §6 redaction + §9 alerts).
+#   The gateway Deployment lives in the system (release) namespace: the ONE
+#   governed egress to the vendor (AC5). ON by default, ENDPOINT-GATED per §1.5
+#   (no collector.endpoint ⇒ signals stay in-cluster; no vendor exporter renders).
+#   The processor ORDER below is the fixed §10 rule — reorder or drop redaction
+#   and `helm template` FAILS (ksquad.collector.validate). Redaction is MANDATORY
+#   on all three signal pipelines, never a per-exporter opt-in (AC2/AC3).
+#   Exporter DESTINATIONS (per-signal routing, Secret-ref auth) = Story 13.8.
+# ═════════════════════════════════════════════════════════════════════════════
+collector:
+  enabled: true
+  image: otel/opentelemetry-collector-contrib:0.109.0
+  # §1.5 endpoint gate. Empty ⇒ signals stay in-cluster (redaction still runs).
+  # Story 13.8's OTelConfig reconciler wires the real destination DOWNSTREAM of
+  # the redaction processor — opting in here never bypasses redaction.
+  endpoint: ""
+  gateway:
+    replicas: 2
+  # Optional per-node DaemonSet that forwards to the gateway (never the vendor).
+  nodeAgent:
+    enabled: false
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 256Mi }
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  otlp:
+    grpcPort: 4317
+    httpPort: 4318
+  # The FIXED processor order (obs-plan §10). This is a HARD RULE, not a
+  # preference — ksquad.collector.validate enforces: memory_limiter FIRST, batch
+  # LAST, redaction before tail_sampling and before export, k8sattributes (never
+  # resourcedetection). Overriding this to a bad order is how ci/test.sh proves
+  # the guard has teeth. Do NOT reorder in production.
+  pipeline:
+    processors:
+      - memory_limiter
+      - k8sattributes
+      - resource
+      - transform/redaction-content
+      - redaction
+      - tail_sampling
+      - batch
+  # AC4 — ship the core §9 SLO alert rules as a PrometheusRule.
+  sloAlerts:
+    enabled: true
+  # AC5 — the single egress-allowlist entry over the per-squad default-deny
+  # NetPol: sandboxes OTLP-push to the gateway ONLY, no direct vendor egress.
+  netpol:
+    enabled: true
+    sandboxSelector:
+      ksquad.io/component: run-sandbox

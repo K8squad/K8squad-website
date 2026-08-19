@@ -1,0 +1,155 @@
+---
+# ISI-2295 — build-heavy gVisor falsification harness (spike §6 / §5.3.3).
+#
+# Runs a real multi-stage `docker build` under BOTH the default runtime (runc)
+# and the gvisor RuntimeClass on observable-agentsandbox, and reports per-runtime
+# build wall-clock p50/p95, the gvisor/runc ratio on the critical build path, and
+# the §6 verdict (>~1.5x runc on the build path => FAIL/flag).
+#
+# Why dockerd is started DIRECTLY (not via dockerd-entrypoint.sh): the stock
+# entrypoint runs an `iptables --version` / nft preflight under `set -eu` that is
+# fatal on gVisor (its netstack has no nft). Starting dockerd directly with
+# --iptables=false --bridge=none skips all iptables/bridge setup (the offline
+# build needs no NAT; RUN steps use --network=host), so the SAME daemon config
+# runs on both runtimes and the ratio stays apples-to-apples. vfs storage on both
+# removes overlay/fuse-overlayfs as a compat variable.
+#
+# ROOTLESS=1 path starts rootless dockerd via rootlesskit (uid 1000, no
+# privileged) — that is the §5.3.3 capability probe (docker:true on gVisor).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rt-buildbench
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buildbench
+  namespace: rt-buildbench
+data:
+  # PRIMARY workload — a REPRESENTATIVE compile build (the real "build-heavy,
+  # non-model-bound" critical path §6 targets). CPU-bound compile + object-file
+  # IO + a handful of toolchain subprocess execs — NOT an artificial exec storm.
+  # Offline (stdlib only, GOPROXY=off). This is the workload the §6 verdict rests on.
+  Dockerfile.compile: |
+    FROM golang:1.22-alpine AS build
+    WORKDIR /src
+    ENV CGO_ENABLED=0 GOPROXY=off GOTOOLCHAIN=local GOFLAGS=-mod=mod
+    RUN set -e; go mod init app >/dev/null 2>&1 || true; \
+        { echo 'package main'; echo 'import ("fmt";"math")'; \
+          i=0; while [ $i -lt 1500 ]; do \
+            echo "func f$i(x float64) float64 { return math.Sqrt(x*float64($i)) + math.Sin(x) + math.Cos(x/float64($i+1)) }"; \
+            i=$((i+1)); done; \
+          echo 'func main(){ s:=0.0;'; \
+          i=0; while [ $i -lt 1500 ]; do echo "s += f$i(float64($i))"; i=$((i+1)); done; \
+          echo 'fmt.Println(s) }'; } > main.go; \
+        wc -l main.go; \
+        go build -o /out/app . ; \
+        ls -l /out/app
+    FROM alpine:3.19
+    COPY --from=build /out/app /app
+    RUN /app | head -c 40; echo " built"
+  # SECONDARY workload — a deliberately syscall/exec-HEAVY stressor (600+ process
+  # spawns + per-file gzip/sha + cross-stage COPY). gVisor's worst case; reported
+  # as an upper-bound, NOT the representative path.
+  Dockerfile.churn: |
+    FROM alpine:3.19 AS gen
+    WORKDIR /src
+    RUN set -e; mkdir -p files; \
+        i=0; while [ $i -lt 300 ]; do \
+          head -c 32768 /dev/zero | tr '\0' 'A' > files/f_$i.dat; \
+          i=$((i+1)); \
+        done; ls files | wc -l
+    FROM alpine:3.19 AS proc
+    WORKDIR /src
+    COPY --from=gen /src/files ./files
+    RUN set -e; \
+        for f in files/*.dat; do gzip -6 -c "$f" > "$f.gz"; done; \
+        sha256sum files/*.gz > sums.txt; \
+        tar czf bundle.tgz files; \
+        wc -l sums.txt
+    FROM alpine:3.19
+    COPY --from=proc /src/sums.txt /src/bundle.tgz /out/
+    RUN sha256sum /out/bundle.tgz && wc -l /out/sums.txt
+  run.sh: |
+    #!/bin/sh
+    set -u
+    RUNTIME="${RT_LABEL:-unknown}"
+    ITERS="${ITERS:-10}"
+    ROOTLESS="${ROOTLESS:-0}"
+    WORKLOAD="${WORKLOAD:-compile}"
+    echo "BENCH_START runtime=$RUNTIME iters=$ITERS rootless=$ROOTLESS workload=$WORKLOAD storage=${STORAGE:-overlay2}"
+
+    # Storage driver is the dominant IO-cost variable. overlay2 = the realistic
+    # production driver (what a docker:true sandbox actually uses); vfs = a
+    # deliberately IO-amplified worst case (no CoW, copies every layer). Report
+    # both so the §6 verdict rests on the realistic path, not the amplified one.
+    STORAGE="${STORAGE:-overlay2}"
+    DFLAGS="--iptables=false --ip6tables=false --bridge=none --storage-driver=$STORAGE"
+
+    if [ "$ROOTLESS" = "1" ]; then
+      export XDG_RUNTIME_DIR=/run/user/1000
+      mkdir -p "$XDG_RUNTIME_DIR"
+      export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
+      # gVisor's sentry denies the non-root user the /proc/sys/net/ipv4/ip_forward
+      # write dockerd's bridge driver attempts; builds use --network=host anyway,
+      # so disable ip-forward to let the daemon come up under rootless+gVisor.
+      RFLAGS="$DFLAGS --ip-forward=false"
+      RKNET="${DOCKERD_ROOTLESS_ROOTLESSKIT_NET:-vpnkit}"
+      # host net = reuse the pod's netns (has working egress); it is incompatible
+      # with the builtin port-driver / host-loopback isolation, so drop those.
+      if [ "$RKNET" = "host" ]; then
+        RKEXTRA=""
+      else
+        RKEXTRA="--disable-host-loopback --port-driver=builtin"
+      fi
+      # Replicate the entrypoint's rootlesskit exec, minus the fatal iptables preflight.
+      rootlesskit \
+        --net="$RKNET" --mtu=1500 $RKEXTRA \
+        --copy-up=/etc --copy-up=/run \
+        dockerd $RFLAGS --host="$DOCKER_HOST" >/tmp/dockerd.log 2>&1 &
+    else
+      export DOCKER_HOST="unix:///var/run/docker.sock"
+      dockerd $DFLAGS --host="$DOCKER_HOST" >/tmp/dockerd.log 2>&1 &
+    fi
+
+    ok=0; i=0
+    while [ $i -lt 100 ]; do
+      if docker info >/dev/null 2>&1; then ok=1; break; fi
+      sleep 2; i=$((i+1))
+    done
+    if [ $ok -ne 1 ]; then
+      echo "DOCKERD_FAILED runtime=$RUNTIME rootless=$ROOTLESS  <== dockerd did NOT start"
+      echo "----- dockerd.log tail -----"; tail -n 60 /tmp/dockerd.log
+      exit 10
+    fi
+    echo "DOCKERD_READY runtime=$RUNTIME storage=$(docker info -f '{{.Driver}}' 2>/dev/null)"
+
+    docker pull alpine:3.19 >/tmp/pull.log 2>&1 || { echo "PULL_FAILED alpine runtime=$RUNTIME"; tail -n 40 /tmp/pull.log; exit 11; }
+    if [ "$WORKLOAD" = "compile" ]; then
+      docker pull golang:1.22-alpine >/tmp/pullgo.log 2>&1 || { echo "PULL_FAILED golang runtime=$RUNTIME"; tail -n 40 /tmp/pullgo.log; exit 11; }
+    fi
+    echo "BASE_READY runtime=$RUNTIME"
+
+    mkdir -p /tmp/ctx && cp "/etc/buildbench/Dockerfile.$WORKLOAD" /tmp/ctx/Dockerfile
+    cd /tmp/ctx
+
+    if docker build --network=host --no-cache -t bench:warm -f Dockerfile . >/tmp/warm.log 2>&1; then
+      echo "WARMUP_OK runtime=$RUNTIME"
+    else
+      echo "WARMUP_FAILED runtime=$RUNTIME"; tail -n 60 /tmp/warm.log; exit 12
+    fi
+
+    n=1
+    while [ $n -le $ITERS ]; do
+      start=$(cut -d' ' -f1 /proc/uptime)
+      if docker build --network=host --no-cache -t bench:$n -f Dockerfile . >/tmp/build.$n.log 2>&1; then
+        end=$(cut -d' ' -f1 /proc/uptime)
+        dur=$(awk "BEGIN{printf \"%.3f\", $end-$start}")
+        echo "TIMING runtime=$RUNTIME iter=$n seconds=$dur"
+      else
+        echo "BUILD_FAILED runtime=$RUNTIME iter=$n"; tail -n 30 /tmp/build.$n.log
+      fi
+      n=$((n+1))
+    done
+    echo "BENCH_DONE runtime=$RUNTIME"

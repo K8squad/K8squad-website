@@ -1,4 +1,4 @@
-# Story 4.3: Per-Project persistent workspace (PVC) — provision, mount, persist, worktree/lease concurrency
+# Story 4.3: Per-Project persistent workspace (PVC) — provision, mount, persist (Run↔Run worktree/lease concurrency → Story 4.4)
 
 Status: ready-for-dev
 
@@ -10,20 +10,22 @@ Status: ready-for-dev
 > claim is that **pod lifecycle is not workspace lifecycle**: Story 4.5 destroys a completed Run's
 > *sandbox pod* (teardown-and-replace) — but the *PVC is not the pod*. A reconciler that ties the PVC
 > to the pod (delete/recreate it per Run) throws away the cache every Run — a cold rebuild each time —
-> and **silently breaks FR-C2** while a single sequential green Run still looks fine. Two more
-> load-bearing invariants come from §9.4/ADR-007: **concurrent Runs on one Project each get their own
-> git worktree** over the shared checkout (no clobber, and *not* a global Project lock that would
-> serialize everything), and **exclusive-write operations take a Project workspace lease** (§6.3
-> primitive) so two Runs rebuilding the shared cache/index don't corrupt it. This story provisions +
-> mounts + persists the PVC and owns worktree/lease concurrency; **Story 4.5 partitions this same PVC
-> per principal** (a per-principal subpath) and **Story 8.7d** gates the per-principal *read* path.
+> and **silently breaks FR-C2** while a single sequential green Run still looks fine. The **Run↔Run
+> concurrency contract *over* this workspace** — concurrent Runs each get their own **git worktree**
+> over the shared checkout (no clobber, *not* a global Project lock that serializes everything) and
+> **exclusive-write operations take a §6.3 Project workspace lease** so two Runs rebuilding the shared
+> cache/index don't corrupt it — is **owned by Story 4.4** (INV-WT / INV-LEASE, ISI-2210), *not* this
+> story. This story **provisions + mounts + persists** the shared checkout 4.4 runs its worktrees over
+> and **references-and-defers** the worktree/lease mechanism to 4.4 (single source of truth for the Go
+> workspace reconciler — ISI-2415). **Story 4.5 partitions this same PVC per principal** (a
+> per-principal subpath) and **Story 8.7d** gates the per-principal *read* path.
 > Read AC1 literally: the PVC persists across Runs; only the Project's own teardown (4.1) reclaims it.
 
 ## Story
 
 As **the Project reconciler + Run pod-assembler provisioning and mounting the durable workspace for many Runs on one Project**,
-I want **each Project to have a persistent workspace PVC (source + build cache) provisioned from its `workspacePVC` spec, mounted into every Run's sandbox, persisting across Runs, with concurrent Runs isolated by a per-Run git worktree over the shared checkout and exclusive-write operations serialized by a Project workspace lease**,
-so that **a Run starts warm against the prior Runs' cache instead of cold-rebuilding every time (FR-C2), concurrent Runs on one Project never clobber each other's working tree or corrupt the shared cache (FR-C5, ADR-007), and the workspace survives the teardown-and-replace of any individual Run's sandbox pod (§9.3) because the PVC is bound to the Project, not the pod (arch §9.4).**
+I want **each Project to have a persistent workspace PVC (source + build cache) provisioned from its `workspacePVC` spec, mounted into every Run's sandbox, and persisting across Runs (the Run↔Run concurrency contract over this workspace — worktree-per-Run + §6.3 workspace lease — is owned by Story 4.4)**,
+so that **a Run starts warm against the prior Runs' cache instead of cold-rebuilding every time (FR-C2), the workspace survives the teardown-and-replace of any individual Run's sandbox pod (§9.3) because the PVC is bound to the Project not the pod (arch §9.4), and concurrent Runs on one Project never clobber each other's working tree or corrupt the shared cache (FR-C5, ADR-007) via the worktree/lease mechanism Story 4.4 owns over the checkout this story provides.**
 
 ## Context & prerequisites (read first)
 
@@ -106,17 +108,16 @@ so that **a Run starts warm against the prior Runs' cache instead of cold-rebuil
    PVC and sees the retained cache. Tying PVC lifecycle to pod lifecycle (delete/recreate per Run) is
    a **FR-C2 regression**, not a cleanup nicety.
 
-**D) Concurrency: worktree-per-Run + exclusive-write lease (§9.4, ADR-007 — AC3/AC5).**
+**D) Concurrency over this workspace is owned by Story 4.4 (§9.4, ADR-007 — reference-and-defer, ISI-2415).**
 
-5. Concurrent Runs on one Project each operate in their **own git worktree** over the shared checkout
-   (native git — `git worktree add` per Run, ponytail rung 4), so two Runs writing their working trees
-   at the same time **do not clobber** each other. This is chosen over a **global Project lock** (which
-   would serialize every Run and kill parallelism, ADR-007 rejected) and over bespoke artifact-sync.
-6. Operations that mutate the **shared** checkout/cache (dependency install, index rebuild) take a
-   **Project workspace lease** (the same lease primitive as §6.3) so they run **one-at-a-time**.
-   Worktree-per-Run isolates *working trees* but **not** the shared cache/index; the lease is the
-   defense for the shared resource. Ordinary per-worktree writes stay **parallel** (the lease scopes
-   only exclusive-write critical sections, not every write).
+5. The Run↔Run concurrency contract — concurrent Runs each in their **own git worktree** over the shared
+   checkout (native git `git worktree add`, ponytail rung 4; no clobber, not a global lock), and
+   exclusive-write operations on the **shared** cache/index taking the **§6.3 Project workspace lease**
+   (worktrees stay parallel, only shared-exclusive critical sections serialize) — is **specified and
+   falsified by Story 4.4** (`4-4-concurrent-run-shared-workspace.md`, INV-WT / INV-READ / INV-LEASE /
+   INV-FENCE, AC1–AC7). **This story does not re-encode that mechanism.** Its obligation is only to
+   *provide the shared checkout and PVC mount* (A/B/C above) that 4.4 runs its worktrees and lease over;
+   the Go workspace reconciler takes worktree/lease behavior from **4.4 alone** (single source of truth).
 
 ## Acceptance Criteria
 
@@ -135,12 +136,12 @@ and a Run assembles, Then the operator provisions **one** PVC per Project in the
 Run's sandbox **mounts** it (§5.2 step 4) so the Run sees source + build cache. Access mode is **`RWO`
 default**, **`RWX` opt-in** when the storage class supports it (§9.4).
 
-**AC3 — concurrent Runs on one Project each get their own git worktree; they don't clobber (FR-C5,
-ADR-007).** Given two Runs run **concurrently** on one Project, When each writes its working tree, Then
-each operates in its **own git worktree** over the shared checkout and reads back **its own** content —
-neither overwrites the other's working state. A single shared working directory across concurrent Runs
-(clobber) is a **failure**; so is a global Project lock that **serializes** every Run (ADR-007 rejected
-— worktree-per-Run preserves parallelism).
+**AC3 — [OWNED BY STORY 4.4 — reference-and-defer, ISI-2415].** Concurrent Runs on one Project each get
+their own git worktree over the shared checkout and don't clobber (FR-C5, ADR-007). **This is Story 4.4's
+contract** (`4-4-concurrent-run-shared-workspace.md`, INV-WT — AC1/AC2), falsified by
+`concurrent-workspace-check.py`. This story provides the shared checkout 4.4 runs worktrees over; it does
+**not** define or own the worktree mechanism. (Retained as a numbered marker so the runnable-check /
+prose cross-references stay stable; the normative acceptance criterion lives in 4.4.)
 
 **AC4 — the PVC is bound to the Project and provisioned once, reused by every Run.** Given multiple
 Runs (sequential and concurrent) on one Project, When each starts, Then all mount the **same** PVC
@@ -148,13 +149,13 @@ Runs (sequential and concurrent) on one Project, When each starts, Then all moun
 need and reused; it is not re-provisioned per Run (AC1) and not shared across Projects/namespaces
 (§12.1, Story 4.1 boundary).
 
-**AC5 — exclusive-write operations serialize on a Project workspace lease; ordinary writes stay
-parallel (§9.4, §6.3).** Given two concurrent Runs each performing an **exclusive-write** operation
-against the **shared** cache/index (dependency install, index rebuild), When they run, Then the
-Project **workspace lease** (§6.3 primitive) serializes those critical sections — no two run against
-the shared cache at once, so it is not corrupted. The lease scopes **only** exclusive-write critical
-sections; ordinary per-worktree writes remain **parallel** (AC3). Worktree isolation alone does **not**
-cover the shared cache — the lease is the distinct defense for it.
+**AC5 — [OWNED BY STORY 4.4 — reference-and-defer, ISI-2415].** Exclusive-write operations on the shared
+cache/index serialize on the §6.3 Project workspace lease while ordinary per-worktree writes stay
+parallel (§9.4, §6.3). **This is Story 4.4's contract** (`4-4-concurrent-run-shared-workspace.md`,
+INV-LEASE / INV-FENCE — AC4/AC5), falsified by `concurrent-workspace-check.py`. This story consumes the
+§6.3 lease primitive only insofar as it provisions the shared cache the lease guards; it does **not**
+define or own the lease/serialization behavior. (Retained as a numbered marker for cross-reference
+stability; the normative acceptance criterion lives in 4.4.)
 
 **AC6 — PVC provisioning and worktree/lease lifecycle are crash-safe and idempotent.** Given the
 controller crashes mid-provision (PVC created but not recorded, or a worktree opened but not tracked),
@@ -165,6 +166,12 @@ workspace/PVC state via `status.conditions` so a half-provisioned workspace is l
 real API server — with an injected mid-provision crash.)
 
 ## Runnable check (the falsification)
+
+> **Ownership note (ISI-2415):** the **authoritative** worktree/lease concurrency falsification is Story
+> 4.4's `concurrent-workspace-check.py` (INV-WT/READ/LEASE/FENCE). This check's worktree (AC3) and lease
+> (AC5) arms are retained as a **consistency guard** — they confirm 4.3's *provision + persistence* shape
+> composes with the §9.4/ADR-007 concurrency policy — but the normative concurrency contract and its
+> mutation teeth live in 4.4. 4.3's own load-bearing teeth are **AC1 persist-across-Runs (FR-C2)**.
 
 `docs/bmad/spikes/bench/workspace-pvc-check.py` — stdlib-only, `python3` it directly. It is a
 **differential** check over the *workspace provision + mount + concurrency decisions a Project
@@ -214,10 +221,16 @@ storage class observe, not decidable in a model.
 
 ## Out of scope (owned elsewhere)
 
+- **Run↔Run concurrency over this workspace — worktree-per-Run + §6.3 per-Project write-lease, reads
+  lease-free, stale-fence rejection** (**4.4**, `4-4-concurrent-run-shared-workspace.md`, §9.4/ADR-007,
+  FR-C5; INV-WT / INV-READ / INV-LEASE / INV-FENCE, AC1–AC7) — **Story 4.4 is the single owner of the
+  concurrency contract** for the Go workspace reconciler (ISI-2415). This story provisions/mounts/persists
+  the shared checkout 4.4 runs its worktrees and lease over; it does **not** define or own the
+  worktree/lease mechanism. 4.3's AC3/AC5 are reference-and-defer markers into 4.4.
 - **Per-principal PVC/cache subpath partitioning + pod teardown-and-replace + residue proof** (**4.5**,
   §9.3/§9.4 per-principal scoping) — 4.5 **partitions this exact PVC per principal** (a per-principal
   subpath the mount uses) and destroys the completed Run's **pod**. This story provisions + mounts +
-  persists the PVC and owns worktree/lease concurrency; it does **not** partition per principal.
+  persists the PVC (worktree/lease concurrency → 4.4); it does **not** partition per principal.
 - **The per-principal build-browser READ gate** (§9.4/ISI-2166, **Story 8.7d**) — the owning-principal
   identity check on the read API (`Run.owningPrincipal == caller.principal`, →404). This story provides
   the worktree + persistent PVC the read model projects; it does **not** own the read API or its gate.

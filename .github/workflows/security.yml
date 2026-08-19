@@ -1,0 +1,263 @@
+name: Supply Chain Security (L4 Half A)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Weekly security scan at 03:00 UTC on Sunday
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  govulncheck:
+    name: Go Vulnerability Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+
+      - name: Run govulncheck
+        run: |
+          echo "=== Running Go vulnerability scanning (govulncheck) ==="
+          govulncheck ./...
+          if [ $? -ne 0 ]; then
+            echo "govulncheck found vulnerabilities - see output above"
+            exit 1
+          fi
+          echo "govulncheck: No exploitable vulnerabilities found"
+
+      - name: Upload govulncheck results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: govulncheck-results
+          path: |
+            govulncheck.*
+          retention-days: 30
+
+  npm-audit:
+    name: JavaScript Vulnerability Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          # Install JS dependencies if package.json exists
+          if [ -f package.json ]; then
+            npm ci
+            echo "=== Running npm audit ==="
+            npm audit --audit-level moderate
+            if [ $? -ne 0 ]; then
+              echo "npm audit found vulnerabilities - see output above"
+              # Don't fail for moderate severity, only critical/high
+              npm audit --audit-level high --production
+              if [ $? -ne 0 ]; then
+                echo "npm audit found high/critical severity vulnerabilities"
+                exit 1
+              fi
+            fi
+            echo "npm audit: No high/critical severity vulnerabilities found"
+          else
+            echo "No package.json found, skipping npm audit"
+          fi
+
+      - name: Upload npm audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-results
+          path: |
+            npm-audit.*
+          retention-days: 30
+
+  trivy-scan:
+    name: Trivy Container Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go for Trivy
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+
+      - name: Install Trivy
+        run: |
+          echo "=== Installing Trivy ==="
+          go install -mod=mod github.com/aquasecurity/trivy/cmd/trivy@latest
+          trivy --version
+
+      - name: Run Trivy on filesystem
+        run: |
+          echo "=== Running Trivy filesystem scan ==="
+          trivy fs --format sarif --output trivy-filesystem.sarif --severity CRITICAL,HIGH --ignore-unfixed .
+          if [ $? -ne 0 ]; then
+            echo "Trivy found vulnerabilities - see SARIF output"
+          fi
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-scan-results
+          path: |
+            trivy-*.sarif
+          retention-days: 30
+
+  gitleaks:
+    name: Secret Detection (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go for gitleaks
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+
+      - name: Install gitleaks
+        run: |
+          echo "=== Installing gitleaks ==="
+          go install -mod=mod github.com/gitleaks/gitleaks/v8/cmd/gitleaks@latest
+          gitleaks --version
+
+      - name: Run gitleaks scan
+        run: |
+          echo "=== Running gitleaks secret detection ==="
+          gitleaks detect --source . --report-format sarif --report gitleaks.sarif
+          if [ $? -ne 0 ]; then
+            echo "gitleaks detected secrets - see SARIF output"
+            exit 1
+          fi
+          echo "gitleaks: No secrets detected"
+
+      - name: Upload gitleaks results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitleaks-results
+          path: |
+            gitleaks.sarif
+          retention-days: 30
+
+  codeql-analysis:
+    name: CodeQL Analysis (Go + JavaScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Checkout CodeQL
+        uses: actions/checkout@v3
+        with:
+          repository: github/codeql-action
+          ref: v2
+          path: ${{ runner.temp }}/codeql-action
+
+      - name: Perform CodeQL Analysis
+        uses: ${{ runner.temp }}/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+          
+      - name: Perform Autobuild
+        uses: ${{ runner.temp }}/codeql-action/perform-build@v2
+
+      - name: Perform Query Testing
+        uses: ${{ runner.temp }}/codeql-action/perform-query-testing@v2
+
+      - name: Upload CodeQL results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codeql-results
+          path: |
+            codeql-database/
+            codeql-analysis-results.sarif
+          retention-days: 30
+
+  security-gate:
+    name: Security Gate Check
+    needs: [govulncheck, npm-audit, trivy-scan, gitleaks, codeql-analysis]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check security scan results
+        run: |
+          echo "=== Security Gate Check ==="
+          
+          # Check if any security job failed
+          if [ "${{ needs.govulncheck.result }}" != "success" ]; then
+            echo "Security Gate: FAILED - Go vulnerability scanning failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.npm-audit.result }}" != "success" ]; then
+            echo "Security Gate: FAILED - npm audit failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.trivy-scan.result }}" != "success" ]; then
+            echo "Security Gate: FAILED - Trivy scanning failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.gitleaks.result }}" != "success" ]; then
+            echo "Security Gate: FAILED - gitleaks secret detection failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.codeql-analysis.result }}" != "success" ]; then
+            echo "Security Gate: FAILED - CodeQL analysis failed"
+            exit 1
+          fi
+          
+          echo "Security Gate: PASSED - All security scans passed"

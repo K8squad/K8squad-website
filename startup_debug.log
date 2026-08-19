@@ -1,0 +1,9 @@
+[0;32m[INFO][0m Checking prerequisites...
+[0;32m[INFO][0m Prerequisites check passed.
+[0;32m[INFO][0m Starting backup coder process...
+[0;32m[INFO][0m Backup coder process started with PID: 803577
+[0;32m[INFO][0m Log file: ./logs/memory.log
+[0;32m[INFO][0m Config file: ./memory-config.json
+[0;32m[INFO][0m HTTP endpoint: http://localhost:8080/health
+[1;33m[WARN][0m Stale PID file found, removing: ./backup-coder.pid
+[0;31m[ERROR][0m Backup coder process is not running

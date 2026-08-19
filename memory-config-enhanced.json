@@ -1,0 +1,40 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 54329,
+    "name": "postgres",
+    "user": "paperclip",
+    "password": "",
+    "ssl_mode": "disable",
+    "connect_timeout": "10s",
+    "max_connections": 10,
+    "max_idle_connections": 5,
+    "max_lifetime": "30m"
+  },
+  "http": {
+    "port": 8080,
+    "host": "localhost",
+    "read_timeout": "30s",
+    "write_timeout": "30s",
+    "idle_timeout": "60s"
+  },
+  "logging": {
+    "level": "info",
+    "file": "./logs/memory.log",
+    "max_size": 100,
+    "max_backups": 3,
+    "max_age": 28,
+    "compress": true
+  },
+  "backup": {
+    "health_check_interval": "30s",
+    "max_retries": 3,
+    "timeout": "10s",
+    "retry_delay": "5s"
+  },
+  "vector": {
+    "enabled": false,
+    "dimension": 768,
+    "metric": "cosine"
+  }
+}

@@ -1,0 +1,1 @@
+2026/08/18 03:50:32 ksquad-memory: refusing to start: ping postgres: failed to connect to `user=postgres database=ksquad`: 127.0.0.1:5432 (localhost): dial error: dial tcp 127.0.0.1:5432: connect: connection refused

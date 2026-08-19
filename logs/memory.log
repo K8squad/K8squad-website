@@ -1,0 +1,1 @@
+WARNING: Vector extension creation failed - applying migration without vector functionality (ISI-2826 workaround): ERROR: extension "vector" is not available (SQLSTATE 0A000)

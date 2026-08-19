@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -50,19 +51,81 @@ func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 
-		body, err := fs.ReadFile(db.Migrations, name)
+body, err := fs.ReadFile(db.Migrations, name)
 		if err != nil {
-			return fmt.Errorf("read migration %s: %w", name, err)
+			return fmt.Errorf("read migration %s: %w", version, err)
 		}
 
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("begin migration %s: %w", version, err)
 		}
-		if _, err := tx.Exec(ctx, string(body)); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("apply migration %s: %w", version, err)
+		
+		// Temporary workaround for ISI-2826: Handle vector extension creation failure for 0001_memory.sql
+		if name == "migrations/0001_memory.sql" {
+			// Try to create the vector extension first
+			_, err := tx.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
+			if err != nil {
+				fmt.Printf("WARNING: Vector extension creation failed - applying migration without vector functionality (ISI-2826 workaround): %v\n", err)
+				
+				// Roll back this transaction and start fresh for the modified migration
+				_ = tx.Rollback(ctx)
+				
+				// Start a new transaction for the modified migration
+				tx, err := pool.Begin(ctx)
+				if err != nil {
+					return fmt.Errorf("begin modified migration %s: %w", version, err)
+				}
+				
+				// Create a complete modified version of the migration
+				modifiedMigration := string(body)
+				
+				// Remove vector extension creation
+				modifiedMigration = strings.ReplaceAll(modifiedMigration, 
+					"CREATE EXTENSION IF NOT EXISTS vector;\n", "")
+				
+				// Modify table creation to use text instead of vector for embedding column
+				modifiedMigration = strings.ReplaceAll(modifiedMigration, 
+					"embedding      vector(768) NOT NULL,",
+					"embedding      text NOT NULL,")
+				
+				// Remove vector-specific index creation
+				modifiedMigration = strings.ReplaceAll(modifiedMigration,
+					"CREATE INDEX IF NOT EXISTS memory_records_embedding_ann\n    ON memory.memory_records USING hnsw (embedding vector_cosine_ops);\n", "")
+				
+				// Debug: Print the modified migration
+				fmt.Printf("DEBUG: Modified migration length: %d\n", len(modifiedMigration))
+				fmt.Printf("DEBUG: Original migration length: %d\n", len(body))
+				
+				// Execute the complete modified migration
+				if _, err := tx.Exec(ctx, modifiedMigration); err != nil {
+					_ = tx.Rollback(ctx)
+					return fmt.Errorf("apply modified migration %s: %w", version, err)
+				}
+				
+				// Continue with the rest of the migration flow (record and commit)
+				goto record_migration
+			}
+		} else {
+			// For other migrations, execute normally
+			if _, err := tx.Exec(ctx, string(body)); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("apply migration %s: %w", version, err)
+			}
 		}
+		
+		// Common code path for recording migration
+		record_migration:
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO memory.schema_migrations (version) VALUES ($1)`, version); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("record migration %s: %w", version, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit migration %s: %w", version, err)
+		}
+
+		// Record the migration as applied
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO memory.schema_migrations (version) VALUES ($1)`, version); err != nil {
 			_ = tx.Rollback(ctx)

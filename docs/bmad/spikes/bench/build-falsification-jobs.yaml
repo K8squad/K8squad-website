@@ -1,0 +1,78 @@
+---
+# BATCH A — primary decision measurement. overlay2 (realistic production driver),
+# n=10, rootful dind direct-start, privileged, matched. Pinned to SEPARATE
+# identical workers so the two timed builds never contend for CPU.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: buildbench-runc
+  namespace: rt-buildbench
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1500
+  template:
+    metadata:
+      annotations: { dynatrace.com/inject: "false" }
+      labels: { app: buildbench, rt: runc, role: ratio }
+    spec:
+      nodeName: observable-agentsandbox-workers-4jjsr-frnql
+      restartPolicy: Never
+      containers:
+        - name: dind
+          image: docker:27-dind
+          command: ["/bin/sh", "/etc/buildbench/run.sh"]
+          env:
+            - { name: RT_LABEL, value: "runc" }
+            - { name: ITERS, value: "10" }
+            - { name: ROOTLESS, value: "0" }
+            - { name: STORAGE, value: "overlay2" }
+          securityContext: { privileged: true }
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits: { cpu: "3", memory: 3Gi }
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/buildbench }
+            - { name: dockerdata, mountPath: /var/lib/docker }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: cfg, configMap: { name: buildbench } }
+        - { name: dockerdata, emptyDir: { sizeLimit: 4Gi } }
+        - { name: tmp, emptyDir: { sizeLimit: 2Gi } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: buildbench-gvisor
+  namespace: rt-buildbench
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1500
+  template:
+    metadata:
+      annotations: { dynatrace.com/inject: "false" }
+      labels: { app: buildbench, rt: gvisor, role: ratio }
+    spec:
+      runtimeClassName: gvisor
+      nodeName: observable-agentsandbox-workers-4jjsr-stfbr
+      restartPolicy: Never
+      containers:
+        - name: dind
+          image: docker:27-dind
+          command: ["/bin/sh", "/etc/buildbench/run.sh"]
+          env:
+            - { name: RT_LABEL, value: "gvisor" }
+            - { name: ITERS, value: "10" }
+            - { name: ROOTLESS, value: "0" }
+            - { name: STORAGE, value: "overlay2" }
+          securityContext: { privileged: true }
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits: { cpu: "3", memory: 3Gi }
+          volumeMounts:
+            - { name: cfg, mountPath: /etc/buildbench }
+            - { name: dockerdata, mountPath: /var/lib/docker }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: cfg, configMap: { name: buildbench } }
+        - { name: dockerdata, emptyDir: { sizeLimit: 4Gi } }
+        - { name: tmp, emptyDir: { sizeLimit: 2Gi } }

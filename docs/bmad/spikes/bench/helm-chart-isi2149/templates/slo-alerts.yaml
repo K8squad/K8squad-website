@@ -1,0 +1,131 @@
+{{- /* Core SLO alert rules — Story 13.7 (ISI-2239, obs-plan §9 + §8/§16.3).
+       Fires on instruments EMITTED by the sibling Epic-13 stories (13.2 coord/
+       fence, 13.3 blocked-by, 13.4 token metering, 13.5 per-ticket trace) + Epic
+       12 (outbox/JetStream lag) — this template wires the alerts, not the signals.
+       Reference: docs/bmad/spikes/bench/slo-alerts.yaml. Alert-fatigue discipline
+       (§9): the PAGE set is deliberately small (the two correctness SLOs + pool
+       readiness + poisoning); everything else is ticket-grade. Each rule names a
+       runbook. Rendered as a PrometheusRule; harmless if Prometheus-operator CRDs
+       are absent (the OTelConfig reconciler / 13.8 handles vendor-side alerting). */ -}}
+{{- if and .Values.collector.enabled .Values.collector.sloAlerts.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "ksquad.fullname" . }}-slo-alerts
+  labels:
+    {{- include "ksquad.labels" . | nindent 4 }}
+    app.kubernetes.io/component: slo-alerts
+spec:
+  groups:
+    # ── PAGE — the two correctness SLOs + pool readiness + poisoning. Small set. ──
+    - name: ksquad.slo.page
+      rules:
+        - alert: WarmClaimLatencyBreached
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(ksquad_sandbox_claim_duration_seconds_bucket{pool_hit="warm"}[10m]))
+            ) > 5
+            or
+            (
+              sum(rate(ksquad_sandbox_claim_duration_seconds_count{pool_hit="cold"}[10m]))
+              / sum(rate(ksquad_sandbox_claim_duration_seconds_count[10m]))
+            ) > 0.05
+          for: 10m
+          labels: { severity: page, slo: claim_latency }
+          annotations:
+            summary: "Warm-claim p95 > 5s (or cold-claim rate > 5%)"
+            runbook: "https://runbooks.ksquad.io/slo/warm-claim-latency"
+        - alert: WarmPoolNotReadyUnderPressure
+          expr: |
+            min(ksquad_warmpool_ready) == 0
+            and sum(rate(ksquad_sandbox_claim_duration_seconds_count[5m])) > 0
+          for: 5m
+          labels: { severity: page, slo: pool_readiness }
+          annotations:
+            summary: "Warm pool ready=0 while claims are arriving"
+            runbook: "https://runbooks.ksquad.io/slo/warm-pool-exhaustion"
+        - alert: CrashReclaimUnhealthy
+          expr: |
+            sum(rate(ksquad_coord_lease_reclaim_total[10m]))
+              > 3 * avg_over_time(sum(rate(ksquad_coord_lease_reclaim_total[10m]))[6h:10m])
+            or sum(rate(ksquad_coord_lease_stale_holder_total[10m])) > 0
+          for: 10m
+          labels: { severity: page, slo: crash_reclaim }
+          annotations:
+            summary: "Crash-reclaim thrash ≥3× baseline or sustained stale-holder renewals"
+            runbook: "https://runbooks.ksquad.io/slo/crash-reclaim-health"
+        - alert: PoisoningCandidatesDetected
+          expr: sum(ksquad_memory_poisoning_candidates) > 0
+          for: 5m
+          labels: { severity: page, slo: poisoning }
+          annotations:
+            summary: "Sustained non-zero poisoning candidates (§8)"
+            runbook: "https://runbooks.ksquad.io/security/poisoning-candidates"
+    # ── TICKET — everything else. Never pages. ──
+    - name: ksquad.slo.ticket
+      rules:
+        - alert: RunFailureRateHigh
+          expr: |
+            sum(rate(ksquad_run_terminal_total{result="failed"}[30m]))
+            / sum(rate(ksquad_run_terminal_total[30m])) > 0.10
+          for: 30m
+          labels: { severity: ticket }
+          annotations:
+            summary: "Run failure rate > 10% over 30m"
+            runbook: "https://runbooks.ksquad.io/run/failure-rate"
+        - alert: StuckRuns
+          expr: sum(ksquad_run_active{phase="running"} > bool 0 and (time() - ksquad_run_phase_entered_timestamp) > 3600) > 0
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "Run(s) stuck in Running > 1h"
+            runbook: "https://runbooks.ksquad.io/run/stuck-runs"
+        # paused-backlog covers BOTH reasons (AC4 / 3.7 / 7.6) — two reason-specific rules.
+        - alert: PausedBacklogCredential
+          expr: sum(ksquad_run_paused_active{reason="credential"}) > 0
+          for: 15m
+          labels: { severity: ticket, reason: credential }
+          annotations:
+            summary: "Runs paused on credential expiry (pause-on-auth, 7.6)"
+            runbook: "https://runbooks.ksquad.io/run/paused-credential"
+        - alert: PausedBacklogRateLimited
+          expr: sum(ksquad_run_paused_active{reason="rate_limited"}) > 0
+          for: 15m
+          labels: { severity: ticket, reason: rate_limited }
+          annotations:
+            summary: "Runs paused on provider rate-limit (pause-on-rate-limit, 3.7)"
+            runbook: "https://runbooks.ksquad.io/run/paused-rate-limited"
+        - alert: MemoryAuthzDenials
+          expr: sum(rate(ksquad_memory_authz_denied_total[15m])) > 0
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "Sustained memory authorization denials (§16.3)"
+            runbook: "https://runbooks.ksquad.io/security/memory-authz-denials"
+        - alert: ReconcileErrors
+          expr: sum(rate(ksquad_controller_reconcile_errors_total[15m])) > 0
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "Sustained controller reconcile errors"
+            runbook: "https://runbooks.ksquad.io/operator/reconcile-errors"
+        - alert: OutboxJetStreamLag
+          expr: |
+            max(ksquad_outbox_unflushed_rows) > 1000
+            or max(ksquad_jetstream_consumer_pending) > 5000
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "Outbox/JetStream lag (Epic 12) — event fan-out falling behind"
+            runbook: "https://runbooks.ksquad.io/events/outbox-lag"
+    # ── BLOCK-RELEASE — gate the release train. ──
+    - name: ksquad.slo.block-release
+      rules:
+        - alert: ShimConformanceRegression
+          expr: min(ksquad_shim_conformance_pass) < 1
+          for: 5m
+          labels: { severity: block-release }
+          annotations:
+            summary: "Runtime shim conformance regressed — block the release"
+            runbook: "https://runbooks.ksquad.io/release/shim-conformance"
+{{- end }}

@@ -1,0 +1,13 @@
+{
+  "databaseUrl": "postgres://postgres:password@localhost:5432/ksquad?sslmode=disable",
+  "natsUrl": "nats://localhost:4222",
+  "jetStreamEnabled": true,
+  "subjectPrefix": "ksquad",
+  "batchSize": 100,
+  "maxRetries": 5,
+  "pollInterval": 5,
+  "gracefulShutdown": 30,
+  "enableMetrics": true,
+  "otlpExporterUrl": "http://localhost:4318",
+  "httpPort": 8080
+}

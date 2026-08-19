@@ -1,0 +1,235 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ksquad-event-relay-config
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+data:
+  relay.natsUrl: "nats://ksquad-nats.ksquad-system.svc.cluster.local:4222"
+  relay.jetstream: "true"
+  relay.subjectPrefix: "ksquad"
+  relay.batchSize: "100"
+  relay.maxRetries: "5"
+  relay.pollInterval: "5s"
+  relay.gracefulShutdown: "30s"
+  relay.enableMetrics: "true"
+  relay.otlpExporterUrl: "http://otel-collector.ksquad-system.svc.cluster.local:4318"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ksquad
+      app.kubernetes.io/component: event-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ksquad
+        app.kubernetes.io/component: event-relay
+        app.kubernetes.io/part-of: ksquad
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: ksquad-event-relay
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: relay
+        image: ksquad/event-relay:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretRef:
+              name: ksquad-db-credentials
+        - name: NATS_URL
+          value: "nats://ksquad-nats.ksquad-system.svc.cluster.local:4222"
+        - name: JETSTREAM_ENABLED
+          value: "true"
+        - name: SUBJECT_PREFIX
+          value: "ksquad"
+        - name: RELAY_BATCH_SIZE
+          value: "100"
+        - name: RELAY_MAX_RETRIES
+          value: "5"
+        - name: RELAY_POLL_INTERVAL
+          value: "5s"
+        - name: RELAY_GRACEFUL_SHUTDOWN
+          value: "30s"
+        - name: RELAY_ENABLE_METRICS
+          value: "true"
+        - name: RELAY_OTLP_EXPORTER_URL
+          value: "http://otel-collector.ksquad-system.svc.cluster.local:4318"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /etc/ksquad
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: ksquad-event-relay-config
+      - name: tmp
+        emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 35
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+subjects:
+- kind: ServiceAccount
+  name: ksquad-event-relay
+  namespace: ksquad-system
+roleRef:
+  kind: Role
+  name: ksquad-event-relay
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ksquad-event-relay
+  namespace: ksquad-system
+  labels:
+    app.kubernetes.io/name: ksquad
+    app.kubernetes.io/component: event-relay
+    app.kubernetes.io/part-of: ksquad
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: event-relay
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          app.kubernetes.io/name: monitoring
+      podSelector: null
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          app.kubernetes.io/name: ksquad-system
+    podSelector: null
+    ports:
+    - protocol: TCP
+      port: 4222  # NATS
+    - protocol: TCP
+      port: 4338  # OTLP
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+  - to:
+    - namespaceSelector: {}
+    podSelector: null
+    ports:
+    - protocol: TCP
+      port: 1    # Allow outbound connections

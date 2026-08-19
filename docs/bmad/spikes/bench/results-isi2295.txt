@@ -1,0 +1,17 @@
+# ISI-2295 build-falsification matrix — cluster observable-agentsandbox (runsc=gvisor)
+# overlay2, n=10, single isolated worker (stfbr), docker:27-dind direct-start,
+# dynatrace inject=false. Base pre-pulled; each timed build --no-cache.
+
+## compile (representative Go build) — PRIMARY
+compile-runc-overlay2   iters(s): 4.41 4.44 4.49 4.51 4.52 4.59 5.29 5.94 6.29 7.02   p50=4.56 p95~7.0 min=4.41
+compile-gvisor-overlay2 iters(s): 7.94 8.21 8.44 8.83 8.84 8.96 9.01 10.23 10.30 11.20 p50=8.90 p95~11.2 min=7.94
+=> gvisor/runc p50 ratio = 1.95x  (p95/p95=1.60x, min/min=1.80x)  => §6 TRIGGERS
+
+## churn (syscall/exec-storm) — worst-case bound
+churn-runc-overlay2   iters(s): 3.11 3.99 2.49 2.45 2.56 2.40 2.55 2.47 2.51 2.46   p50=2.50 p95~4.0 min=2.40
+churn-gvisor-overlay2 iters(s): 12.79 14.19 13.67 13.44 14.35 13.54 13.82 11.32 9.59 9.52 p50=13.49 p95~14.4 min=9.52
+=> gvisor/runc p50 ratio = 5.4x
+
+## §5.3.3 rootless dockerd under gVisor (uid 1000, no privileged)
+starts=YES  api-live=YES  pull=YES(host-net,+--ip-forward=false)  container-create=YES
+build-RUN-step=NO (setns netns "operation not permitted"; non-standard rootless net forced by gVisor) => INCONCLUSIVE

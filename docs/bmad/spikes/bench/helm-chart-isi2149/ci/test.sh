@@ -92,6 +92,8 @@ render_ok "nats: JetStream PVC uses values StorageClass (never cluster-default)"
 # ISI-2621: max_file_store must render UNQUOTED NATS syntax (4G, not "4Gi"/"4G")
 # — a quoted or Gi-suffixed value CrashLoops nats-server on JetStream init.
 render_ok "nats: max_file_store renders unquoted NATS syntax (ISI-2621)" 'max_file_store: 4G' "${CORE[@]}"
+# CRITICAL: Ensure max_file_store ≤ storage.nats.size to prevent disk issues
+render_ok "nats: max_file_store ≤ storage size" 'max_file_store: 2G' "${CORE[@]}" --set nats.jetstream.maxFileStore=2G --set storage.nats.size=4G
 render_ok "nats: JetStream PVC uses per-family StorageClass override" 'storageClassName: "nats-class"' \
   "${CORE[@]}" --set storage.nats.storageClassName=nats-class
 render_ok "relay: apiserver outbox→NATS relay ConfigMap renders" 'event-relay' "${CORE[@]}"
@@ -117,6 +119,26 @@ render_fail "nats HA with even replicas fails (RAFT quorum)" "must be ODD" \
   "${CORE[@]}" --set nats.ha.enabled=true --set nats.ha.replicas=4
 render_fail "nats HA with <3 replicas fails (RAFT quorum)" "must be >= 3" \
   "${CORE[@]}" --set nats.ha.enabled=true --set nats.ha.replicas=1
+
+# HIGH: StorageClass validation (no cluster-default fallback)
+render_fail "missing StorageClass fails fast" "never relies on the cluster-default" \
+  --set exposure.mode=clusterip --set storage.storageClassName=
+
+echo "== Storage configuration validation =="
+# Test that PVC sizes use Kubernetes-compatible syntax (Gi allowed for PVCs)
+render_ok "nats: PVC size uses Gi (Kubernetes compatible)" 'storage: "5Gi"' "${CORE[@]}"
+# Test that PVC sizes can use other formats too (properly quoted)
+render_ok "nats: PVC size uses plain number" 'storage: "5G"' "${CORE[@]}" --set storage.nats.size=5G
+
+# HIGH: Gateway API timeout validation (SSE safety)
+render_ok "gateway: HTTPRoute disables SSE timeout" 'request: "0s"' "${GW[@]}"
+
+# HIGH: NATS resource validation (JetStream memory requirements)
+render_ok "nats: JetStream has memory limits" 'memory: 256Mi' "${CORE[@]}"
+render_ok "nats: JetStream has CPU requests" 'cpu: 50m' "${CORE[@]}"
+
+# HIGH: Gateway API version compatibility validation
+render_ok "gateway: HTTPRoute timeouts render correctly" 'request: "0s"' "${GW[@]}"
 
 echo "== access-mode schema (ISI-2252, §9.4) =="
 render_ok "accessMode RWO (default) passes schema" 'workspace.accessMode: "ReadWriteOnce"' \
