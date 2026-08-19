@@ -1,9 +1,11 @@
-name: Sync deploy branch and deploy (ISI-2853)
+name: Sync deploy branch and deploy (ISI-2853) - REMOVED 2026-08-19
 
-# The `github-pages` environment protection only allows the legacy Pages
-# source branch `visual/website-design-isi2369` to deploy, so runs of
-# deploy.yml on `main` are rejected ("Branch main is not allowed to deploy
-# to github-pages due to environment protection rules"). Until a repo admin
+# REMOVED: This workaround was removed as part of ISI-2859.
+# The deploy.yml now triggers directly on main branch push.
+# This file is archived for reference only.
+# 
+# Original purpose: The `github-pages` environment protection only allowed the legacy Pages
+# source branch `visual/website-design-isi2369` to deploy. Until a repo admin
 # points the Pages source / environment policy at `main`, this workflow
 # fast-forwards the deploy branch to `main` on every push to main and then
 # dispatches the deploy workflow on that allowed branch.
