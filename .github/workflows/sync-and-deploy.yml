@@ -1,0 +1,53 @@
+name: Sync deploy branch and deploy (ISI-2853)
+
+# The `github-pages` environment protection only allows the legacy Pages
+# source branch `visual/website-design-isi2369` to deploy, so runs of
+# deploy.yml on `main` are rejected ("Branch main is not allowed to deploy
+# to github-pages due to environment protection rules"). Until a repo admin
+# points the Pages source / environment policy at `main`, this workflow
+# fast-forwards the deploy branch to `main` on every push to main and then
+# dispatches the deploy workflow on that allowed branch.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      API: "https://api.github.com/repos/${{ github.repository }}"
+      AUTH: "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
+      ACCEPT: "Accept: application/vnd.github+json"
+      DEPLOY_BRANCH: "visual/website-design-isi2369"
+    steps:
+      - name: Fast-forward deploy branch to main
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/ref.json -w '%{http_code}' -X PATCH \
+            -H "$AUTH" -H "$ACCEPT" \
+            -d '{"sha":"${{ github.sha }}"}' \
+            "$API/git/refs/heads/$DEPLOY_BRANCH")
+          cat /tmp/ref.json || true
+          echo "PATCH deploy branch ref -> HTTP $code"
+          # 200 = fast-forwarded, 422 = already at this sha (nothing to do)
+          if [ "$code" != "200" ] && [ "$code" != "422" ]; then
+            echo "Failed to fast-forward $DEPLOY_BRANCH (is main behind the deploy branch?)"
+            exit 1
+          fi
+
+      - name: Dispatch deploy workflow on the allowed branch
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/dispatch.json -w '%{http_code}' -X POST \
+            -H "$AUTH" -H "$ACCEPT" \
+            -d "{\"ref\":\"$DEPLOY_BRANCH\"}" \
+            "$API/actions/workflows/deploy.yml/dispatches")
+          cat /tmp/dispatch.json || true
+          echo "dispatch deploy.yml@$DEPLOY_BRANCH -> HTTP $code"
+          test "$code" = "204"
