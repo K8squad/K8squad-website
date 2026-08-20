@@ -100,14 +100,20 @@ jobs:
       - name: Install ksquad chart (base infrastructure)
         if: steps.cluster.outputs.CLUSTER_KIND == '1'
         run: |
-          helm dependency update charts/ksquad || true  # Chart may not have dependencies
-          helm install ksquad charts/ksquad \
-            --namespace ksquad-s4 \
-            --create-namespace \
-            --set image.tag=latest \
-            --set global.logLevel=debug \
-            --wait \
-            --timeout=300s
+          # The X.2 residue driver drives raw Pods/PVCs via kubectl and does not need the chart.
+          # Install it only when present so the lane is not dead-ended by a missing chart.
+          if [ -d charts/ksquad ]; then
+            helm dependency update charts/ksquad || true  # Chart may not have dependencies
+            helm install ksquad charts/ksquad \
+              --namespace ksquad-s4 \
+              --create-namespace \
+              --set image.tag=latest \
+              --set global.logLevel=debug \
+              --wait \
+              --timeout=300s
+          else
+            echo "::notice::charts/ksquad not present in this repo - skipping chart install (s4-4 residue driver is chart-free)"
+          fi
 
       - name: Install RuntimeClasses
         if: steps.cluster.outputs.CLUSTER_KIND == '1'
@@ -158,46 +164,49 @@ jobs:
         if: matrix.test-case == 's4-4-reuse-residue'
         run: |
           echo "=== S4-4: Residue/Reuse Test (Story X.2) ==="
-          
-          # Setup environment for residue test
+
           export KUBECONFIG=/tmp/kind-config
-          export X2_VOLUME_MODE=pvc  # Use PVC mode for residue testing
-          
+          # kind's local-path provisioner is RWO-only; the driver's Project-PVC mode needs RWX
+          # (ReadWriteMany 1Gi) and would never bind. hostpath mode (node-pinned, durable across
+          # pods) is the driver's documented mode for clusters without RWX provisioning and
+          # exercises every channel including the durable cross-principal one.
+          export X2_VOLUME_MODE=hostpath
+
           cd docs/bmad/spikes/bench
           chmod +x residue-reuse-kind.sh
-          
-          # First, verify offline oracle (always required)
+
+          # Step 1+2 (hard-gated): offline oracle + per-channel mutation contract (C7 teeth).
           echo "=== Step 1: Offline Oracle Verification ==="
           python3 residue-reuse-check.py
-          if [ $? -ne 0 ]; then
-            echo "S4-4: FAIL - Offline oracle base check failed" >&2
-            exit 1
-          fi
-          
           echo "S4-4: PASS - Offline oracle base check"
-          
+
           echo "=== Step 2: Mutation Contract Verification ==="
           python3 residue-reuse-check.py --mutate
-          if [ $? -ne 0 ]; then
-            echo "S4-4: FAIL - Mutation contract verification failed" >&2
-            exit 1
-          fi
           echo "S4-4: PASS - Mutation contract verified (all 6 probes load-bearing)"
-          
-          # Then attempt cluster-based test if Kind cluster is available
-          echo "=== Step 3: Cluster-based Residue Test ==="
+
+          # Step 3 (verdict-gated): full policy matrix on the real cluster — teardown+per-principal
+          # (C1/C2/C5) plus reset-partial and reset-shared-pvc (C6a/C6b, harness §step 6).
+          echo "=== Step 3: Cluster-based Residue Test (full policy matrix) ==="
           if kind get clusters | grep -q "ksquad-s4"; then
             echo "Kind cluster available, running cluster-based test..."
-            ./residue-reuse-kind.sh --policy teardown+per-principal
-            if [ $? -eq 0 ]; then
-              echo "S4-4: PASS - Cluster-based residue/Reuse test passed"
+            set +e
+            driver_out="$(./residue-reuse-kind.sh 2>&1)"
+            driver_rc=$?
+            set -e
+            echo "$driver_out"
+            if [ "$driver_rc" -eq 0 ]; then
+              echo "S4-4: PASS - Cluster residue suite green (compliant policy clean; deviations gated)"
+            elif echo "$driver_out" | grep -qE 'judge FAIL|C2 violated|C5 control broken|TEETH LOST|suite: FAIL'; then
+              # Story harness §5: non-empty violations -> CI red (NFR-SEC5). Setup/env flakes
+              # (no verdict lines) stay WARN: the offline oracle remains the merge gate.
+              echo "S4-4: FAIL - residue gate fired on the cluster (NFR-SEC5)" >&2
+              exit 1
             else
-              echo "S4-4: WARN - Cluster-based test failed, but offline oracle passed"
-              echo "This may indicate cluster setup issues, but the oracle logic is sound"
+              echo "S4-4: WARN - Cluster setup/env failure (no gate verdict); offline oracle remains the gate"
             fi
           else
             echo "S4-4: WARN - No Kind cluster available, skipping cluster test"
-            echo "The offline oracle verification above is sufficient for verification"
+            echo "The offline oracle verification above is the proof of teeth"
           fi
 
       - name: S5-4 Read AuthZ (404-not-403)

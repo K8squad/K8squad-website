@@ -109,7 +109,9 @@ grep -rq "$T" /tmp/ksquad-x2 2>/dev/null            && emit scratch-fs       "$T
 [ -e /workspace/.scratch/ws-poison ]                && emit scratch-fs       "$T scratch-ws"       run1 p1
 [ -e /dev/shm/x2-secret ]                           && emit in-mem-secret    "$T in-mem-secret"    run1 p1
 if [ -d /workspace/repo/.git ]; then                                                # git-worktree residue
-  (cd /workspace/repo && { git diff --cached --quiet 2>/dev/null || git symbolic-ref -q --short HEAD | grep -q poison-branch; }) \
+  # residue = staged index, dirty tree, or the poison branch (C3: staged/branch/dirty).
+  # NOTE: git diff --quiet exits 0 when CLEAN, so the residue test is the NEGATION.
+  (cd /workspace/repo && { ! git diff --cached --quiet 2>/dev/null || ! git diff --quiet 2>/dev/null || git symbolic-ref -q --short HEAD | grep -q poison-branch; }) \
     && emit git-worktree "$T git-worktree" run1 p1
 fi
 [ -e ~/.cache/ksquad-build/entry ]                  && emit build-cache-pod  "$T build-cache-pod"  run1 p1
