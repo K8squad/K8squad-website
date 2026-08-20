@@ -218,7 +218,7 @@ jobs:
             echo "S4-5: FAIL - memory-poisoning steering oracle failed" >&2
             exit 1
           fi
-          echo "S4-5: PASS - poison contained end-to-end; provenance surfaced; all three seams jointly load-bearing"
+          echo "S4-5: PASS - poison contained end-to-end; provenance surfaced; per-seam teeth verified (write->C,D; read->B,C,D,E; assemble/tier->B,C,D,E)"
 
       - name: S5-4 Read AuthZ (404-not-403)
         if: matrix.test-case == 's5-4-404-not-403-read-authz'
