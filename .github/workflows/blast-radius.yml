@@ -24,6 +24,7 @@ jobs:
           - s4-2-exfil-via-allowlist  
           - s4-3-cross-namespace-isolation
           - s4-4-reuse-residue
+          - s4-5-memory-poisoning
           - s5-404-not-403-read-authz
     
     steps:
@@ -199,6 +200,25 @@ jobs:
             echo "S4-4: WARN - No Kind cluster available, skipping cluster test"
             echo "The offline oracle verification above is sufficient for verification"
           fi
+
+      - name: S4-5 Memory-Poisoning Test (Story X.3)
+        if: matrix.test-case == 's4-5-memory-poisoning'
+        run: |
+          echo "=== S4-5: Memory-Poisoning Test (Story X.3) ==="
+
+          # Story X.3 composition proof: adversarial record written by agent A reaches agent B
+          # only as quoted, attributed untrusted-recall (arch §4.3/§8.4, FR-E7, NFR-SEC6, R9).
+          # Stdlib-only, deterministic. Arms A-E: exit-code gated — any RED arm fails CI.
+          # Mutation teeth are built into arm E (each seam break must re-open steering).
+          cd docs/bmad/spikes/bench
+
+          echo "=== Step 1: Steering Oracle (arms A-E, exit-code gate) ==="
+          python3 memory-poisoning-check.py
+          if [ $? -ne 0 ]; then
+            echo "S4-5: FAIL - memory-poisoning steering oracle failed" >&2
+            exit 1
+          fi
+          echo "S4-5: PASS - poison contained end-to-end; provenance surfaced; all three seams jointly load-bearing"
 
       - name: S5-4 Read AuthZ (404-not-403)
         if: matrix.test-case == 's5-4-404-not-403-read-authz'
