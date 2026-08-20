@@ -30,10 +30,13 @@ pipeline and asserts the END-TO-END security property — the **steering oracle*
 of what B's runtime actually treats as a command (the AUTHORITATIVE block of the assembled prompt) vs.
 what it treats as quoted, attributed reference (the untrusted block), and it asks the one question the
 story asks: *does the injected imperative land where B would obey it?* Its headline, distinct-from-the-
-unit-checks claim is arm (E): **all three seams are JOINTLY load-bearing** — break ANY ONE of {honest
-write-author, untrusted read-envelope, source-derived assembler tier} while keeping the other two
-perfect, and the steering oracle flips contained -> STEERED. No single seam contains poisoning alone;
-that is exactly the property a per-seam unit test cannot see and X.3 exists to prove.
+unit-checks claim is arm (E): **no seam regression passes silently — every single-seam break has a
+named detection signature** (mutation-verified teeth matrix: forge the write author -> C+D RED,
+mis-attribution with steering contained; strip the read envelope -> B/C/D/E RED, no weighable
+provenance; flatten the assembler tier or honor the record's own claim -> B/C/D/E RED, steering
+re-opens). The steering oracle itself is enforced by the source-derived assembler tier ALONE — the
+write and read seams are defense-in-depth that surface their own regressions; that composition-level
+teeth matrix is exactly what a per-seam unit test cannot see and X.3 exists to prove.
 
 THE STEERING ORACLE (the security verdict, computed not eyeballed)
 -----------------------------------------------------------------
@@ -61,16 +64,21 @@ DIFFERENTIAL ARMS (same discipline as the sibling checks; each mutation flips a 
       write CLAIMS author="system" and tier="authoritative" (a self-elevation smuggled into its own
       row/content). Honest: STILL author=agent-A, STILL untrusted-recall. Naive-honors-claim: the
       poison self-promotes into the authoritative block -> B steered.
-  (E) ALL THREE SEAMS ARE JOINTLY LOAD-BEARING (X.3's distinct claim). Break exactly ONE seam,
-      keep the other two honest: for each of {write, read, assemble} the steering oracle flips
-      contained -> STEERED. Proves no single seam contains poisoning alone — the property only the
-      composition test can assert.
+  (E) PER-SEAM TEETH MATRIX — NO SILENT SEAM REGRESSION (X.3's distinct claim). Break exactly ONE
+      seam, keep the other two honest: each break has a NAMED detection signature — write-forgery
+      surfaces the forged author (C+D RED; steering contained: mis-attribution, not steering); a
+      bare-text read loses the envelope (B/C/D/E RED — a contract crash, never a silent verdict);
+      an assemble/tier break alone re-opens steering (B/C/D/E RED). The source-derived tier is the
+      seam that alone enforces the steering oracle; the other two seams are defense-in-depth with
+      their own visible teeth.
 
 stdlib only; `python3 memory-poisoning-check.py` (exit 0 = poisoning contained + teeth intact). Models
 the write->read->assemble chain in-process, ABOVE the MemoryBackend seam (§7.6); real-service / real-PG
 promotion rides Epic 6.1 + the Go test spine, and the CI squad-scenario lane rides ISI-2157 (opencode +
-Ollama, no paid credits). The mutations are load-bearing: drop the author stamp, strip the read
-envelope, or flatten the assembler tier and arm (E) — plus A/C/D — turn RED; the poisoning returns.
+Ollama, no paid credits). The mutations are load-bearing (verified teeth matrix): forge the write
+author and C+D turn RED (mis-attribution); strip the read envelope and B/C/D/E turn RED (no weighable
+provenance); flatten the assembler tier or honor the record's own claim and B/C/D/E turn RED — the
+steering returns.
 """
 
 import sys
@@ -248,16 +256,15 @@ def arm_B_honest_end_to_end():
 
 def arm_C_provenance_surfaced():
     """(C) 'provenance is surfaced' — the poisoned recall carries the honest 6.3 author so B can weigh it.
-    A pipeline that keeps the poison non-authoritative but DROPS the author still fails the AC."""
+    A pipeline that keeps the poison non-authoritative but DROPS the author still fails the AC — the
+    asserts below ARE that teeth: an author-dropping read fails the `author == 'agent-A'` check and a
+    provenance-nulling read fails the per-field check (both surface as this arm going RED)."""
     prompt = run_pipeline(_poison_req(), TASK)
     env = prompt["recall_env"]
     assert env["author"] == "agent-A", "the surfaced author is the honest 6.3 stamp (agent-A), so B can attribute it"
     for f in PROVENANCE_FIELDS:
         assert env.get(f) is not None, "provenance %r must be surfaced so B can weigh the record" % f
     assert ("author=agent-A" in prompt["reference_block"]), "provenance must be surfaced inline at the point of use"
-    # contrast: a read that drops the author -> the quoted recall is unattributable (AC violated).
-    stripped = read_honest(write_honest(_poison_req())); del stripped["author"]
-    assert "author" not in stripped, "a provenance-dropping read leaves the recall unattributable (teeth)"
     return "C the poisoned recall surfaces author=agent-A + written_at + scope + trust — B can weigh it, not obey it"
 
 
@@ -274,25 +281,49 @@ def arm_D_server_derived_by_construction():
     return "D author + tier are server-derived by construction; honoring the record's own claim re-steers B"
 
 
-def arm_E_all_three_seams_load_bearing():
-    """(E) X.3's distinct claim: break exactly ONE seam, keep the other two honest — steering returns
-    for EACH. No single seam contains poisoning alone; only the composition holds."""
+def arm_E_per_seam_teeth_matrix():
+    """(E) X.3's distinct claim, as mutation-verified: break exactly ONE seam, keep the other two
+    honest — every single-seam regression has a NAMED detection signature; none passes silently.
+    The steering oracle itself is enforced by the source-derived assembler tier ALONE
+    (defense-in-depth): a write forgery alone is contained to mis-attribution (caught by C/D),
+    a bare-text read alone destroys weighability (caught by B's envelope contract — it crashes the
+    tiered assembler rather than yielding a verdict), and only an assemble/tier break (or the fully
+    naive chain, arm A) re-opens steering end-to-end (caught by B/C/D/E)."""
     baseline = run_pipeline(_poison_req(), TASK)
     assert not is_steered(baseline), "sanity: the fully-honest composition contains the poison"
 
-    breaks = {
-        "write  (6.3 author forgeable)": dict(write="forgeable", tier="claim"),
-        "read   (6.4 envelope stripped)": dict(read="baretext", assemble="flatblob"),
-        "assemble (3.6 tiering flattened)": dict(assemble="flatblob"),
-    }
-    reopened = []
-    for label, kw in breaks.items():
-        prompt = run_pipeline(_poison_req(), TASK, **kw)
-        assert is_steered(prompt), \
-            "breaking ONLY the %s seam must re-open steering (jointly load-bearing) — it did not" % label
-        reopened.append(label.split()[0])
-    assert set(reopened) == {"write", "read", "assemble"}, "every seam break must re-open steering"
-    return "E each of {write, read, assemble} is jointly load-bearing — breaking any ONE re-steers B"
+    # seam 1 — WRITE-author forgery ALONE (read + assemble honest): contained — the tiered
+    # assembler still quotes the record — but the surfaced author becomes the forged 'system'.
+    # That is the exact signature arms C and D detect (verified: write-break -> C,D RED; B,E green).
+    forged = run_pipeline(_poison_req(), TASK, write="forgeable")
+    assert not is_steered(forged), \
+        "write forgery ALONE is mis-attribution, not re-steering (contained by the tiered assembler)"
+    assert forged["recall_env"]["author"] == "system", \
+        "write forgery ALONE surfaces the forged author — the C/D detection signature"
+
+    # seam 2 — READ-envelope strip ALONE (write + assemble honest): the recall comes back bare
+    # text — no provenance to weigh. Through the tiered assembler this is a hard contract crash
+    # (the quote needs the envelope), never a silent verdict: the arm loop surfaces it as a named
+    # RED arm (verified: read-break -> B,C,D,E RED).
+    bare = read_baretext(write_honest(_poison_req()))
+    assert isinstance(bare, str) and "agent-A" not in str(bare), \
+        "a bare-text read surfaces NO provenance — the B/C/D envelope-contract detection signature"
+    try:
+        run_pipeline(_poison_req(), TASK, read="baretext")
+        raise AssertionError("a bare-text read must not yield an assembled verdict through the tiered assembler")
+    except TypeError:
+        pass  # the honest failure mode: contract violation surfaced by the arm loop, not silent steering
+
+    # seam 3 — ASSEMBLE tier flattened ALONE (write + read honest), or the tier policy honoring
+    # the record's own claim: THIS seam alone re-opens steering (verified: assemble/tier-break ->
+    # B,C,D,E RED). The steering oracle hangs on the source-derived tier; write and read are
+    # defense-in-depth that make their own regressions visible.
+    assert is_steered(run_pipeline(_poison_req(), TASK, assemble="flatblob")), \
+        "flattening the assembler tier ALONE re-opens steering — the B/C/D/E detection signature"
+    assert is_steered(run_pipeline(_poison_req(), TASK, tier="claim")), \
+        "honoring the record's own tier claim ALONE re-opens steering — the B/C/D/E detection signature"
+    return ("E per-seam teeth (verified): write->C,D (forged author, contained); read->B,C,D,E "
+            "(no envelope, no verdict); assemble/tier->B,C,D,E (steering). No seam-break is silent.")
 
 
 def main():
@@ -301,7 +332,7 @@ def main():
         ("B honest end-to-end (contained)",         arm_B_honest_end_to_end),
         ("C provenance surfaced + honest",          arm_C_provenance_surfaced),
         ("D author/tier server-derived (anti-inj)", arm_D_server_derived_by_construction),
-        ("E all three seams jointly load-bearing",  arm_E_all_three_seams_load_bearing),
+        ("E per-seam teeth matrix (no silent brk)", arm_E_per_seam_teeth_matrix),
     ]
     failures = 0
     for name, fn in arms:
@@ -310,6 +341,11 @@ def main():
         except AssertionError as e:
             failures += 1
             print("FAIL  %-42s %s" % (name, e))
+        except Exception as e:
+            # envelope-contract regressions (e.g. a bare-text read) die as TypeError/KeyError, not
+            # AssertionError — surface them as the named RED arm instead of an unauditable traceback.
+            failures += 1
+            print("FAIL  %-42s %s: %s" % (name, type(e).__name__, e))
     print()
     if failures:
         print("RESULT: %d arm(s) FAILED — the memory-poisoning / anti-steering guarantee is broken." % failures)
@@ -317,9 +353,11 @@ def main():
     print("RESULT: all arms pass — an adversarial record written by agent A reaches agent B only as")
     print("        QUOTED, ATTRIBUTED untrusted-recall (provenance surfaced); the injected imperative")
     print("        never enters B's authoritative/command context. B is not silently steered (R9).")
-    print("MUTATION note: forge the write author (6.3), strip the read envelope (6.4), or flatten the")
-    print("        assembler tier (3.6) — arm E turns RED for that seam, and A/C/D expose the same")
-    print("        steering. All three seams are jointly load-bearing; the teeth compose.")
+    print("MUTATION note (verified teeth matrix): forge the write author (6.3) -> arms C+D RED")
+    print("        (mis-attribution; steering stays contained); strip the read envelope (6.4) -> arms")
+    print("        B/C/D/E RED (no envelope, no verdict); flatten the assembler tier (3.6) or honor the")
+    print("        record's own tier claim -> arms B/C/D/E RED (steering re-opens). No seam regression")
+    print("        passes silently; the teeth compose.")
     return 0
 
 
