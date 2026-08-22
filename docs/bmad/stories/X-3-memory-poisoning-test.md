@@ -22,11 +22,15 @@ Status: ready-for-review
 >
 > X.3 wires all three seams into one pipeline and asks the exact question the AC asks: *does the
 > injected imperative land where B would obey it?* Its headline, distinct-from-the-unit-checks claim is:
-> **all three seams are JOINTLY load-bearing** — break ANY ONE of {honest write-author, untrusted
-> read-envelope, source-derived assembler tier} while keeping the other two perfect, and the **steering
-> oracle flips contained → STEERED**. No single seam contains poisoning alone. That is precisely the
-> property a per-seam unit test cannot see, and the reason X.3 exists as a first-class adversarial CI
-> artifact rather than a re-run of 6.3/6.4/3.6.
+> **all three seams are JOINTLY load-bearing, each with its own visible teeth** — no regression of
+> {honest write-author, untrusted read-envelope, source-derived assembler tier} is silent; each turns a
+> named arm RED. The teeth are *not* symmetric: the **source-derived assembler tier alone gates the
+> steering oracle** (defense-in-depth) — flatten it, or honor the record's own tier claim, and the
+> oracle flips **contained → STEERED**; forging the write author is caught upstream as mis-attribution
+> (arms **C, D** RED — steering stays contained, poison never reaches command context); stripping the
+> read envelope collapses the verdict entirely (arms **B, C, D, E** RED — no envelope, no verdict). That
+> per-seam teeth matrix is precisely the property a per-seam unit test cannot see, and the reason X.3
+> exists as a first-class adversarial CI artifact rather than a re-run of 6.3/6.4/3.6.
 
 ## ⚠️ Scope reconciliation — X.3 vs 6.3 / 6.4 / 3.6, and the Epic-14.4 roll-up (read first)
 
@@ -53,10 +57,10 @@ As **a security owner**,
 I want **a memory-poisoning test that composes the write → read → assemble chain end-to-end and proves
 an adversarial record written by agent A reaches agent B only as quoted, attributed untrusted-recall —
 the injected imperative never entering B's authoritative/command context — and that each of the three
-trust seams is individually necessary to hold that line**,
+trust seams carries its own load, so that no regression of any one seam passes silently**,
 so that **memory poisoning / prompt-injection-into-a-knowledge-record (R9, NFR-SEC6) is *tested, not
-asserted* (§4.3), and any future regression that weakens a single seam is caught as a RED CI arm rather
-than shipping a silently-steerable squad.**
+asserted* (§4.3), and any future regression that weakens a single seam is caught as a named RED CI arm
+rather than shipping a silently-steerable squad.**
 
 ## Acceptance criteria (GWT)
 
@@ -80,11 +84,15 @@ than shipping a silently-steerable squad.**
   write-author + bare-text read + flat-blob assemble), **When** the same record is processed, **Then**
   the imperative lands in the single authoritative blob with **no provenance** and the steering oracle
   returns **True** — B is silently steered. Without this reproduction the harness proves nothing. *(arm A)*
-- **AC5 (all three seams jointly load-bearing — X.3's distinct claim).** **Given** the fully-honest
-  composition, **When** exactly **one** seam is broken (write-author forgeable **or** read-envelope
-  stripped **or** assembler tiering flattened) while the other two stay honest, **Then** the steering
-  oracle flips **contained → STEERED for each** of the three — proving no single seam contains poisoning
-  alone. *(arm E)*
+- **AC5 (per-seam teeth matrix — no silent seam regression; X.3's distinct claim).** **Given** the
+  fully-honest composition, **When** exactly **one** seam is broken while the other two stay honest,
+  **Then** the regression surfaces as a named RED arm — never silently: forging the write-author →
+  arms **C, D** RED (mis-attribution; the steering oracle stays **contained**); stripping the read
+  envelope → arms **B, C, D, E** RED (no envelope, no verdict); flattening the assembler tier **or**
+  honoring the record's own tier claim → arms **B, C, D, E** RED (**steering re-opens**). The
+  source-derived assembler tier is the seam that **alone** gates the steering oracle (defense-in-depth);
+  the three seams are jointly load-bearing for the untrusted-read posture, each with its own visible
+  teeth. *(arm E)*
 - **AC6 (first-class, mutation-proven CI artifact).** The test is a required CI artifact under the L4
   blast-radius suite (Epic 14.4 / 05-testing §6.5), runs stdlib-only and deterministic (no wall-clock,
   no RNG), and its teeth are load-bearing: forging the write author, stripping the read envelope, or
@@ -117,7 +125,7 @@ two stay honest (that composability is what AC5 needs):
 | B | honest end-to-end → **contained** (imperative only quoted at untrusted-recall) | AC1 |
 | C | provenance **surfaced + honest** (`author=agent-A`, inline) so B can weigh it | AC2 |
 | D | author + tier **server-derived by construction**; honoring the record's claim re-steers B | AC3 |
-| E | **all three seams jointly load-bearing** — break any one, steering returns | AC5 |
+| E | **per-seam teeth matrix** — every seam regression turns a named arm RED (no silent break); the source-derived tier alone gates steering | AC5 |
 
 **Verification (run in `docs/bmad/spikes/bench/`):**
 
@@ -127,14 +135,16 @@ PASS  A naive end-to-end (must reproduce)        … B steered
 PASS  B honest end-to-end (contained)            … B not steered
 PASS  C provenance surfaced + honest             … B can weigh it, not obey it
 PASS  D author/tier server-derived (anti-inj)    … honoring the record's own claim re-steers B
-PASS  E all three seams jointly load-bearing     … breaking any ONE re-steers B
+PASS  E per-seam teeth matrix (no silent brk)    … write→C,D (forged author, contained); read/tier/assemble→B,C,D,E
 RESULT: all arms pass …
 # exit 0
 ```
 
-Mutation-proven (teeth confirmed): flatten the assembler tier → arms **B, C, D, E** RED; strip the read
-envelope's `trust` → arm **B** RED; forge the write author → arms **C, D** RED. All three seam
-mutations re-open the steering.
+Mutation-proven (teeth confirmed, matching the oracle's MUTATION note): forge the write author → arms
+**C, D** RED (mis-attribution; steering stays **contained**); strip the read envelope → arms
+**B, C, D, E** RED (no envelope, no verdict); flatten the assembler tier **or** honor the record's own
+tier claim → arms **B, C, D, E** RED (**steering re-opens**). No seam regression passes silently; the
+source-derived assembler tier alone gates the steering oracle.
 
 ## Scope pin — what X.3 is NOT
 
