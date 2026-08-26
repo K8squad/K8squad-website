@@ -92,19 +92,21 @@ carry **no write/apply/delete** verbs.
 ### Install the catalog
 
 The four defaults are already present after applying the squad. To add the
-dev/debug set, apply the whole catalog with Kustomize — it targets the
-`bmad-squad` namespace and re-declares the same four defaults idempotently:
+dev/debug set, apply the whole catalog with Kustomize straight from the repo —
+its `kustomization.yaml` targets the `bmad-squad` namespace and re-declares the
+same four defaults idempotently, so no clone or `-n` override is needed:
 
 ```bash
-git clone https://github.com/K8squad/k8squad-skills.git
-kubectl apply -k k8squad-skills/
+kubectl apply -k github.com/K8squad/k8squad-skills
 ```
 
 Or apply a single skill:
 
 ```bash
-kubectl apply -f k8squad-skills/skills/kubectl-debug/skill.yaml
+kubectl apply -f https://raw.githubusercontent.com/K8squad/k8squad-skills/main/skills/kubectl-debug/skill.yaml
 ```
+
+(Prefer a local clone? `git clone https://github.com/K8squad/k8squad-skills.git && kubectl apply -k k8squad-skills/` does the same.)
 
 > Skills require the KSquad CRDs to be installed first (the Helm step above).
 
