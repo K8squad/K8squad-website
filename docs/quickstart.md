@@ -39,12 +39,17 @@ helm repo update
 helm install ksquad ksquad/ksquad \
   --namespace ksquad-system --create-namespace \
   --set global.storageClassName=<your-storage-class> \
-  --set exposure.mode=clusterip
+  --set exposure.mode=clusterip \
+  --set tools.defaultCatalog.enabled=true
 ```
 
 `exposure.mode=clusterip` is the zero-dependency path — it brings the whole stack up and you reach the
 console with `kubectl port-forward`. For production you'll switch to `gateway` (Gateway API) or
 `ingress`; see [Networking & exposure](./operator-guide/install#networking--exposure).
+
+`tools.defaultCatalog.enabled=true` renders the curated [Toolchain](./concepts/toolchains) catalog
+(`kubectl`, `git`, `gh`, `go`, `node`, `dtctl`, `helm`) that skills with `requires.toolchains` resolve
+against — leave it off and Runs demanding a toolchain fail admission with an actionable message.
 
 One install brings up: the **operator**, **apiserver**, **memory service**, **console**, a bundled
 **Postgres** (CNPG), and the **NATS/JetStream** event bus.
@@ -201,11 +206,17 @@ When it reaches `Succeeded`, you've run your first squad. 🎉
 - The operator turned your CRDs into a reconciled, isolated workload.
 - The `Run` **claimed a durable work item**, got a warm sandbox, and drove `dev-1` to completion — all
   crash-safe, because the coordination state lives in Postgres, not the pod.
+- The Run's skills resolved against the **capability plane**: required [toolchains](./concepts/toolchains)
+  staged as init containers, and any [MCP servers](./concepts/mcp-servers) wired into the runtime —
+  with the resolved envelope recorded as the Run's capability manifest.
 - Every step is in the **audit trail** and available as OpenTelemetry.
 
 ## Next steps
 
-- [Core Concepts](./concepts) — understand Squads, Agents, Roles, Skills, Projects, and Runs in depth.
+- [Core Concepts](./concepts) — Squads, Agents, Roles, Skills, MCP Servers, Toolchains, Projects, Runs.
+- **Want a full 13-role squad instead of hand-rolled agents?** The repo ships a `kubectl apply`-able
+  [BMAD example squad](https://github.com/K8squad/K8squad/blob/main/docs/getting-started-bmad.md) —
+  CEO → PM/Architect/UX hierarchy, four default Skills, two MCP servers, in about ten minutes.
 - [Author Guide](./author-guide) — compose richer squads and manage work items.
 - [Operator Guide](./operator-guide) — production install, RBAC, credentials, and settings.
 - [Observability](./observability) — export telemetry with `OTelConfig`.

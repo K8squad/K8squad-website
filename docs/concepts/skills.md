@@ -30,14 +30,19 @@ spec:
 
 ## What a Skill grants
 
-- **`mcpToolRefs`** — the MCP tools the skill exposes to the agent.
+- **`mcpToolRefs`** — the [MCPServer](./mcp-servers) objects whose tools the skill exposes to the
+  agent. Every ref must resolve to an existing `MCPServer` at admission — a dangling ref rejects the
+  skill. And the skill may only **narrow** the server's `toolFilter`, never widen it (below).
 - **`permissions`** — the permission envelope (for example, workspace write vs. read-only).
-- **`requires.toolchains`** — language/CLI packs (`go@1.23`, `node@22`, `python@3.13`, …). At Run time
-  the operator stages each required pack as an **init container** into a shared volume — languages are
-  *files*, so they cost nothing once the Run is running.
+- **`requires.toolchains`** — language/CLI packs (`gh@2.62`, `go@1.23`, `node@22`, …), resolved as
+  `name@version` against the [Toolchain](./toolchains) catalog. At Run time the operator stages each
+  resolved pack as an **init container** into a shared volume — languages are *files*, so they cost
+  nothing once the Run is running. An unknown name/version fails Run admission with an actionable
+  message.
 - **`requires.sidecars`** — genuine long-running services (rootless `dockerd`, a headless browser, an
   ephemeral DB). These become **sidecar** containers, and they're **capability-gated**: a sidecar whose
-  capability the agent's runtime disables is rejected.
+  capability the agent's runtime disables is rejected. stdio [MCP servers](./mcp-servers) with an
+  `image` ride the same mechanism.
 
 ## Self-describing skills, operator-assembled pods
 
@@ -62,7 +67,8 @@ spec:
 ```
 
 Git-sourced skills are **pinned to a commit SHA** so a repo force-push can't silently change in-flight
-behavior — the same reproducibility discipline as pinned CLI versions.
+behavior — the same reproducibility discipline as pinned CLI versions. Always pin an immutable SHA,
+never a floating branch.
 
 ## The trust boundary (important)
 
@@ -73,6 +79,12 @@ escalation. KSquad prevents this:
 > **The `permissions` and `mcpToolRefs` capability envelope is authorized by the `Skill` CRD — the
 > operator/admin who registers the source — never by the fetched repo content.** The repo supplies
 > *behavior* (prompts, instructions, scripts) inside that envelope; it can never widen it.
+
+The same one-way rule governs MCP tools: a skill selecting an
+[MCPServer](./mcp-servers) via `mcpToolRefs` may only **narrow** the server's `toolFilter` —
+intersect it, subtract from it — never widen it. At Run assembly the effective tool set is computed
+server-side (`server.allow ∩ skill narrowing − deny`) and a narrowing that references a tool the
+server has never observed, or that leaves the effective set empty, **fails Run admission closed**.
 
 Fetched content is validated before staging, runs inside the same sandbox isolation and egress policy
 as any Run, and private sources use a **BYO read-only Secret** — never a shared KSquad token.
@@ -86,4 +98,6 @@ when an agent uses it in a Run.
 
 - [Agents](./agents) — reference skills via `skillRefs`.
 - [Roles](./roles) — `defaultSkills` grant skills by default.
+- [MCP Servers](./mcp-servers) — what `mcpToolRefs` resolves against; skills only narrow.
+- [Toolchains](./toolchains) — what `requires.toolchains` resolves against.
 - [Runs](./runs) — how skill requirements assemble a sandbox.

@@ -16,10 +16,42 @@ configured by a CRD rather than hardcoded.
   coordination calls, memory reads/writes, and the agent shim, so you can follow one unit of work end
   to end.
 - **Metrics** — Run lifecycle counters, claim/lease metrics, memory read/write counters, rate-limit and
-  fallback signals, and consumption metering (below).
+  fallback signals, tool and skill usage (below), and consumption metering.
 - **Logs** — structured logs from every component.
 - **Live progress (SSE)** — separate from OTLP export, the console streams live Run progress over
   Server-Sent Events. (SSE is for the operator watching now; OTLP is for your telemetry backend.)
+
+## Tool and skill usage telemetry
+
+The capability plane is instrumented end to end. Every tool call, skill load, and MCP call emits
+spans following the **OpenTelemetry GenAI semantic conventions**, plus bounded-cardinality metrics:
+
+| Signal | Name | Labels / attributes |
+|--------|------|---------------------|
+| Span | `gen_ai.tool.call` | `gen_ai.tool.name`, hashed arguments (raw arguments never travel), outcome, duration |
+| Span | `skill.load` | skill name, pinned source SHA |
+| Span | `mcp.call` | MCP server, `gen_ai.tool.name`, outcome, duration |
+| Counter | `ksquad_tool_calls_total` | `{tool, agent, skill}` |
+| Counter | `ksquad_skill_loads_total` | `{skill, agent}` |
+| Histogram | `ksquad_mcp_call_duration_seconds` | `{server, tool}` |
+
+Tool-call arguments are reduced to a hex SHA-256 before they leave the pod — you can see *that* a
+credential-touching tool ran, and correlate it with the Run's
+[capability manifest](../concepts/runs#the-capability-manifest), but secrets and payloads never land
+in telemetry.
+
+Two plumbing notes:
+
+- **Where it flows from.** The in-pod shim hook and the operator-side A2A dispatch feed both map into
+  the same telemetry pipeline, so events emitted inside sandboxes and events dispatched by the
+  operator land in one place — the `ksquad_*` series are also scrapeable on the operator's
+  `/metrics` endpoint.
+- **The toggle.** The tool-usage pipeline is wired to an `OTelConfig` toggle and defaults to enabled;
+  turning it off emits no spans and no metric samples at all (opt-out, not just filter-out).
+
+The console's Run view surfaces tool and skill activity alongside the live SSE stream, so an operator
+watching a Run sees which capabilities the agent is actually exercising — the same data the exported
+metrics carry, without a backend round-trip.
 
 ## Opt-in export with `OTelConfig`
 
