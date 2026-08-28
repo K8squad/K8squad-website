@@ -1,7 +1,8 @@
 ---
 title: Runs (Run)
 description: A Run is a unit of squad work — a reconciled, crash-safe Kubernetes workload that claims a durable work item, gets an isolated sandbox, and drives an agent to completion.
-sidebar_position: 6
+sidebar:
+  order: 8
 ---
 
 # Runs
@@ -48,6 +49,36 @@ A Run moves through an explicit set of phases (its `status.phase`):
   `retryPolicy`; a cancel tears down the sandbox promptly (the pod is disposable).
 - **Paused** — a legible pause (never an opaque failure), used for credential expiry and rate limits
   (below).
+
+## Fail-closed admission
+
+Before a Run claims anything, the reconciler resolves every participating agent's
+[Skills](./skills) against the capability plane — and **anything unresolvable rejects the Run at
+admission**, with an actionable message, rather than surfacing later as a broken pod:
+
+| Failure at admission | Behavior |
+|---|---|
+| Skill references a missing [MCPServer](./mcp-servers) | Skill admission rejected (dangling `mcpToolRefs`) |
+| MCP server's tool surface still unknown (discovery hasn't succeeded) | Run stays `Pending`, re-evaluated on server status change |
+| Skill narrows to a tool the server has never observed | Run admission rejected (dangling tool) |
+| Effective MCP tool set empty after narrowing/deny | Run admission rejected |
+| Unknown [Toolchain](./toolchains) `name@version` | Run admission rejected, naming what the catalog carries |
+| Toolchain version conflict across the Run's skills | Run admission rejected — no silent latest-wins |
+
+The theme: a Run never starts on a half-known capability surface. Combined with the skills-only-narrow
+trust boundary, this is what makes a granted skill auditable rather than aspirational.
+
+## The capability manifest
+
+Once admission resolves, the computed envelope — toolchain images (digest-pinned), effective MCP
+endpoints and tool filters, and the honored RBAC union — is recorded as a **capability manifest** on
+`Run.status`, hashed for warm-pool keying. Two guarantees follow:
+
+- **No mid-flight widening.** Spec changes to Skills, Toolchains, or MCPServers while the Run is live
+  are ignored for that Run; they apply to the next one. The recorded manifest stays the audit truth.
+- **RBAC appears and disappears with the Run.** The unioned toolchain RBAC renders as one per-Run
+  `Role` (`ksquad-run-<run-name>`) bound to the squad service account, owner-referenced to the Run,
+  and garbage-collected with it. The baseline team Role stays empty.
 
 ## Crash-safe by construction
 
@@ -100,6 +131,7 @@ The Run does **not** inherit the user's session; the sandbox uses only the agent
 ## Related
 
 - [Agents](./agents) — who executes a Run.
+- [Skills](./skills), [MCP Servers](./mcp-servers), [Toolchains](./toolchains) — what admission resolves.
 - [Author Guide → Managing work items](../author-guide/work-items) — the coordination record.
 - [Observability](../observability) — Run traces, metrics, and consumption metering.
 - [Troubleshooting](../troubleshooting) — stuck or paused Runs.

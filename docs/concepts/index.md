@@ -6,7 +6,7 @@ sidebar_position: 2
 
 # Core Concepts
 
-KSquad models everything as Kubernetes objects under the API group **`ksquad.io/v1alpha1`**. Six
+KSquad models everything as Kubernetes objects under the API group **`ksquad.io/v1alpha1`**. Eight
 concepts do most of the work. Read them in order the first time; they build on each other.
 
 | Concept | CRD | One-line definition |
@@ -15,6 +15,8 @@ concepts do most of the work. Read them in order the first time; they build on e
 | [Agent](./agents) | `Agent` (+ `AgentRuntime`) | One agent instance: a runtime + a role + skills + a credential. |
 | [Role](./roles) | `Role` | A reusable behavior profile — how an agent thinks and acts. |
 | [Skill](./skills) | `Skill` | A granted capability — what tools an agent may use. |
+| [MCP Server](./mcp-servers) | `MCPServer` | A registered MCP endpoint whose tools the control plane discovers and filters. |
+| [Toolchain](./toolchains) | `Toolchain` | A versioned, digest-pinned tool pack staged into Runs — and the origin of RBAC authority. |
 | [Project](./projects) | `Project` | A repo plus a workspace the squad works against. |
 | [Run](./runs) | `Run` | A unit of squad work — a reconciled, crash-safe workload. |
 
@@ -24,8 +26,10 @@ concepts do most of the work. Read them in order the first time; they build on e
 
 A **Squad** (`Team`) owns one or more **Projects** and has **Agents**. Each Agent composes a **Role**
 (behavior) with **Skills** (tools and permissions), runs on an **AgentRuntime** (which coding CLI), and
-authenticates with its own **Secret**. An Agent drives a **Run**, which claims a durable **Work Item**
-(a Postgres row, not a CRD) and executes in an isolated **Sandbox**.
+authenticates with its own **Secret**. Skills resolve against the **capability plane** —
+**MCPServers** (tool endpoints) and **Toolchains** (staged tool packs) — and an Agent drives a **Run**,
+which claims a durable **Work Item** (a Postgres row, not a CRD) and executes in an isolated
+**Sandbox**.
 
 ## Two records, one database
 
@@ -41,8 +45,8 @@ never trapped inside a pod**, and knowledge outlives any single Run.
 
 ## Desired state vs. durable state
 
-- **Desired state** — `Team`, `Agent`, `AgentRuntime`, `Role`, `Skill`, `Project`, `Run`,
-  `OTelConfig` — is expressed as **CRDs** and reconciled by the operator.
+- **Desired state** — `Team`, `Agent`, `AgentRuntime`, `Role`, `Skill`, `MCPServer`, `Toolchain`,
+  `Project`, `Run`, `OTelConfig` — is expressed as **CRDs** and reconciled by the operator.
 - **Durable, high-churn app state** — work items, comments, claims, artifacts, memory, users — lives
   in **Postgres**, behind the apiserver and memory APIs. These are *not* CRDs.
 
