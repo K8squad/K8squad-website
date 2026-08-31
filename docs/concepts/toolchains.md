@@ -2,7 +2,7 @@
 title: Toolchains (Toolchain)
 description: A Toolchain is a versioned, digest-pinned CLI/tool pack staged into Run sandboxes as init containers — and, in the cluster catalog, the only place Kubernetes RBAC authority originates.
 sidebar:
-  order: 6
+  order: 8
 ---
 
 # Toolchains

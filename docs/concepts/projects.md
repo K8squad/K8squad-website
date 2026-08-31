@@ -2,7 +2,7 @@
 title: Projects (Project)
 description: A Project is a repo plus a workspace the squad works against — with source-control sync, an egress policy, and shared goals.
 sidebar:
-  order: 7
+  order: 9
 ---
 
 # Projects

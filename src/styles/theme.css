@@ -72,3 +72,62 @@
 .site-title {
   letter-spacing: -0.01em;
 }
+
+/* ---- Catalog cards (ISI-3472) ----
+ * Graphic, theme-aware navigation cards for the predefined-catalog pages.
+ * Authored as plain HTML inside Markdown (no MDX integration in this site),
+ * styled entirely off Starlight's own tokens so they track light/dark. */
+.ksq-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+.ksq-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.75rem;
+  background: var(--sl-color-gray-6);
+  text-decoration: none;
+  color: var(--sl-color-white);
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+a.ksq-card:hover {
+  border-color: var(--sl-color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -12px var(--sl-color-accent);
+}
+.ksq-card__title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--sl-color-white);
+  line-height: 1.3;
+}
+a.ksq-card .ksq-card__title::after {
+  content: ' →';
+  color: var(--sl-color-accent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+a.ksq-card:hover .ksq-card__title::after {
+  opacity: 1;
+}
+.ksq-card__desc {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--sl-color-gray-3);
+}
+/* Keep inline code legible on the card surface. */
+.ksq-card__title code,
+.ksq-card__desc code {
+  background: var(--sl-color-gray-5);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.85em;
+}
