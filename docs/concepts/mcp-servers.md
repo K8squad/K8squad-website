@@ -2,7 +2,7 @@
 title: MCP Servers (MCPServer)
 description: An MCPServer is a registered Model Context Protocol server — streamable-http or stdio — whose tool surface the control plane discovers, filters, and grants to skills on an allow/deny basis.
 sidebar:
-  order: 5
+  order: 7
 ---
 
 # MCP Servers

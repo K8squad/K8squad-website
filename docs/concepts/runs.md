@@ -2,7 +2,7 @@
 title: Runs (Run)
 description: A Run is a unit of squad work — a reconciled, crash-safe Kubernetes workload that claims a durable work item, gets an isolated sandbox, and drives an agent to completion.
 sidebar:
-  order: 8
+  order: 10
 ---
 
 # Runs

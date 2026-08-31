@@ -1,6 +1,6 @@
 ---
 title: Skills (Skill)
-description: A Skill is a granted capability — the tools, permissions, toolchains, and sidecars an agent may use. Skills can be defined inline or loaded from a pinned Git commit.
+description: A Skill is a granted capability — the tools, permissions, toolchains, and sidecars an agent may use. K8squad ships a predefined catalog of Skills and a ready-to-run BMAD squad; skills can be defined inline or loaded from a pinned Git commit.
 sidebar_position: 4
 ---
 
@@ -93,6 +93,31 @@ as any Run, and private sources use a **BYO read-only Secret** — never a share
 
 Like roles, the `Skill` reconciler validates a skill but doesn't execute it. A skill only takes effect
 when an agent uses it in a Run.
+
+## The predefined catalog — you don't start from an empty cluster
+
+You don't have to author every skill yourself. K8squad ships a **canonical catalog of predefined
+Skills**, a **curated default toolchain set**, and a **ready-to-run BMAD squad** — so a fresh cluster
+comes with capabilities and a team already wired together. Each pillar has its own detail page:
+
+<div class="ksq-cards">
+  <a class="ksq-card" href="./skills-catalog"><span class="ksq-card__title">Predefined skills catalog</span><span class="ksq-card__desc">15 ready-made Skills in K8squad/k8squad-skills — 5 default + 10 dev/debug — versioned, SHA-pinned, apply with one kubectl command.</span></a>
+  <a class="ksq-card" href="./toolchains"><span class="ksq-card__title">Predefined tooling</span><span class="ksq-card__desc">The curated default Toolchain catalog (gh, kubectl, go, node, dtctl, helm, docker-cli …) and how to build your own one-tool image.</span></a>
+  <a class="ksq-card" href="./bmad-squad"><span class="ksq-card__title">Predefined BMAD squad</span><span class="ksq-card__desc">A 13-role CEO → PM / Architect / UX team, pre-wired to the default skills, as a single kubectl apply-able bundle.</span></a>
+</div>
+
+Each predefined skill lives in its own `skills/<name>/` directory in
+**[`K8squad/k8squad-skills`](https://github.com/K8squad/k8squad-skills)** (a pinned `skill.yaml` CR plus
+a `README.md`), so the whole set is versioned and reusable across squads. Add it all with Kustomize —
+no clone needed:
+
+```bash
+# Add every predefined Skill (targets the bmad-squad namespace by default)
+kubectl apply -k github.com/K8squad/k8squad-skills
+```
+
+> Skills require the K8squad CRDs to be installed first (`helm install ksquad ksquad/k8squad …`).
+> See the **[predefined skills catalog](./skills-catalog)** for every skill and its permissions.
 
 ## Related
 

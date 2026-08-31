@@ -2,7 +2,7 @@
 title: Toolchains (Toolchain)
 description: A Toolchain is a versioned, digest-pinned CLI/tool pack staged into Run sandboxes as init containers — and, in the cluster catalog, the only place Kubernetes RBAC authority originates.
 sidebar:
-  order: 6
+  order: 8
 ---
 
 # Toolchains
@@ -37,6 +37,51 @@ spec:
 Every version's image is **digest-pinned** — `tag@sha256:…` is enforced at admission (the tag is for
 humans; only the digest is used for pulling). Toolchain images are one-tool-per-image and
 distroless-style, staged read-only onto a pod-local volume under the Run's sandbox runtime class.
+
+## Building a toolchain image
+
+The `image` a `Toolchain` version points at is not conjured from a package name at Run time — it is a
+**container image you build and publish first**. That is the step people miss: before a utility can be
+staged, its binary has to be baked into a minimal OCI image, pushed to a registry, and referenced by
+digest. Each image stages exactly one tool.
+
+A toolchain `Dockerfile` is deliberately tiny — install (or `COPY --from`) the pinned binary and set
+it as the entrypoint. Three patterns cover almost everything: an `apk`/`apt` package, a static release
+artifact downloaded and unpacked, or a rebase of an official minimal image. The long-tail BYO case —
+your own CLI or something like `jq` — is usually the first pattern:
+
+```dockerfile
+# Dockerfile.toolchain-jq — one tool, minimal base
+FROM alpine:3.21
+RUN apk add --no-cache jq
+ENTRYPOINT ["/usr/bin/jq"]
+```
+
+Build it, push it, and capture the digest the registry returns:
+
+```bash
+docker build -f Dockerfile.toolchain-jq -t ghcr.io/acme/toolchains/jq:1.7 .
+docker push ghcr.io/acme/toolchains/jq:1.7
+# read back the immutable digest to pin against
+docker buildx imagetools inspect ghcr.io/acme/toolchains/jq:1.7 --format '{{.Manifest.Digest}}'
+```
+
+Then reference that digest — never a bare tag — in the `Toolchain` version:
+
+```yaml
+spec:
+  versions:
+    - version: "1.7"
+      image: ghcr.io/acme/toolchains/jq:1.7@sha256:…   # digest from the push above
+      provides: [jq]
+```
+
+The **default catalog** (`kubectl`, `git`, `gh`, `go`, `node`, `dtctl`, `helm`, and long-tail helpers
+like `jq`, `yq`, `curl`, `make`, `docker-cli`) ships pre-built this way — each has a
+`Dockerfile.toolchain-<tool>` in the [K8squad repo](https://github.com/K8squad/K8squad), and the
+`build-images` pipeline builds every one multi-arch, generates an SBOM, gates it through Trivy/Grype,
+cosign-signs it, and digest-pins the published entry in the Helm values. You only build images
+yourself for tools **beyond** that curated set.
 
 ## The cluster catalog
 
