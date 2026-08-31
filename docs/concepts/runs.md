@@ -53,16 +53,16 @@ A Run moves through an explicit set of phases (its `status.phase`):
 ## Fail-closed admission
 
 Before a Run claims anything, the reconciler resolves every participating agent's
-[Skills](./skills) against the capability plane — and **anything unresolvable rejects the Run at
+[Skills](/docs/concepts/skills/) against the capability plane — and **anything unresolvable rejects the Run at
 admission**, with an actionable message, rather than surfacing later as a broken pod:
 
 | Failure at admission | Behavior |
 |---|---|
-| Skill references a missing [MCPServer](./mcp-servers) | Skill admission rejected (dangling `mcpToolRefs`) |
+| Skill references a missing [MCPServer](/docs/concepts/mcp-servers/) | Skill admission rejected (dangling `mcpToolRefs`) |
 | MCP server's tool surface still unknown (discovery hasn't succeeded) | Run stays `Pending`, re-evaluated on server status change |
 | Skill narrows to a tool the server has never observed | Run admission rejected (dangling tool) |
 | Effective MCP tool set empty after narrowing/deny | Run admission rejected |
-| Unknown [Toolchain](./toolchains) `name@version` | Run admission rejected, naming what the catalog carries |
+| Unknown [Toolchain](/docs/concepts/toolchains/) `name@version` | Run admission rejected, naming what the catalog carries |
 | Toolchain version conflict across the Run's skills | Run admission rejected — no silent latest-wins |
 
 The theme: a Run never starts on a half-known capability surface. Combined with the skills-only-narrow
@@ -96,7 +96,7 @@ one agent claims a work item at a time, holds a **lease** on it, and the claim i
 crashed holder's stale writes are rejected. This is what "coordinate through durable work items, never
 peer-to-peer chat" means in practice.
 
-See [Author Guide → Managing work items](../author-guide/work-items).
+See [Author Guide → Managing work items](/docs/author-guide/work-items/).
 
 ## Sandboxes
 
@@ -130,8 +130,8 @@ The Run does **not** inherit the user's session; the sandbox uses only the agent
 
 ## Related
 
-- [Agents](./agents) — who executes a Run.
-- [Skills](./skills), [MCP Servers](./mcp-servers), [Toolchains](./toolchains) — what admission resolves.
-- [Author Guide → Managing work items](../author-guide/work-items) — the coordination record.
-- [Observability](../observability) — Run traces, metrics, and consumption metering.
-- [Troubleshooting](../troubleshooting) — stuck or paused Runs.
+- [Agents](/docs/concepts/agents/) — who executes a Run.
+- [Skills](/docs/concepts/skills/), [MCP Servers](/docs/concepts/mcp-servers/), [Toolchains](/docs/concepts/toolchains/) — what admission resolves.
+- [Author Guide → Managing work items](/docs/author-guide/work-items/) — the coordination record.
+- [Observability](/docs/observability/) — Run traces, metrics, and consumption metering.
+- [Troubleshooting](/docs/troubleshooting/) — stuck or paused Runs.

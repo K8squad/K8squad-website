@@ -10,18 +10,18 @@ This guide is for the **platform engineer** who installs and runs KSquad for a t
 control plane end to end: installing, wiring networking and storage, managing credentials, granting
 human access with RBAC, and tuning runtime settings.
 
-If you just want to try KSquad, start with the [Quickstart](../quickstart). Come back here when you're
+If you just want to try KSquad, start with the [Quickstart](/docs/quickstart/). Come back here when you're
 ready to run it for real.
 
 ## In this guide
 
 | Page | What it covers |
 |------|----------------|
-| [Install & exposure](./install) | `helm install`, dependencies, networking (Gateway API), storage, air-gapped installs, sandbox runtime |
-| [Configuration](./configuration) | Chart values, HA toggles, warm-pool policy, egress defaults, runtime images |
-| [Credentials](./credentials) | Connecting Claude, zero-touch refresh, non-Claude keys, BYO model endpoints, rotation |
-| [RBAC & access levels](./rbac) | Users, roles, per-project access levels, first-run admin, OIDC seam |
-| [Settings](./settings) | Console Settings, `OTelConfig`, plugins, and per-project configuration |
+| [Install & exposure](/docs/operator-guide/install/) | `helm install`, dependencies, networking (Gateway API), storage, air-gapped installs, sandbox runtime |
+| [Configuration](/docs/operator-guide/configuration/) | Chart values, HA toggles, warm-pool policy, egress defaults, runtime images |
+| [Credentials](/docs/operator-guide/credentials/) | Connecting Claude, zero-touch refresh, non-Claude keys, BYO model endpoints, rotation |
+| [RBAC & access levels](/docs/operator-guide/rbac/) | Users, roles, per-project access levels, first-run admin, OIDC seam |
+| [Settings](/docs/operator-guide/settings/) | Console Settings, `OTelConfig`, plugins, and per-project configuration |
 
 ## What you're responsible for
 

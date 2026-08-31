@@ -61,7 +61,7 @@ coordination back-doors.
 
 Anything a Run produces — a build, a diff, a blob — is registered as an **artifact** tied to its work
 item and Run. Artifacts are first-class: you can browse them in the console's build browser, and their
-registration is an event other tools can react to (see the [Plugin SDK](../plugin-sdk)).
+registration is an event other tools can react to (see the [Plugin SDK](/docs/plugin-sdk/)).
 
 ## Human approval gates
 
@@ -74,11 +74,11 @@ sensitive steps.
 ## Inspecting the record
 
 - **Console** — the project board, run streams, build browser, and audit views.
-- **APIs** — the apiserver's coordination endpoints (see the [API Reference](../api-reference)).
-- **Events** — subscribe to work-item lifecycle events with a [plugin](../plugin-sdk).
+- **APIs** — the apiserver's coordination endpoints (see the [API Reference](/docs/api-reference/)).
+- **Events** — subscribe to work-item lifecycle events with a [plugin](/docs/plugin-sdk/).
 
 ## Related
 
-- [Runs](../concepts/runs) — how a Run claims and drives a work item.
-- [Console Guide](../console-guide) — the board, run streams, and build browser.
-- [Plugin SDK](../plugin-sdk) — reacting to work-item events.
+- [Runs](/docs/concepts/runs/) — how a Run claims and drives a work item.
+- [Console Guide](/docs/console-guide/) — the board, run streams, and build browser.
+- [Plugin SDK](/docs/plugin-sdk/) — reacting to work-item events.

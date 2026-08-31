@@ -24,14 +24,14 @@ whether it's required, defaults, and validation. The object catalog:
 
 | Kind | Scope | Purpose | Concept page |
 |------|-------|---------|--------------|
-| `Team` | Namespaced | Squad = tenancy boundary (`projects[]`, `agents[]`, `namespaceStrategy`) | [Squads](../concepts/squads) |
-| `Agent` | Namespaced | One agent (`runtimeRef`, `roleRef`, `skillRefs[]`, `credentialSecretRef`, `model`, `modelEndpointRef?`, `fallbackModel?`, `capabilityOverrides?`) | [Agents](../concepts/agents) |
-| `AgentRuntime` | Namespaced | Coding-agent flavor + CLI version policy (`type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}`) | [Agents](../concepts/agents#agentruntime--the-pluggable-coding-agent-flavor) |
-| `Role` | Namespaced | Behavior profile (`promptRef`, `defaultSkills[]`, `runtimeClassHint`) | [Roles](../concepts/roles) |
-| `Skill` | Namespaced | Granted capability (`source{inline\|git}`, `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}`) | [Skills](../concepts/skills) |
-| `Project` | Namespaced | Repo + workspace (`repo{url,ref,sync}`, `workspacePVC`, `egressPolicyRef`, `goals`, `contextBudget`) | [Projects](../concepts/projects) |
-| `Run` | Namespaced | Unit of work — **spec:** `teamRef`, `projectRef`, `workItemRef`, `inputs`, `sandboxPolicy`, `agents[]`, `retryPolicy`; **status:** `phase`, `sandboxRef`, `claimedAt`, `conditions`, `artifactRefs` | [Runs](../concepts/runs) |
-| `OTelConfig` | Namespaced | OTLP export config (per-signal `exporters{traces,metrics,logs}`) | [Observability](../observability) |
+| `Team` | Namespaced | Squad = tenancy boundary (`projects[]`, `agents[]`, `namespaceStrategy`) | [Squads](/docs/concepts/squads/) |
+| `Agent` | Namespaced | One agent (`runtimeRef`, `roleRef`, `skillRefs[]`, `credentialSecretRef`, `model`, `modelEndpointRef?`, `fallbackModel?`, `capabilityOverrides?`) | [Agents](/docs/concepts/agents/) |
+| `AgentRuntime` | Namespaced | Coding-agent flavor + CLI version policy (`type`, `image`, `cliVersion`, `capabilities{docker,github,packageInstall}`) | [Agents](/docs/concepts/agents/#agentruntime--the-pluggable-coding-agent-flavor) |
+| `Role` | Namespaced | Behavior profile (`promptRef`, `defaultSkills[]`, `runtimeClassHint`) | [Roles](/docs/concepts/roles/) |
+| `Skill` | Namespaced | Granted capability (`source{inline\|git}`, `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}`) | [Skills](/docs/concepts/skills/) |
+| `Project` | Namespaced | Repo + workspace (`repo{url,ref,sync}`, `workspacePVC`, `egressPolicyRef`, `goals`, `contextBudget`) | [Projects](/docs/concepts/projects/) |
+| `Run` | Namespaced | Unit of work — **spec:** `teamRef`, `projectRef`, `workItemRef`, `inputs`, `sandboxPolicy`, `agents[]`, `retryPolicy`; **status:** `phase`, `sandboxRef`, `claimedAt`, `conditions`, `artifactRefs` | [Runs](/docs/concepts/runs/) |
+| `OTelConfig` | Namespaced | OTLP export config (per-signal `exporters{traces,metrics,logs}`) | [Observability](/docs/observability/) |
 
 ### Common metadata
 
@@ -45,7 +45,7 @@ whether it's required, defaults, and validation. The object catalog:
 
 Work items, comments, claims, artifacts, memory records, and users/memberships are **not CRDs** — they
 are durable rows in Postgres behind the apiserver APIs. The `Run` CRD *references* a work item via
-`workItemRef`; it never embeds it. See [The coordination record](../author-guide/work-items).
+`workItemRef`; it never embeds it. See [The coordination record](/docs/author-guide/work-items/).
 
 ## Apiserver REST / BFF APIs
 
@@ -63,13 +63,13 @@ The apiserver exposes the durable record and platform operations. These are the 
 
 > The concrete endpoint paths, request/response schemas, and the OpenAPI/Swagger document are
 > generated and published alongside this reference. Authentication uses the session tokens issued at
-> login; all endpoints enforce the [RBAC model](../operator-guide/rbac) server-side.
+> login; all endpoints enforce the [RBAC model](/docs/operator-guide/rbac/) server-side.
 
 ## Events
 
 Domain events (Run lifecycle, work-item transitions, artifacts, memory writes, sync results, credential
 refresh) are published on a **versioned event catalog** and delivered to plugins over NATS. See the
-[Plugin SDK → Event reference](../plugin-sdk/event-reference) for the subject taxonomy and event
+[Plugin SDK → Event reference](/docs/plugin-sdk/event-reference/) for the subject taxonomy and event
 schemas.
 
 ## Stability

@@ -35,7 +35,7 @@ Every event maps 1:1 onto a real state change (the same transaction that changed
 event). The categories:
 
 ### Run lifecycle
-Entity `run`. Emitted on each phase transition of a [Run](../concepts/runs):
+Entity `run`. Emitted on each phase transition of a [Run](/docs/concepts/runs/):
 
 | `event_type` | Meaning |
 |--------------|---------|
@@ -148,9 +148,9 @@ durable consumer. This is how a plugin catches up after a deploy or an outage wi
 
 The event pipeline is observable: **outbox depth, unflushed-event lag, NATS publish failures, and
 JetStream consumer lag** are OTel metrics. If your plugin seems to be missing events, check these
-first — see [Observability](../observability#platform-health-metrics).
+first — see [Observability](/docs/observability/#platform-health-metrics).
 
 ## Next
 
-- [Hello-world plugin](./hello-world) — subscribe and react to your first event.
-- [Examples](./examples) — notification, mirroring, and dashboard patterns.
+- [Hello-world plugin](/docs/plugin-sdk/hello-world/) — subscribe and react to your first event.
+- [Examples](/docs/plugin-sdk/examples/) — notification, mirroring, and dashboard patterns.

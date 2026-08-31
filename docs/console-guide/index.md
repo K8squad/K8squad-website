@@ -21,7 +21,7 @@ This guide walks the console screen by screen.
 ![Login screen](./images/17-login.png)
 
 Log in with your username and password. On a fresh install you'll use the bootstrap `admin` account
-and be **required to set a new password** (see [RBAC → first-run admin](../operator-guide/rbac#first-run-admin-bootstrap)).
+and be **required to set a new password** (see [RBAC → first-run admin](/docs/operator-guide/rbac/#first-run-admin-bootstrap)).
 If your organization has enabled OIDC/SSO, you'll sign in through your identity provider instead.
 
 ## Navigation & information architecture
@@ -89,7 +89,7 @@ sourced from real signals, never placeholders.
 ![Project tickets board](./images/14-project-tickets.png)
 
 The board is the project's work items — created in the console, synced from source control, or raised
-by agents. This is the human-facing view of the durable [coordination record](../author-guide/work-items).
+by agents. This is the human-facing view of the durable [coordination record](/docs/author-guide/work-items/).
 
 ## Discussion room
 
@@ -127,14 +127,14 @@ model you can also express as YAML for GitOps.
 The Credentials screen is where you **Connect Claude** (one-time OAuth) and see the live state of every
 agent credential — connected, refreshing, or "expired — click to re-login." Credential health is never
 hidden: an expired or rate-limited credential shows a clear status and the action to fix it. See
-[Credentials](../operator-guide/credentials).
+[Credentials](/docs/operator-guide/credentials/).
 
 ## Users & Roles (admin)
 
 ![Users and roles](./images/15-users-roles.png)
 
 Admins manage people here: create and disable users, set global roles, and assign per-project access
-levels (`viewer` / `contributor` / `maintainer`). See [RBAC & access levels](../operator-guide/rbac).
+levels (`viewer` / `contributor` / `maintainer`). See [RBAC & access levels](/docs/operator-guide/rbac/).
 
 ![Mobile role-adaptive view](./images/18-mobile-rbac.png)
 
@@ -146,7 +146,7 @@ level on every device, down to a 360px portrait phone.
 ![Settings](./images/12-settings.png)
 
 Global configuration — telemetry export (`OTelConfig`), plugins, and platform settings — lives here.
-See [Settings](../operator-guide/settings).
+See [Settings](/docs/operator-guide/settings/).
 
 ## Design principles worth knowing
 

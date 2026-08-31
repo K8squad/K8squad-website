@@ -37,7 +37,7 @@ spans following the **OpenTelemetry GenAI semantic conventions**, plus bounded-c
 
 Tool-call arguments are reduced to a hex SHA-256 before they leave the pod — you can see *that* a
 credential-touching tool ran, and correlate it with the Run's
-[capability manifest](../concepts/runs#the-capability-manifest), but secrets and payloads never land
+[capability manifest](/docs/concepts/runs/#the-capability-manifest), but secrets and payloads never land
 in telemetry.
 
 Two plumbing notes:
@@ -91,7 +91,7 @@ spec:
   never inline, and never logged.
 - **Live reconfiguration** — the OTelConfig reconciler applies changes without a restart.
 - **Edit from the console** — Settings → Observability writes it through the apiserver; no direct kube
-  access needed. See [Settings](../operator-guide/settings#telemetry-export-otelconfig).
+  access needed. See [Settings](/docs/operator-guide/settings/#telemetry-export-otelconfig).
 
 ## Consumption metering
 
@@ -117,7 +117,7 @@ system of record** — an honest limit, surfaced, not hidden.
 
 ## Rate-limit & fallback signals
 
-The Run [rate-limit recovery](../concepts/runs#rate-limit-recovery) hierarchy emits named metrics,
+The Run [rate-limit recovery](/docs/concepts/runs/#rate-limit-recovery) hierarchy emits named metrics,
 dimensioned per project / agent / role (plus provider/model):
 
 | Metric | Type | Meaning |
@@ -138,7 +138,7 @@ plugins.
 
 ## Dashboards
 
-The console's per-project [dashboard](../console-guide#project-dashboard) aggregates these signals —
+The console's per-project [dashboard](/docs/console-guide/#project-dashboard) aggregates these signals —
 tickets by status, consumption and its trend, PR status, live Runs — through a pluggable
 metrics-backend query seam, so it works with the metrics backend you already run.
 

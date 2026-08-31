@@ -89,17 +89,17 @@ KSquad holds **no shared master credential**. Three credential shapes ship at v1
 - **Non-Claude runtimes** — a long-lived API key or provider token.
 - **BYO model endpoint** — your own Ollama or OpenAI-compatible server URL.
 
-See [Credentials](../operator-guide/credentials) for the full lifecycle.
+See [Credentials](/docs/operator-guide/credentials/) for the full lifecycle.
 
 ## Model selection and fallback
 
 `spec.model` picks the model; `spec.modelEndpointRef` (optional) points at a BYO endpoint; and
 `spec.fallbackModel` (optional) lets a Run switch models mid-flight if the primary is rate-limited,
-instead of pausing. See [Runs → rate-limit recovery](./runs#rate-limit-recovery).
+instead of pausing. See [Runs → rate-limit recovery](/docs/concepts/runs/#rate-limit-recovery).
 
 ## Related
 
-- [Roles](./roles) — behavior profiles.
-- [Skills](./skills) — granted capabilities.
-- [Runs](./runs) — how agents get work.
-- [Credentials](../operator-guide/credentials) — the credential lifecycle.
+- [Roles](/docs/concepts/roles/) — behavior profiles.
+- [Skills](/docs/concepts/skills/) — granted capabilities.
+- [Runs](/docs/concepts/runs/) — how agents get work.
+- [Credentials](/docs/operator-guide/credentials/) — the credential lifecycle.

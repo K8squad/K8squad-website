@@ -16,9 +16,9 @@ This guide covers the plugin model and its guarantees, then walks you through bu
 
 | Page | What it covers |
 |------|----------------|
-| [Event reference](./event-reference) | The event catalog, subject taxonomy, and event schemas |
-| [Hello-world plugin](./hello-world) | Build and run your first plugin end to end |
-| [Examples](./examples) | Common plugin patterns — notifications, mirroring, dashboards |
+| [Event reference](/docs/plugin-sdk/event-reference/) | The event catalog, subject taxonomy, and event schemas |
+| [Hello-world plugin](/docs/plugin-sdk/hello-world/) | Build and run your first plugin end to end |
+| [Examples](/docs/plugin-sdk/examples/) | Common plugin patterns — notifications, mirroring, dashboards |
 
 ## The plugin model in one picture
 
@@ -76,7 +76,7 @@ control plane that's driving real work.
 - trigger external CI/CD or webhooks off build artifacts.
 
 **Don't reach for a plugin to:**
-- move work between agents — that's the fenced [coordination record](../author-guide/work-items),
+- move work between agents — that's the fenced [coordination record](/docs/author-guide/work-items/),
   never a plugin;
 - inject a credential or resume a Run — a plugin can *signal* "this agent needs a refresh," but the
   refresh stays the control-plane path;
@@ -85,9 +85,9 @@ control plane that's driving real work.
 ## Registering a plugin
 
 Plugins are registered and configured **per project/squad** from the console
-[Settings](../operator-guide/settings#plugins). You provide the plugin's connection details and its
+[Settings](/docs/operator-guide/settings/#plugins). You provide the plugin's connection details and its
 outbound credentials (as BYO Secret refs). From there, subscribe to the subjects you care about — see
-the [Event reference](./event-reference) — and start with the [Hello-world tutorial](./hello-world).
+the [Event reference](/docs/plugin-sdk/event-reference/) — and start with the [Hello-world tutorial](/docs/plugin-sdk/hello-world/).
 
 > **Stability.** The plugin SDK and event catalog ship under `v1alpha1`. Pin an event-schema revision
 > and expect additive, non-breaking evolution.

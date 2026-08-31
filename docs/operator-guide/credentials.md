@@ -101,11 +101,11 @@ kubectl create secret generic hermes-key -n ksquad-system \
 Because each credential is a per-user Secret, provider throttling is a **per-credential** condition —
 one subscription hitting its limit never blocks or mis-charges another. KSquad auto-pauses and
 auto-resumes on the provider's `Retry-After`, applies exponential backoff on repeats, and can re-route
-work to an agent whose credential isn't throttled. See [Runs → rate-limit recovery](../concepts/runs#rate-limit-recovery).
+work to an agent whose credential isn't throttled. See [Runs → rate-limit recovery](/docs/concepts/runs/#rate-limit-recovery).
 
 ## Security discipline
 
 - Tokens live **only** in the per-user Secret — never logged, echoed, or embedded in a CRD.
 - The credential controller holds **no shared master credential**; each principal's Secret is its own.
 - Consumption is **attributable to the owning principal by construction** (there's no shared-credential
-  disambiguation problem) — see [Observability → consumption metering](../observability#consumption-metering).
+  disambiguation problem) — see [Observability → consumption metering](/docs/observability/#consumption-metering).

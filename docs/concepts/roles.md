@@ -34,7 +34,7 @@ spec:
 
 ## Behavior is decoupled from runtime
 
-A crucial separation: a `Role` describes **behavior**, while an [`AgentRuntime`](./agents#agentruntime--the-pluggable-coding-agent-flavor)
+A crucial separation: a `Role` describes **behavior**, while an [`AgentRuntime`](/docs/concepts/agents/#agentruntime--the-pluggable-coding-agent-flavor)
 describes **which coding CLI runs**. Earlier designs conflated the two ("the reviewer image"); KSquad
 keeps them apart so you can:
 
@@ -50,6 +50,6 @@ review, and share as versioned building blocks.
 
 ## Related
 
-- [Agents](./agents) — reference a role via `roleRef`.
-- [Skills](./skills) — what `defaultSkills` grant.
-- [Author Guide → Compose CRDs](../author-guide/compose-crds) — authoring reusable roles.
+- [Agents](/docs/concepts/agents/) — reference a role via `roleRef`.
+- [Skills](/docs/concepts/skills/) — what `defaultSkills` grant.
+- [Author Guide → Compose CRDs](/docs/author-guide/compose-crds/) — authoring reusable roles.

@@ -6,9 +6,10 @@
   "description": "K8squad website + documentation — static site (Astro + Starlight), deployed to GitHub Pages at k8squad.io",
   "scripts": {
     "sync": "node scripts/sync-content.mjs",
+    "check:links": "node scripts/check-relative-links.mjs",
     "predev": "npm run sync",
     "dev": "astro dev",
-    "prebuild": "npm run sync",
+    "prebuild": "npm run check:links && npm run sync",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"

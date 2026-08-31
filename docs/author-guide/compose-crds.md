@@ -7,12 +7,12 @@ sidebar_position: 1
 # Compose CRDs
 
 This page walks through composing a squad from the reusable pieces up, with a complete worked example.
-For field-by-field detail on any object, see the [Core Concepts](../concepts) pages and the
-[API Reference](../api-reference).
+For field-by-field detail on any object, see the [Core Concepts](/docs/concepts/) pages and the
+[API Reference](/docs/api-reference/).
 
 ## 1. Author a Role
 
-A [Role](../concepts/roles) is a reusable behavior profile — keep it about *behavior*, not runtime.
+A [Role](/docs/concepts/roles/) is a reusable behavior profile — keep it about *behavior*, not runtime.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -29,7 +29,7 @@ spec:
 
 ## 2. Author Skills
 
-A [Skill](../concepts/skills) grants capability and declares its own requirements.
+A [Skill](/docs/concepts/skills/) grants capability and declares its own requirements.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -52,7 +52,7 @@ authorized by the CRD**, never widened by repo content.
 
 ## 3. Author Agents
 
-An [Agent](../concepts/agents) combines runtime + role + skills + credential.
+An [Agent](/docs/concepts/agents/) combines runtime + role + skills + credential.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -72,7 +72,7 @@ concurrent Runs on one subscription work (the credential controller keeps the to
 
 ## 4. Author a Project
 
-A [Project](../concepts/projects) is the repo + workspace.
+A [Project](/docs/concepts/projects/) is the repo + workspace.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -92,7 +92,7 @@ spec:
 
 ## 5. Form a Team (Squad)
 
-A [Team](../concepts/squads) groups agents and projects into a squad.
+A [Team](/docs/concepts/squads/) groups agents and projects into a squad.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -107,7 +107,7 @@ The operator reconciles the squad's namespace, RBAC, NetworkPolicy, and quota.
 
 ## 6. Start a Run
 
-A [Run](../concepts/runs) is a unit of work.
+A [Run](/docs/concepts/runs/) is a unit of work.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1

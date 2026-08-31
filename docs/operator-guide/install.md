@@ -104,7 +104,7 @@ Agent code runs in sandboxes under a **RuntimeClass**. gVisor is the recommended
   RuntimeClass; KSquad validates these requirements and fails closed rather than silently
   under-isolating.
 
-See [Configuration → warm pool](./configuration#warm-pool) for pre-warming and sizing.
+See [Configuration → warm pool](/docs/operator-guide/configuration/#warm-pool) for pre-warming and sizing.
 
 ## Air-gapped / offline
 
@@ -120,7 +120,7 @@ air-gapped install:
 
 The chart ships **no baked-in default password**. On install it generates a random admin password into
 the `ksquad-bootstrap-admin` Secret and prints the retrieval command in `NOTES.txt`. You log in once
-and are **forced to rotate** before doing anything else. Full detail in [RBAC → first-run admin](./rbac#first-run-admin-bootstrap).
+and are **forced to rotate** before doing anything else. Full detail in [RBAC → first-run admin](/docs/operator-guide/rbac/#first-run-admin-bootstrap).
 
 ## Uninstall
 
