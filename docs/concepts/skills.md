@@ -162,7 +162,9 @@ helm install ksquad ksquad/k8squad --set tools.defaultCatalog.enabled=true …
 The predefined Skills pin against this catalog, so `github` gets a tested `gh`, `go-build-test` gets a
 tested `go`, and version conflicts across a Run's skills **fail closed** rather than silently picking a
 "latest". Long-tail binaries a skill needs (`ripgrep`, `ast-grep`, `delve`, `grpcurl`, …) are supplied
-by team-namespace Toolchains you define. See [Toolchains](./toolchains) for the full curated set.
+by team-namespace Toolchains you define — which means first
+[building a one-tool image](./toolchains#building-a-toolchain-image) for the utility and pinning it by
+digest. See [Toolchains](./toolchains) for the full curated set.
 
 ## The predefined BMAD squad
 
