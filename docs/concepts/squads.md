@@ -58,11 +58,11 @@ Agents run untrusted code. Anchoring the boundary to a namespace means:
 ## Human access to a Squad
 
 Access is granted **per Project**, not per Squad — a user can be a `viewer` on one project and a
-`maintainer` on another. See [RBAC & access levels](../operator-guide/rbac) for the full model. The
+`maintainer` on another. See [RBAC & access levels](/docs/operator-guide/rbac/) for the full model. The
 squad is the *operational* boundary; the project is the *authorization* boundary.
 
 ## Related
 
-- [Agents](./agents) — the members of a squad.
-- [Projects](./projects) — what a squad works against.
-- [Runs](./runs) — how a squad does work.
+- [Agents](/docs/concepts/agents/) — the members of a squad.
+- [Projects](/docs/concepts/projects/) — what a squad works against.
+- [Runs](/docs/concepts/runs/) — how a squad does work.
