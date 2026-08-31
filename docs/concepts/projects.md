@@ -70,10 +70,10 @@ behaviors (RWX, expansion, snapshots) are documented so you can pre-flight your 
 
 A user's access level (`viewer`, `contributor`, `maintainer`) is held **per Project membership**. The
 same person can be a `maintainer` on one project and a `viewer` on another. See
-[RBAC & access levels](../operator-guide/rbac).
+[RBAC & access levels](/docs/operator-guide/rbac/).
 
 ## Related
 
-- [Squads](./squads) — a squad owns one or more projects.
-- [Runs](./runs) — a Run targets a project.
-- [RBAC & access levels](../operator-guide/rbac) — project-scoped authorization.
+- [Squads](/docs/concepts/squads/) — a squad owns one or more projects.
+- [Runs](/docs/concepts/runs/) — a Run targets a project.
+- [RBAC & access levels](/docs/operator-guide/rbac/) — project-scoped authorization.

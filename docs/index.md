@@ -12,21 +12,21 @@ work items, and runs untrusted agent code in isolated sandboxes — so a crew of
 first-class, legible cluster workload instead of a pile of scripts and API keys.
 
 New here? Read the [one-paragraph overview of how the pieces fit together](#the-model-in-one-paragraph),
-then jump into the [Quickstart](./quickstart).
+then jump into the [Quickstart](/docs/quickstart/).
 
 ## Start here
 
 | If you want to… | Go to |
 |-----------------|-------|
-| Get from empty cluster to first running squad | [Quickstart](./quickstart) |
-| Understand the building blocks | [Core Concepts](./concepts) |
-| Install and run KSquad for a team | [Operator Guide](./operator-guide) |
-| Compose agents, squads, and work items | [Author Guide](./author-guide) |
-| Learn the console screen by screen | [Console Guide](./console-guide) |
-| Look up CRD fields and API objects | [API Reference](./api-reference) |
-| Ship traces, metrics, and logs | [Observability](./observability) |
-| Diagnose a stuck Run or a failed install | [Troubleshooting](./troubleshooting) |
-| Build an integration that reacts to events | [Plugin SDK](./plugin-sdk) |
+| Get from empty cluster to first running squad | [Quickstart](/docs/quickstart/) |
+| Understand the building blocks | [Core Concepts](/docs/concepts/) |
+| Install and run KSquad for a team | [Operator Guide](/docs/operator-guide/) |
+| Compose agents, squads, and work items | [Author Guide](/docs/author-guide/) |
+| Learn the console screen by screen | [Console Guide](/docs/console-guide/) |
+| Look up CRD fields and API objects | [API Reference](/docs/api-reference/) |
+| Ship traces, metrics, and logs | [Observability](/docs/observability/) |
+| Diagnose a stuck Run or a failed install | [Troubleshooting](/docs/troubleshooting/) |
+| Build an integration that reacts to events | [Plugin SDK](/docs/plugin-sdk/) |
 
 ## The model in one paragraph
 

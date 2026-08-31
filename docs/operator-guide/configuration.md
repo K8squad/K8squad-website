@@ -12,18 +12,18 @@ KSquad is configured on two levels:
 - **Runtime / behavior** — CRDs (`AgentRuntime`, `Role`, `Skill`, `Project`, `OTelConfig`) and the
   console **Settings** page.
 
-This page covers the infrastructure level. For behavior, see the [Author Guide](../author-guide) and
-[Settings](./settings).
+This page covers the infrastructure level. For behavior, see the [Author Guide](/docs/author-guide/) and
+[Settings](/docs/operator-guide/settings/).
 
 ## Helm values overview
 
 | Area | Key values | Notes |
 |------|-----------|-------|
 | Storage | `global.storageClassName`, `postgres.storageClassName` | Required; no cluster-default fallback. |
-| Exposure | `exposure.mode`, `exposure.gateway.gatewayClassName`, `exposure.gateway.hostname` | See [Install & exposure](./install#networking--exposure). |
+| Exposure | `exposure.mode`, `exposure.gateway.gatewayClassName`, `exposure.gateway.hostname` | See [Install & exposure](/docs/operator-guide/install/#networking--exposure). |
 | Postgres | `postgres.ha`, `postgres.storageSize` | Single-instance default; HA is a toggle. |
 | Event bus | `nats.ha`, `nats.jetstream.storageSize` | Single-replica default with a JetStream PVC; HA is a toggle. |
-| Auth | `auth.oidc.*`, `auth.session.accessTokenTTL`, `auth.session.refreshTokenTTL` | Local store by default; OIDC opt-in. See [RBAC](./rbac). |
+| Auth | `auth.oidc.*`, `auth.session.accessTokenTTL`, `auth.session.refreshTokenTTL` | Local store by default; OIDC opt-in. See [RBAC](/docs/operator-guide/rbac/). |
 | Warm pool | `sandbox.warmPool.*` | Pre-warm size and policy per runtime. |
 | Egress | `sandbox.egress.defaultPolicy` | The default NetworkPolicy applied to squads. |
 
@@ -84,7 +84,7 @@ pinned and canaried first.
 Language toolchains (`go@1.23`, `node@22`, `python@3.13`, …) are **versioned OCI images** staged as
 init containers at Run time; long-running services (rootless `dockerd`, headless browsers) are
 **sidecars**, capability-gated. You don't pre-build a combinatorial image matrix — skills declare what
-they need and the operator assembles the pod. See [Skills](../concepts/skills).
+they need and the operator assembles the pod. See [Skills](/docs/concepts/skills/).
 
 Pre-pull toolchain and runtime images onto nodes for fast warm starts (this is also what makes
 air-gapped installs practical).
@@ -99,4 +99,4 @@ Each squad gets a default NetworkPolicy. Set the cluster-wide default and overri
 ```
 
 Egress control is part of the safety model — a compromised agent can only reach endpoints it was
-explicitly granted. See [Multi-tenancy & isolation](../concepts/squads#why-the-tenancy-boundary-matters).
+explicitly granted. See [Multi-tenancy & isolation](/docs/concepts/squads/#why-the-tenancy-boundary-matters).

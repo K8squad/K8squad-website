@@ -10,7 +10,7 @@ KSquad has **three distinct identity planes**, and it's worth keeping them strai
 
 1. **Human identity** — who's logged into the console (this page).
 2. **Kubernetes workload RBAC** — what the operator's controllers may do in the cluster.
-3. **Agent credentials** — the per-user Secrets agents authenticate with (see [Credentials](./credentials)).
+3. **Agent credentials** — the per-user Secrets agents authenticate with (see [Credentials](/docs/operator-guide/credentials/)).
 
 This page is about plane 1: **user management and per-project RBAC**, a first-class part of KSquad.
 
@@ -106,5 +106,5 @@ top when you're ready.
 
 ## Related
 
-- [Credentials](./credentials) — the *agent* credential plane (distinct from human identity).
-- [Console Guide](../console-guide) — the Users & Roles and Login screens.
+- [Credentials](/docs/operator-guide/credentials/) — the *agent* credential plane (distinct from human identity).
+- [Console Guide](/docs/console-guide/) — the Users & Roles and Login screens.

@@ -11,14 +11,14 @@ concepts do most of the work. Read them in order the first time; they build on e
 
 | Concept | CRD | One-line definition |
 |---------|-----|---------------------|
-| [Squad](./squads) | `Team` | The tenancy boundary — a crew of agents and the projects they own. |
-| [Agent](./agents) | `Agent` (+ `AgentRuntime`) | One agent instance: a runtime + a role + skills + a credential. |
-| [Role](./roles) | `Role` | A reusable behavior profile — how an agent thinks and acts. |
-| [Skill](./skills) | `Skill` | A granted capability — what tools an agent may use. |
-| [MCP Server](./mcp-servers) | `MCPServer` | A registered MCP endpoint whose tools the control plane discovers and filters. |
-| [Toolchain](./toolchains) | `Toolchain` | A versioned, digest-pinned tool pack staged into Runs — and the origin of RBAC authority. |
-| [Project](./projects) | `Project` | A repo plus a workspace the squad works against. |
-| [Run](./runs) | `Run` | A unit of squad work — a reconciled, crash-safe workload. |
+| [Squad](/docs/concepts/squads/) | `Team` | The tenancy boundary — a crew of agents and the projects they own. |
+| [Agent](/docs/concepts/agents/) | `Agent` (+ `AgentRuntime`) | One agent instance: a runtime + a role + skills + a credential. |
+| [Role](/docs/concepts/roles/) | `Role` | A reusable behavior profile — how an agent thinks and acts. |
+| [Skill](/docs/concepts/skills/) | `Skill` | A granted capability — what tools an agent may use. |
+| [MCP Server](/docs/concepts/mcp-servers/) | `MCPServer` | A registered MCP endpoint whose tools the control plane discovers and filters. |
+| [Toolchain](/docs/concepts/toolchains/) | `Toolchain` | A versioned, digest-pinned tool pack staged into Runs — and the origin of RBAC authority. |
+| [Project](/docs/concepts/projects/) | `Project` | A repo plus a workspace the squad works against. |
+| [Run](/docs/concepts/runs/) | `Run` | A unit of squad work — a reconciled, crash-safe workload. |
 
 ## How they fit together
 

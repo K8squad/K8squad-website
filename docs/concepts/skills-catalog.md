@@ -6,7 +6,7 @@ sidebar_position: 5
 
 # Predefined skills catalog
 
-K8squad publishes a catalog of ready-made **[Skills](./skills)** in the dedicated repo
+K8squad publishes a catalog of ready-made **[Skills](/docs/concepts/skills/)** in the dedicated repo
 **[`K8squad/k8squad-skills`](https://github.com/K8squad/k8squad-skills)**. Each skill lives in its own
 `skills/<name>/` directory — a pinned `skill.yaml` CR plus a `README.md` documenting its purpose,
 permissions, and role wiring — so the whole set is versioned, SHA-pinned, and reusable across squads.
@@ -27,7 +27,7 @@ kubectl apply -f https://raw.githubusercontent.com/K8squad/k8squad-skills/main/s
 ## Default skills
 
 The broadly useful capabilities most squads want out of the box. The
-[predefined BMAD squad](./bmad-squad) ships the first four wired to roles for you.
+[predefined BMAD squad](/docs/concepts/bmad-squad/) ships the first four wired to roles for you.
 
 <div class="ksq-cards">
   <a class="ksq-card" href="https://github.com/K8squad/k8squad-skills/tree/main/skills/bmad"><span class="ksq-card__title"><code>bmad</code></span><span class="ksq-card__desc">The shared BMAD phased-workflow method (inline) — granted to every role.</span></a>
@@ -61,6 +61,6 @@ permissions and the recommended role → skill matrix.
 
 ## Related
 
-- [Skills](./skills) — the `Skill` CRD these entries are instances of.
-- [Toolchains](./toolchains) — the tooling most catalog skills grant, and how to build your own.
-- [Predefined BMAD squad](./bmad-squad) — a ready-made team wired to these skills.
+- [Skills](/docs/concepts/skills/) — the `Skill` CRD these entries are instances of.
+- [Toolchains](/docs/concepts/toolchains/) — the tooling most catalog skills grant, and how to build your own.
+- [Predefined BMAD squad](/docs/concepts/bmad-squad/) — a ready-made team wired to these skills.

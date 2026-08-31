@@ -6,7 +6,7 @@ sidebar_position: 3
 
 # Plugin examples
 
-These are the patterns most teams reach for. Each builds on the [hello-world](./hello-world) shape —
+These are the patterns most teams reach for. Each builds on the [hello-world](/docs/plugin-sdk/hello-world/) shape —
 subscribe to a subject, handle idempotently, stay an observer — and shows where the **read-in via
 events / write-out via public APIs** boundary lands.
 
@@ -55,7 +55,7 @@ func onWorkItem(e Event) {
 
 **Boundary reminder:** this mirrors *out*. The plugin reads work-item events and writes to Jira. It
 does **not** — and cannot — move the KSquad work item; that stays in the fenced
-[coordination record](../author-guide/work-items).
+[coordination record](/docs/author-guide/work-items/).
 
 ## 3. Feed a custom dashboard or warehouse
 
@@ -113,6 +113,6 @@ observe-only rule applied to the one event that most tempts you to break it.
 
 ## Related
 
-- [Plugin SDK overview](./index) — the model and its guarantees.
-- [Event reference](./event-reference) — the full catalog and subject taxonomy.
-- [Observability](../observability#platform-health-metrics) — monitoring the event seam.
+- [Plugin SDK overview](/docs/plugin-sdk/) — the model and its guarantees.
+- [Event reference](/docs/plugin-sdk/event-reference/) — the full catalog and subject taxonomy.
+- [Observability](/docs/observability/#platform-health-metrics) — monitoring the event seam.

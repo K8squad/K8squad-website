@@ -10,7 +10,7 @@ sidebar:
 **CRD:** `Toolchain` (`ksquad.io/v1alpha1`)
 
 A **Toolchain** is a versioned pack of tools — `gh`, `kubectl`, `go`, `node`, `dtctl`, `helm`, or
-your own long-tail binaries — that [Skills](./skills) can require via `requires.toolchains` entries
+your own long-tail binaries — that [Skills](/docs/concepts/skills/) can require via `requires.toolchains` entries
 like `gh@2.62`. At Run time the operator stages each resolved pack as an **init container** onto a
 shared volume mounted read-only, with `PATH` pointing at it: the binary is present *before* the agent
 runtime starts, and it costs nothing once the Run is running (languages are files).
@@ -126,7 +126,7 @@ so it is garbage-collected when the Run completes. Two consequences worth intern
 - `kubectl auth can-i --as=system:serviceaccount:<team>:ksquad-agent` returns permissions **only
   while a Run requiring the toolchain is live**. The baseline team Role stays empty.
 - The union is recorded verbatim in the Run's
-  [capability manifest](./runs#the-capability-manifest), so "which Run got which permissions through
+  [capability manifest](/docs/concepts/runs/#the-capability-manifest), so "which Run got which permissions through
   which toolchain" is answerable after the fact.
 
 Version conflicts fail closed up front: two skills pinning `node@22` and `node@20` in one Run is an
@@ -134,6 +134,6 @@ admission rejection, not a silent latest-wins.
 
 ## Related
 
-- [Skills](./skills) — `requires.toolchains` is how a skill demands a pack.
-- [MCP Servers](./mcp-servers) — the other half of the capability plane.
-- [Runs](./runs) — assembly, the per-Run Role, and the capability manifest.
+- [Skills](/docs/concepts/skills/) — `requires.toolchains` is how a skill demands a pack.
+- [MCP Servers](/docs/concepts/mcp-servers/) — the other half of the capability plane.
+- [Runs](/docs/concepts/runs/) — assembly, the per-Run Role, and the capability manifest.

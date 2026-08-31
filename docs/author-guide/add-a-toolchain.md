@@ -11,7 +11,7 @@ CLI the default catalog doesn't ship, or your own internal binary. This page
 walks you through making it available end to end.
 
 For the *what* and *why* behind toolchains — staging, the RBAC trust boundary,
-the per-Run Role — read the [Toolchains concept page](../concepts/toolchains).
+the per-Run Role — read the [Toolchains concept page](/docs/concepts/toolchains/).
 This is the *how-do-I* task.
 
 ## Before you start
@@ -36,7 +36,7 @@ The distinction is a **trust boundary**, not just tidiness: Kubernetes RBAC
 authority can originate *only* from the cluster catalog. A team-namespace
 Toolchain may grant no new API access — it can only stage a binary, or *narrow*
 an existing catalog entry of the same name. See
-[The RBAC trust boundary](../concepts/toolchains#the-rbac-trust-boundary).
+[The RBAC trust boundary](/docs/concepts/toolchains/#the-rbac-trust-boundary).
 
 Most BYO tools (a linter, a custom CLI) need no Kubernetes access at all, so the
 team path is self-service and unblocked.
@@ -116,7 +116,7 @@ the catalog carries. Nothing stages silently.
 Run a squad whose skill requires the toolchain, then check:
 
 - **The Run is admitted** — resolution succeeded and the image staged onto
-  `PATH`. The Run's [capability manifest](../concepts/runs#the-capability-manifest)
+  `PATH`. The Run's [capability manifest](/docs/concepts/runs/#the-capability-manifest)
   records the resolved image and any granted RBAC.
 - **If you declared RBAC**, the intended API calls succeed inside the Run and
   nothing broader does. Permissions exist *only while the Run is live*:
@@ -141,6 +141,6 @@ refs, least-privilege RBAC, CI gates).
 
 ## Related
 
-- [Toolchains concept](../concepts/toolchains) — staging, catalog, RBAC boundary
-- [Skills concept](../concepts/skills) — `requires.toolchains`
-- [Compose CRDs](./compose-crds) — the full composition order
+- [Toolchains concept](/docs/concepts/toolchains/) — staging, catalog, RBAC boundary
+- [Skills concept](/docs/concepts/skills/) — `requires.toolchains`
+- [Compose CRDs](/docs/author-guide/compose-crds/) — the full composition order

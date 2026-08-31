@@ -8,7 +8,7 @@ sidebar_position: 6
 
 To go from an empty cluster to a working team without hand-authoring a dozen roles, K8squad ships a
 **predefined BMAD squad** — 13 roles in a proven CEO → PM / Architect / UX hierarchy, pre-wired with
-the [default skills](./skills-catalog#default-skills) — as a single `kubectl apply`-able bundle in
+the [default skills](/docs/concepts/skills-catalog/#default-skills) — as a single `kubectl apply`-able bundle in
 [`examples/bmad-team/`](https://github.com/K8squad/K8squad/tree/main/examples/bmad-team).
 
 ## The org chart
@@ -79,6 +79,6 @@ spec:
 
 ## Related
 
-- [Predefined skills catalog](./skills-catalog) — the skills the squad is wired to.
-- [Roles](./roles) — `defaultSkills` grant skills by default.
-- [Agents](./agents) — `skillRefs` grant skills per agent.
+- [Predefined skills catalog](/docs/concepts/skills-catalog/) — the skills the squad is wired to.
+- [Roles](/docs/concepts/roles/) — `defaultSkills` grant skills by default.
+- [Agents](/docs/concepts/agents/) — `skillRefs` grant skills per agent.

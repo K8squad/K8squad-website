@@ -10,7 +10,7 @@ sidebar:
 **CRD:** `MCPServer` (`ksquad.io/v1alpha1`)
 
 An **MCPServer** is a registered [Model Context Protocol](https://modelcontextprotocol.io) server —
-the endpoint that serves *tools* to your agents. Where a [Skill](./skills) declares *which* servers an
+the endpoint that serves *tools* to your agents. Where a [Skill](/docs/concepts/skills/) declares *which* servers an
 agent may reach, the `MCPServer` CRD declares *what each server is*: its transport, its endpoint or
 command, its credential, and the **tool envelope** (allow/deny globs) the cluster is willing to grant
 from it.
@@ -79,7 +79,7 @@ corners.
 
 The trust rule that matters:
 
-> **A [Skill](./skills) may only *narrow* a server's `toolFilter`, never widen it.**
+> **A [Skill](/docs/concepts/skills/) may only *narrow* a server's `toolFilter`, never widen it.**
 
 At Run assembly the effective tool set is `server.allow (empty = observedTools) ∩ skill narrowing −
 deny`. A skill that narrows to a tool the server has never observed is a **fail-closed rejection** at
@@ -111,6 +111,6 @@ fail-closes a Run whose server has a missing or broken egress policy. Discovery 
 
 ## Related
 
-- [Skills](./skills) — `mcpToolRefs` bind skills to servers; skills only narrow.
-- [Toolchains](./toolchains) — the other half of the capability plane (CLI/tool packs).
-- [Runs](./runs) — assembly computes the effective tool set and records it in the capability manifest.
+- [Skills](/docs/concepts/skills/) — `mcpToolRefs` bind skills to servers; skills only narrow.
+- [Toolchains](/docs/concepts/toolchains/) — the other half of the capability plane (CLI/tool packs).
+- [Runs](/docs/concepts/runs/) — assembly computes the effective tool set and records it in the capability manifest.

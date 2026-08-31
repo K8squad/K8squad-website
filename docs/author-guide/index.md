@@ -7,7 +7,7 @@ sidebar_position: 4
 # Author Guide
 
 This guide is for the **squad author** — the person who composes agents, roles, skills, and squads, and
-drives work through them. Where the [Operator Guide](../operator-guide) is about running the platform,
+drives work through them. Where the [Operator Guide](/docs/operator-guide/) is about running the platform,
 this guide is about *using* it to get work done.
 
 You'll compose everything as CRDs (from the console or with `kubectl`) and manage work through the
@@ -17,9 +17,9 @@ durable coordination record.
 
 | Page | What it covers |
 |------|----------------|
-| [Compose CRDs](./compose-crds) | Authoring Roles, Skills, Agents, Teams, Projects, and Runs — the composition order and good patterns |
-| [Managing work items](./work-items) | The coordination record — creating, claiming, commenting, artifacts, and approvals |
-| [Add a toolchain](./add-a-toolchain) | Make a new CLI tool available to your squads — define a Toolchain, pin it in a skill, confirm it stages |
+| [Compose CRDs](/docs/author-guide/compose-crds/) | Authoring Roles, Skills, Agents, Teams, Projects, and Runs — the composition order and good patterns |
+| [Managing work items](/docs/author-guide/work-items/) | The coordination record — creating, claiming, commenting, artifacts, and approvals |
+| [Add a toolchain](/docs/author-guide/add-a-toolchain/) | Make a new CLI tool available to your squads — define a Toolchain, pin it in a skill, confirm it stages |
 
 ## The composition order
 

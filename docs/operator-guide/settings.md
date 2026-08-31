@@ -46,23 +46,23 @@ spec:
   exporter without a restart.
 - The default is **no exporter** — a privacy-safe default (don't egress telemetry unless asked).
 
-Full detail in [Observability](../observability).
+Full detail in [Observability](/docs/observability/).
 
 ## Plugins
 
 Register and configure **plugins** per project/squad from Settings. Plugins are **out-of-process,
 read-only observers** of the event stream — a failing plugin can never block a Run, a claim, or a
-memory write. See the [Plugin SDK](../plugin-sdk) for building one, and configure outbound plugin
+memory write. See the [Plugin SDK](/docs/plugin-sdk/) for building one, and configure outbound plugin
 credentials as BYO per-user Secrets (never a shared master credential).
 
 ## Project configuration
 
 Per-project settings — repo sync, workspace, egress policy, goals, and context budget — are edited on
-the project itself. See [Projects](../concepts/projects) and the [Author Guide](../author-guide).
+the project itself. See [Projects](/docs/concepts/projects/) and the [Author Guide](/docs/author-guide/).
 
 ## Who can change what
 
-Settings visibility and edit rights follow the [RBAC model](./rbac):
+Settings visibility and edit rights follow the [RBAC model](/docs/operator-guide/rbac/):
 
 - **`admin`** — global settings (telemetry, plugins, users, credentials).
 - **`maintainer`** — a project's own settings and membership.

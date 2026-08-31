@@ -30,18 +30,18 @@ spec:
 
 ## What a Skill grants
 
-- **`mcpToolRefs`** — the [MCPServer](./mcp-servers) objects whose tools the skill exposes to the
+- **`mcpToolRefs`** — the [MCPServer](/docs/concepts/mcp-servers/) objects whose tools the skill exposes to the
   agent. Every ref must resolve to an existing `MCPServer` at admission — a dangling ref rejects the
   skill. And the skill may only **narrow** the server's `toolFilter`, never widen it (below).
 - **`permissions`** — the permission envelope (for example, workspace write vs. read-only).
 - **`requires.toolchains`** — language/CLI packs (`gh@2.62`, `go@1.23`, `node@22`, …), resolved as
-  `name@version` against the [Toolchain](./toolchains) catalog. At Run time the operator stages each
+  `name@version` against the [Toolchain](/docs/concepts/toolchains/) catalog. At Run time the operator stages each
   resolved pack as an **init container** into a shared volume — languages are *files*, so they cost
   nothing once the Run is running. An unknown name/version fails Run admission with an actionable
   message.
 - **`requires.sidecars`** — genuine long-running services (rootless `dockerd`, a headless browser, an
   ephemeral DB). These become **sidecar** containers, and they're **capability-gated**: a sidecar whose
-  capability the agent's runtime disables is rejected. stdio [MCP servers](./mcp-servers) with an
+  capability the agent's runtime disables is rejected. stdio [MCP servers](/docs/concepts/mcp-servers/) with an
   `image` ride the same mechanism.
 
 ## Self-describing skills, operator-assembled pods
@@ -81,7 +81,7 @@ escalation. KSquad prevents this:
 > *behavior* (prompts, instructions, scripts) inside that envelope; it can never widen it.
 
 The same one-way rule governs MCP tools: a skill selecting an
-[MCPServer](./mcp-servers) via `mcpToolRefs` may only **narrow** the server's `toolFilter` —
+[MCPServer](/docs/concepts/mcp-servers/) via `mcpToolRefs` may only **narrow** the server's `toolFilter` —
 intersect it, subtract from it — never widen it. At Run assembly the effective tool set is computed
 server-side (`server.allow ∩ skill narrowing − deny`) and a narrowing that references a tool the
 server has never observed, or that leaves the effective set empty, **fails Run admission closed**.
@@ -101,9 +101,9 @@ Skills**, a **curated default toolchain set**, and a **ready-to-run BMAD squad**
 comes with capabilities and a team already wired together. Each pillar has its own detail page:
 
 <div class="ksq-cards">
-  <a class="ksq-card" href="./skills-catalog"><span class="ksq-card__title">Predefined skills catalog</span><span class="ksq-card__desc">15 ready-made Skills in K8squad/k8squad-skills — 5 default + 10 dev/debug — versioned, SHA-pinned, apply with one kubectl command.</span></a>
-  <a class="ksq-card" href="./toolchains"><span class="ksq-card__title">Predefined tooling</span><span class="ksq-card__desc">The curated default Toolchain catalog (gh, kubectl, go, node, dtctl, helm, docker-cli …) and how to build your own one-tool image.</span></a>
-  <a class="ksq-card" href="./bmad-squad"><span class="ksq-card__title">Predefined BMAD squad</span><span class="ksq-card__desc">A 13-role CEO → PM / Architect / UX team, pre-wired to the default skills, as a single kubectl apply-able bundle.</span></a>
+  <a class="ksq-card" href="/docs/concepts/skills-catalog/"><span class="ksq-card__title">Predefined skills catalog</span><span class="ksq-card__desc">15 ready-made Skills in K8squad/k8squad-skills — 5 default + 10 dev/debug — versioned, SHA-pinned, apply with one kubectl command.</span></a>
+  <a class="ksq-card" href="/docs/concepts/toolchains/"><span class="ksq-card__title">Predefined tooling</span><span class="ksq-card__desc">The curated default Toolchain catalog (gh, kubectl, go, node, dtctl, helm, docker-cli …) and how to build your own one-tool image.</span></a>
+  <a class="ksq-card" href="/docs/concepts/bmad-squad/"><span class="ksq-card__title">Predefined BMAD squad</span><span class="ksq-card__desc">A 13-role CEO → PM / Architect / UX team, pre-wired to the default skills, as a single kubectl apply-able bundle.</span></a>
 </div>
 
 Each predefined skill lives in its own `skills/<name>/` directory in
@@ -117,12 +117,12 @@ kubectl apply -k github.com/K8squad/k8squad-skills
 ```
 
 > Skills require the K8squad CRDs to be installed first (`helm install ksquad ksquad/k8squad …`).
-> See the **[predefined skills catalog](./skills-catalog)** for every skill and its permissions.
+> See the **[predefined skills catalog](/docs/concepts/skills-catalog/)** for every skill and its permissions.
 
 ## Related
 
-- [Agents](./agents) — reference skills via `skillRefs`.
-- [Roles](./roles) — `defaultSkills` grant skills by default.
-- [MCP Servers](./mcp-servers) — what `mcpToolRefs` resolves against; skills only narrow.
-- [Toolchains](./toolchains) — what `requires.toolchains` resolves against.
-- [Runs](./runs) — how skill requirements assemble a sandbox.
+- [Agents](/docs/concepts/agents/) — reference skills via `skillRefs`.
+- [Roles](/docs/concepts/roles/) — `defaultSkills` grant skills by default.
+- [MCP Servers](/docs/concepts/mcp-servers/) — what `mcpToolRefs` resolves against; skills only narrow.
+- [Toolchains](/docs/concepts/toolchains/) — what `requires.toolchains` resolves against.
+- [Runs](/docs/concepts/runs/) — how skill requirements assemble a sandbox.

@@ -10,7 +10,7 @@ In this tutorial you'll build a minimal KSquad plugin that **prints a line every
 completes**. It's deliberately tiny — the point is to learn the shape: subscribe to a subject, handle
 an event idempotently, and stay a read-only observer.
 
-> **Prerequisites:** a running KSquad install ([Quickstart](../quickstart)), and the ability to run a
+> **Prerequisites:** a running KSquad install ([Quickstart](/docs/quickstart/)), and the ability to run a
 > small service that can reach the cluster's NATS. Any NATS client works — a plugin is just a NATS
 > subscriber — but this tutorial uses Go to match KSquad's own stack.
 
@@ -18,7 +18,7 @@ an event idempotently, and stay a read-only observer.
 
 A standalone service that subscribes to `ksquad.run.*.*.succeeded` and logs each completed Run. No
 state is mutated; nothing can block the platform. When you've got this working, swapping the log line
-for a Slack post (see [Examples](./examples)) is a one-line change.
+for a Slack post (see [Examples](/docs/plugin-sdk/examples/)) is a one-line change.
 
 ## 2. Register the plugin & get NATS access
 
@@ -120,7 +120,7 @@ func main() {
 ## 4. The three things this teaches
 
 - **Subscribe by subject.** `FilterSubject: "ksquad.run.*.*.succeeded"` uses the
-  [subject taxonomy](./event-reference#subject-taxonomy) wildcards. Narrow it to one project with
+  [subject taxonomy](/docs/plugin-sdk/event-reference/#subject-taxonomy) wildcards. Narrow it to one project with
   `ksquad.run.payments.*.succeeded`.
 - **Be idempotent.** Delivery is at-least-once, so we dedupe on the event `id` and **ack only after**
   the work is done. If your handler dies before the ack, JetStream redelivers — and the dedupe makes
@@ -144,7 +144,7 @@ missed. That's the whole model.
 ## 6. Where to go next
 
 - **Do something useful:** swap the `log.Printf` for a Slack/webhook call. Remember: outbound calls go
-  through a normal, audited API client with a **BYO Secret** — see [Examples](./examples).
+  through a normal, audited API client with a **BYO Secret** — see [Examples](/docs/plugin-sdk/examples/).
 - **Widen or narrow the subjects:** subscribe to work-item claims, artifact registrations, or sync
-  results — see the [Event reference](./event-reference#the-event-taxonomy).
+  results — see the [Event reference](/docs/plugin-sdk/event-reference/#the-event-taxonomy).
 - **Pin your schema revision** so platform upgrades don't surprise you.
