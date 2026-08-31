@@ -19,6 +19,7 @@ durable coordination record.
 |------|----------------|
 | [Compose CRDs](./compose-crds) | Authoring Roles, Skills, Agents, Teams, Projects, and Runs — the composition order and good patterns |
 | [Managing work items](./work-items) | The coordination record — creating, claiming, commenting, artifacts, and approvals |
+| [Add a toolchain](./add-a-toolchain) | Make a new CLI tool available to your squads — define a Toolchain, pin it in a skill, confirm it stages |
 
 ## The composition order
 
