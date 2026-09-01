@@ -35,7 +35,7 @@ single-replica defaults and HA behind a values toggle. Everything else is statel
 ## Install
 
 ```bash
-helm repo add ksquad https://k8squad.io/charts
+helm repo add ksquad https://charts.k8squad.io
 helm repo update
 
 helm install ksquad ksquad/ksquad \
