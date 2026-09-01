@@ -6,21 +6,26 @@ sidebar_position: 1
 
 # Install & exposure
 
-KSquad installs with a **single `helm install`**. This page covers what that brings up, the two
-decisions the chart won't guess for you (exposure and storage), the sandbox runtime, and air-gapped
-installs.
+KSquad installs with **two Helm charts**: a small `k8squad-crds` chart that owns the `ksquad.io`
+CRDs, installed first, then the control-plane chart. This page covers what they bring up, the CRD
+lifecycle, the two decisions the chart won't guess for you (exposure and storage), the sandbox
+runtime, and air-gapped installs.
 
-## What one install brings up
+## What an install brings up
 
-One `helm install` deploys `ksquad-system`:
+Two charts deploy into `ksquad-system`:
 
-- **CRDs** and the **operator** (controllers for every CRD)
-- the **apiserver** (coordination record, audit, SSE, source-control webhooks, and the built-in auth +
+- **`k8squad-crds`** — the eleven `ksquad.io` CRDs, in their own chart so they can be upgraded
+  independently of the control plane and are never removed by a control-plane uninstall (see
+  [CRD lifecycle & upgrades](#crd-lifecycle--upgrades)).
+- **`ksquad`** — the control plane:
+  - the **operator** (controllers for every CRD)
+  - the **apiserver** (coordination record, audit, SSE, source-control webhooks, and the built-in auth +
   RBAC middleware)
-- the **memory service** (the knowledge record)
-- the **console**
-- **Postgres** (bundled via CNPG — the sole store of record)
-- **NATS/JetStream** (the plugin event bus — event flow only, no state of record)
+  - the **memory service** (the knowledge record)
+  - the **console**
+  - **Postgres** (bundled via CNPG — the sole store of record)
+  - **NATS/JetStream** (the plugin event bus — event flow only, no state of record)
 
 Postgres and NATS are the only two stateful dependencies, both boring Helm subcharts with
 single-replica defaults and HA behind a values toggle. Everything else is stateless.
@@ -34,12 +39,19 @@ single-replica defaults and HA behind a values toggle. Everything else is statel
 
 ## Install
 
+Install the CRD chart first, then the control plane, into the same namespace.
+
 ```bash
-helm repo add ksquad https://k8squad.io/charts
+helm repo add ksquad https://charts.k8squad.io
 helm repo update
 
-helm install ksquad ksquad/ksquad \
-  --namespace ksquad-system --create-namespace \
+# 1. CRDs (their own chart, installed first)
+helm install k8squad-crds ksquad/k8squad-crds \
+  --namespace ksquad-system --create-namespace --wait
+
+# 2. Control plane
+helm install ksquad ksquad/k8squad \
+  --namespace ksquad-system \
   --set global.storageClassName=fast-ssd \
   --set exposure.mode=gateway \
   --set exposure.gateway.gatewayClassName=cilium \
@@ -52,6 +64,49 @@ Then confirm the control plane is healthy:
 kubectl -n ksquad-system get pods
 kubectl -n ksquad-system rollout status deploy/ksquad-apiserver
 ```
+
+## CRD lifecycle & upgrades
+
+KSquad delivers its `ksquad.io` CRDs in a **dedicated `k8squad-crds` chart**, separate from the
+control-plane chart. This is deliberate: Helm's control-plane release owns **zero** CRDs, so the CRD
+schema has its own upgrade lifecycle and can never be dropped by a control-plane uninstall.
+
+**Why a separate chart**
+
+- **Upgrades actually propagate.** Because the CRDs are ordinary templated resources in the
+  `k8squad-crds` release, `helm upgrade k8squad-crds` reconciles their schema (new fields, versions,
+  validation rules) via Helm's three-way merge — no hand-run `kubectl apply`.
+- **Your resources survive uninstall.** Each CRD carries `helm.sh/resource-policy: keep`, so a
+  `helm uninstall` (of either chart) never deletes the CRDs or the `Project`/`Team`/`Run`/… custom
+  resources you created.
+
+**Upgrade order — CRDs first, always**
+
+```bash
+helm repo update
+helm upgrade k8squad-crds ksquad/k8squad-crds --wait   # 1. CRD schema first
+helm upgrade ksquad       ksquad/k8squad                # 2. then the control plane
+```
+
+The control-plane chart declares the minimum CRD schema it needs via the
+`k8squad.io/min-crds-version` annotation. **Always move the CRD chart to a version ≥ that minimum
+before upgrading the control plane.** A newer `k8squad-crds` chart is always safe ahead of the control
+plane — CRD changes within a major version are additive-only (see the versioning policy below).
+
+**Breaking CRD changes**
+
+Within the pre-1.0 `v1alpha1` API, CRD changes are **additive-only** and need no migration. A genuinely
+breaking change ships a **new served API version** alongside the old one with a conversion path, and a
+per-release migration notice — never an in-place schema shrink that would reject your existing
+resources. Full policy and the per-release notice template:
+[CRD upgrade & migration guide](https://github.com/K8squad/k8squad/blob/main/docs/crd-upgrade-migration.md).
+
+**Migrating an existing single-chart install**
+
+Earlier KSquad releases bundled the CRDs inside the control-plane chart. Because those CRDs were already
+annotated to be retained, adopting the separate chart is data-safe: install `k8squad-crds` (it adopts
+the existing CRDs in place), then continue upgrading both charts as above. Your custom resources are
+untouched throughout. The exact adopt-in one-liner ships in the `k8squad-crds` chart notes.
 
 ## Networking & exposure
 
@@ -124,9 +179,16 @@ and are **forced to rotate** before doing anything else. Full detail in [RBAC �
 
 ## Uninstall
 
+Uninstall the control plane; the CRD chart is a separate release:
+
 ```bash
 helm uninstall ksquad -n ksquad-system
+# CRDs are a separate release — removing them is a deliberate, separate step:
+# helm uninstall k8squad-crds -n ksquad-system
 ```
 
-CRDs and PVCs are retained by default so you don't lose the coordination and knowledge records. Remove
-them explicitly if you intend a full teardown.
+CRDs, your custom resources, and PVCs are **retained by default** so you don't lose the coordination and
+knowledge records — the CRDs via `helm.sh/resource-policy: keep`, so even
+`helm uninstall k8squad-crds` leaves the `Project`/`Team`/`Run`/… objects in place. Delete the CRDs and
+PVCs explicitly only if you intend a full teardown (removing a CRD cascades a delete of every custom
+resource of that kind cluster-wide).
