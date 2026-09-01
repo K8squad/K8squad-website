@@ -27,17 +27,30 @@ KSquad, connect a credential, define a couple of agents, point them at a repo, a
 > **Air-gapped?** KSquad is mirror-friendly — pinned image versions and node pre-pull. See
 > [Operator Guide → Air-gapped installs](./operator-guide/install#air-gapped--offline).
 
-## 1. Install the control plane (≈5 min)
+## 1. Install KSquad — CRDs first, then the control plane (≈5 min)
 
-Add the chart repository and install into a dedicated namespace. You must name a `storageClassName`
-and pick an exposure mode.
+KSquad ships its `ksquad.io` CustomResourceDefinitions (CRDs) in a **separate `k8squad-crds`
+chart**, installed **before** the control plane. Keeping CRDs in their own chart lets you upgrade the
+CRD schema independently (with `helm upgrade`, not a hand-run `kubectl apply`) and guarantees a
+`helm uninstall` of the control plane never removes your custom resources. See
+[CRD lifecycle & upgrades](./operator-guide/install#crd-lifecycle--upgrades) for the full model.
+
+**Step 1a — install the CRDs:**
 
 ```bash
 helm repo add ksquad https://k8squad.io/charts
 helm repo update
 
+helm install k8squad-crds ksquad/k8squad-crds \
+  --namespace ksquad-system --create-namespace --wait
+```
+
+**Step 1b — install the control plane** into the same namespace. You must name a `storageClassName`
+and pick an exposure mode.
+
+```bash
 helm install ksquad ksquad/ksquad \
-  --namespace ksquad-system --create-namespace \
+  --namespace ksquad-system \
   --set global.storageClassName=<your-storage-class> \
   --set exposure.mode=clusterip
 ```
@@ -45,6 +58,11 @@ helm install ksquad ksquad/ksquad \
 `exposure.mode=clusterip` is the zero-dependency path — it brings the whole stack up and you reach the
 console with `kubectl port-forward`. For production you'll switch to `gateway` (Gateway API) or
 `ingress`; see [Networking & exposure](./operator-guide/install#networking--exposure).
+
+> **Upgrading later?** Upgrade the CRD chart first, then the control plane:
+> `helm upgrade k8squad-crds ksquad/k8squad-crds --wait` then `helm upgrade ksquad ksquad/ksquad`.
+> Your existing `Project`/`Team`/`Run`/… resources are preserved. Details in
+> [CRD lifecycle & upgrades](./operator-guide/install#crd-lifecycle--upgrades).
 
 One install brings up: the **operator**, **apiserver**, **memory service**, **console**, a bundled
 **Postgres** (CNPG), and the **NATS/JetStream** event bus.
