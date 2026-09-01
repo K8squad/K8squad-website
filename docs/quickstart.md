@@ -38,7 +38,7 @@ CRD schema independently (with `helm upgrade`, not a hand-run `kubectl apply`) a
 **Step 1a — install the CRDs:**
 
 ```bash
-helm repo add ksquad https://k8squad.io/charts
+helm repo add ksquad https://charts.k8squad.io
 helm repo update
 
 helm install k8squad-crds ksquad/k8squad-crds \
@@ -49,7 +49,7 @@ helm install k8squad-crds ksquad/k8squad-crds \
 and pick an exposure mode.
 
 ```bash
-helm install ksquad ksquad/ksquad \
+helm install ksquad ksquad/k8squad \
   --namespace ksquad-system \
   --set global.storageClassName=<your-storage-class> \
   --set exposure.mode=clusterip
@@ -60,7 +60,7 @@ console with `kubectl port-forward`. For production you'll switch to `gateway` (
 `ingress`; see [Networking & exposure](./operator-guide/install#networking--exposure).
 
 > **Upgrading later?** Upgrade the CRD chart first, then the control plane:
-> `helm upgrade k8squad-crds ksquad/k8squad-crds --wait` then `helm upgrade ksquad ksquad/ksquad`.
+> `helm upgrade k8squad-crds ksquad/k8squad-crds --wait` then `helm upgrade ksquad ksquad/k8squad`.
 > Your existing `Project`/`Team`/`Run`/… resources are preserved. Details in
 > [CRD lifecycle & upgrades](./operator-guide/install#crd-lifecycle--upgrades).
 

@@ -42,7 +42,7 @@ single-replica defaults and HA behind a values toggle. Everything else is statel
 Install the CRD chart first, then the control plane, into the same namespace.
 
 ```bash
-helm repo add ksquad https://k8squad.io/charts
+helm repo add ksquad https://charts.k8squad.io
 helm repo update
 
 # 1. CRDs (their own chart, installed first)
@@ -50,7 +50,7 @@ helm install k8squad-crds ksquad/k8squad-crds \
   --namespace ksquad-system --create-namespace --wait
 
 # 2. Control plane
-helm install ksquad ksquad/ksquad \
+helm install ksquad ksquad/k8squad \
   --namespace ksquad-system \
   --set global.storageClassName=fast-ssd \
   --set exposure.mode=gateway \
@@ -85,7 +85,7 @@ schema has its own upgrade lifecycle and can never be dropped by a control-plane
 ```bash
 helm repo update
 helm upgrade k8squad-crds ksquad/k8squad-crds --wait   # 1. CRD schema first
-helm upgrade ksquad       ksquad/ksquad                # 2. then the control plane
+helm upgrade ksquad       ksquad/k8squad                # 2. then the control plane
 ```
 
 The control-plane chart declares the minimum CRD schema it needs via the
