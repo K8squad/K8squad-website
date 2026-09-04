@@ -119,8 +119,10 @@ kubectl get project demo-app -n ksquad-system
 ## 5. Define agents and form a squad (≈8 min)
 
 Each agent references a **runtime** (which coding CLI runs the work), a **role** (how it behaves), and
-zero or more **skills** (what tools it may use). KSquad ships two runtimes and starter roles out of the
-box.
+zero or more **skills** (what tools it may use). KSquad ships bundled runtimes and starter roles out of
+the box — this guide uses `claude-code`. A squad can also **mix runtimes**: for example
+[**Codex**](./auth-modes/openai-codex-key), OpenAI's official Rust coding agent, is a conformant
+`AgentRuntime{type: codex}` that authenticates with a BYO OpenAI API key.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
