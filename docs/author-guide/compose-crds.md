@@ -70,6 +70,34 @@ spec:
 **Pattern — one credential, many agents.** Multiple agents can reference the same per-user Secret;
 concurrent Runs on one subscription work (the credential controller keeps the token fresh).
 
+**Pattern — mix runtimes in one squad.** `runtimeRef` is per-agent, so a squad can pair `claude-code`
+agents with agents on another conformant runtime. For example [**Codex**](../auth-modes/openai-codex-key)
+— OpenAI's official Rust coding agent — is `AgentRuntime{type: codex}` and authenticates with a BYO
+OpenAI API key (`credentialClass: service-account`, injected as `OPENAI_API_KEY`):
+
+```yaml
+apiVersion: ksquad.io/v1alpha1
+kind: AgentRuntime
+metadata: { name: codex, namespace: ksquad-system }
+spec:
+  type: codex                        # conformant — no experimental flag
+  cliVersion: rust-v0.152.0
+---
+apiVersion: ksquad.io/v1alpha1
+kind: Agent
+metadata: { name: cody, namespace: ksquad-system }
+spec:
+  runtimeRef: codex
+  roleRef: backend-engineer
+  model: gpt-5.4-codex
+  credentialClass: service-account   # injected as OPENAI_API_KEY
+  credentialSecretRef: { name: openai-credentials, key: token }
+```
+
+Codex Run pods need `NetworkPolicy` egress to `api.openai.com`. A minimal end-to-end example lives at
+[`examples/codex/`](https://github.com/K8squad/K8squad/tree/main/examples/codex). There is no
+ChatGPT-subscription (human-seat) path for Codex in v1 — it fails closed; use `service-account`.
+
 ## 4. Author a Project
 
 A [Project](../concepts/projects) is the repo + workspace.

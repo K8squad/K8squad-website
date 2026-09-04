@@ -17,7 +17,7 @@ Three credential shapes ship at v1.
 | Runtime family | How you connect | Lifecycle | Secret holds |
 |----------------|-----------------|-----------|--------------|
 | **Claude-family** | One-time OAuth — console **Connect Claude** or CLI `ksquad auth login` | **Zero-touch** — a controller auto-refreshes the ~8h access token; re-login only after the refresh window (~9 days idle) expires | OAuth access + refresh token |
-| **Non-Claude runtime** (e.g. OpenClaw, Hermes) | Supply a long-lived **API key / provider token** | Static — refresh only if the provider rotates the key | API key |
+| **Non-Claude runtime** (e.g. OpenClaw, Hermes, **Codex**) | Supply a long-lived **API key / provider token** | Static — refresh only if the provider rotates the key | API key |
 | **BYO model endpoint** (Ollama / OpenAI-compatible) | Supply an **endpoint URL** (+ optional token) | Static — a local/self-hosted model, no vendor OAuth | Endpoint URL (+ token) |
 
 ## Connect Claude (zero-touch)
@@ -61,6 +61,28 @@ spec:
 ```
 
 There's no interactive OAuth step; the key is static. Rotate it by updating the Secret (below).
+
+### Codex (OpenAI) — service-account only
+
+The **Codex** runtime (`AgentRuntime{type: codex}`, OpenAI's official Rust coding agent) is a
+non-Claude runtime that speaks the OpenAI wire natively. It uses a plain **`service-account`**
+credential — a long-lived **OpenAI API key** — injected by reference as **`OPENAI_API_KEY`**:
+
+```bash
+kubectl create secret generic openai-credentials \
+  --namespace ksquad-system \
+  --from-literal=token='sk-...'
+```
+
+- **No human-seat auth in v1.** There is no ChatGPT-subscription (OAuth) path — a `human-seat` class on
+  a `codex` Agent **fails closed**, it does not silently fall back to the API key. It is a ToS-gated
+  roadmap item; use `service-account`.
+- **Egress.** Codex Run pods need network egress to **`api.openai.com`** (or, for a BYO
+  OpenAI-compatible endpoint set via `modelEndpointRef`, that host) — allow it in the squad
+  `NetworkPolicy`.
+
+See [Auth modes → OpenAI key for Codex](../auth-modes/openai-codex-key) for the full walkthrough and
+[`examples/codex/`](https://github.com/K8squad/K8squad/tree/main/examples/codex) for an applyable spec set.
 
 ## BYO model endpoint
 

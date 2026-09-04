@@ -1,7 +1,7 @@
 ---
 title: GitHub connect (repo access)
 description: Give a KSquad agent access to a GitHub repository — GitHub App / OAuth, or a fine-grained Personal Access Token with the right scopes. What each path needs and how to pass the repo test-connection.
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 # GitHub connect (repo access)

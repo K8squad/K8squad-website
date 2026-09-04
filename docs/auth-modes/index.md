@@ -23,6 +23,7 @@ outside the reviewed injector table.
 | Use my **Claude subscription** (Pro/Max/Team seat) — no per-token billing | Claude subscription / OAuth seat | [Claude subscription](./claude-subscription) |
 | Use a raw **Anthropic API key** (pay-as-you-go, no OAuth) | Anthropic API key | [Anthropic API key](./anthropic-api-key) |
 | Use **GLM (Zhipu)** or another **OpenAI-compatible** provider key | OpenAI-compatible key | [OpenAI-compatible key](./openai-compatible-key) |
+| Run **Codex** (OpenAI's Rust coding agent) with an **OpenAI API key** | OpenAI key for Codex | [OpenAI key for Codex](./openai-codex-key) |
 | Point at **my own** Ollama / self-hosted / OpenAI-compatible **endpoint** | BYO endpoint | [BYO endpoint](./byo-endpoint) |
 | Give an agent a **GitHub repo** to work on | GitHub connect | [GitHub connect](./github-connect) |
 
@@ -36,6 +37,7 @@ the required-settings panel; it is read from the injector's reviewed table, not 
 | Claude subscription (OAuth seat) | `human-seat` | `token` | `CLAUDE_CODE_OAUTH_TOKEN` |
 | Anthropic API key | `service-account` | `apiKey` | `ANTHROPIC_API_KEY` |
 | OpenAI-compatible key (GLM, etc.) | `service-account` | `apiKey` | `OPENAI_API_KEY` |
+| OpenAI key for Codex | `service-account` | `token` (or `apiKey`) | `OPENAI_API_KEY` |
 | BYO endpoint | `service-account` (+ `modelEndpointRef`) | `endpoint` (+ optional `token`) | `OPENAI_BASE_URL` (+ `OPENAI_API_KEY`) |
 
 GitHub connect is a **project** credential (repo access), not a model credential, so it does not appear
