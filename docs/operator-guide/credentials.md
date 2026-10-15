@@ -16,7 +16,7 @@ Three credential shapes ship at v1.
 
 | Runtime family | How you connect | Lifecycle | Secret holds |
 |----------------|-----------------|-----------|--------------|
-| **Claude-family** | One-time OAuth — console **Connect Claude** or CLI `ksquad auth login` | **Zero-touch** — a controller auto-refreshes the ~8h access token; re-login only after the refresh window (~9 days idle) expires | OAuth access + refresh token |
+| **Claude-family** | One-time OAuth — console **Connect Claude** | **Zero-touch** — a controller auto-refreshes the ~8h access token; re-login only after the refresh window (~9 days idle) expires | OAuth access + refresh token |
 | **Non-Claude runtime** (e.g. OpenClaw, Hermes) | Supply a long-lived **API key / provider token** | Static — refresh only if the provider rotates the key | API key |
 | **BYO model endpoint** (Ollama / OpenAI-compatible) | Supply an **endpoint URL** (+ optional token) | Static — a local/self-hosted model, no vendor OAuth | Endpoint URL (+ token) |
 
@@ -24,7 +24,7 @@ Three credential shapes ship at v1.
 
 This is the smoothest path and the one most teams start with.
 
-1. In the console, open **Credentials** → **Connect Claude** (or run `ksquad auth login`).
+1. In the console, open **Credentials** → **Connect Claude**.
 2. Complete the browser OAuth flow **once**.
 3. KSquad writes the access + refresh tokens to a **per-user Secret**. You never handle token strings
    again.

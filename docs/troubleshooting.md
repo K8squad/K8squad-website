@@ -30,17 +30,20 @@ problem directly.
 ## Install issues
 
 ### `helm install` fails immediately on exposure
-**Cause:** you selected `exposure.mode=gateway` but no matching `GatewayClass` exists. KSquad
+**Cause:** `exposure.gateway.enabled=true` but no matching `GatewayClass` exists. KSquad
 pre-flights this and fails fast rather than leaving a dangling route.
-**Fix:** install a Gateway controller and set `exposure.gateway.gatewayClassName` to its class, or fall
-back to `exposure.mode=ingress` / `clusterip`. See [Install → networking](/docs/operator-guide/install/#networking--exposure).
+**Fix:** install a Gateway controller and set `exposure.gateway.gatewayClassName` to its class, or
+leave Gateway exposure off (ClusterIP services + `kubectl port-forward`). See [Install → networking](/docs/operator-guide/install/#networking--exposure).
 
 ### `helm install` fails on storage
-**Cause:** no `storageClassName` was provided. KSquad never uses the cluster-default StorageClass.
-**Fix:** set `global.storageClassName` (and per-component overrides if needed) to a class that exists.
+**Cause:** no NATS StorageClass was provided. KSquad never uses the cluster-default StorageClass.
+**Fix:** set `controlPlane.nats.persistence.storageClassName` to a class that exists (the JetStream
+PVC fails fast without it). Per-Project workspace volumes take their class from the Project's
+`spec.workspacePVC.class`.
 
 ### Can't find the admin password
-**Fix:** it's in the bootstrap Secret printed in the install notes:
+**Fix:** it's the bootstrap Secret you created for `controlPlane.apiserver.bootstrapAdmin.existingSecret`
+(default name `ksquad-bootstrap-admin`):
 ```bash
 kubectl -n ksquad-system get secret ksquad-bootstrap-admin \
   -o jsonpath='{.data.password}' | base64 -d; echo
@@ -92,10 +95,11 @@ Run conditions and the agent's Run logs for the underlying error.
 ## Console / connectivity
 
 ### Live Run stream doesn't update
-**Likely:** an exposure path that buffers or times out the SSE stream. `ingress`/`clusterip` modes
-don't give the same SSE-timeout guarantees as Gateway API.
-**Fix:** use `exposure.mode=gateway`, or confirm your Ingress controller has the SSE-safe annotations
-KSquad renders. See [Install → networking](/docs/operator-guide/install/#networking--exposure).
+**Likely:** an exposure path that buffers or times out the SSE stream. A ClusterIP-only install
+(port-forward) gives no SSE-timeout guarantee the way Gateway API does.
+**Fix:** expose through the Gateway (`exposure.gateway.enabled=true` + a `gatewayClassName` you
+control), or make sure whatever fronts the console doesn't buffer or clip long-lived streams. See
+[Install → networking](/docs/operator-guide/install/#networking--exposure).
 
 ### A user sees too little / too much
 **Cause:** their global role or per-project access level. The console is role-adaptive and RBAC-scoped
