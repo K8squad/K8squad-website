@@ -15,10 +15,12 @@ KSquad, connect a credential, define a couple of agents, point them at a repo, a
 
 ## Prerequisites
 
-- A Kubernetes cluster, **v1.28+**, and `kubectl` configured to reach it.
+- A Kubernetes cluster, **v1.29+** (the chart enforces `kubeVersion >= 1.29.0`), and `kubectl` configured to reach it.
 - **Helm 3.12+**.
 - Cluster-admin (KSquad installs CRDs and namespaced RBAC).
 - A **StorageClass** you can name (KSquad never assumes the cluster default).
+- A **Postgres** database KSquad can reach — it is the single store of record and is **not** bundled
+  with the chart; you supply the DSN (see step 1).
 - **~2 vCPU / 4 GiB** free for the control plane, plus headroom for sandboxes.
 - A container isolation runtime — **gVisor** is the recommended default. If it isn't installed, KSquad
   falls back to a clearly-flagged runtime; see the [Operator Guide](/docs/operator-guide/install/#sandbox-runtime).
@@ -29,30 +31,58 @@ KSquad, connect a credential, define a couple of agents, point them at a repo, a
 
 ## 1. Install the control plane (≈5 min)
 
-Add the chart repository and install into a dedicated namespace. You must name a `storageClassName`
-and pick an exposure mode.
+Add the chart repository. KSquad installs as **two charts**: the standalone `k8squad-crds` chart owns
+the `ksquad.io` CRDs and must go on first; the `k8squad` chart brings the control plane. The install
+additionally **requires** a system default model, a Postgres DSN Secret, and the NATS StorageClass —
+the chart fails fast when any of them is missing.
 
 ```bash
 helm repo add ksquad https://charts.k8squad.io
 helm repo update
 
-helm install ksquad ksquad/ksquad \
-  --namespace ksquad-system --create-namespace \
-  --set global.storageClassName=<your-storage-class> \
-  --set exposure.mode=clusterip \
-  --set tools.defaultCatalog.enabled=true
+# 1a. CRDs first (cluster-scoped; kept on a separate release so it upgrades independently)
+helm upgrade --install k8squad-crds ksquad/k8squad-crds \
+  --namespace k8squad-crds --create-namespace --wait
+
+# 1b. Secrets the control plane needs
+kubectl create namespace ksquad-system
+kubectl -n ksquad-system create secret generic ksquad-database \
+  --from-literal=dsn='postgres://user:password@your-postgres:5432/ksquad'
+kubectl -n ksquad-system create secret generic ksquad-bootstrap-admin \
+  --from-literal=password='<choose-a-one-time-bootstrap-password>'
+
+# 1c. Control plane
+helm upgrade --install ksquad ksquad/k8squad \
+  --namespace ksquad-system \
+  --set modelConfig.default.model=claude-sonnet-4 \
+  --set controlPlane.enabled=true \
+  --set controlPlane.database.existingSecret=ksquad-database \
+  --set controlPlane.nats.persistence.storageClassName=<your-storage-class> \
+  --set controlPlane.apiserver.bootstrapAdmin.enabled=true \
+  --set controlPlane.apiserver.bootstrapAdmin.username=admin \
+  --set controlPlane.apiserver.bootstrapAdmin.existingSecret=ksquad-bootstrap-admin \
+  --set tools.defaultCatalog.enabled=true \
+  --wait
 ```
 
-`exposure.mode=clusterip` is the zero-dependency path — it brings the whole stack up and you reach the
-console with `kubectl port-forward`. For production you'll switch to `gateway` (Gateway API) or
-`ingress`; see [Networking & exposure](/docs/operator-guide/install/#networking--exposure).
+`modelConfig.default.model` is the **required** system default model — `helm install`/`upgrade` aborts
+with a clear error when it is unset. `controlPlane.database.existingSecret` points at the Secret
+holding your Postgres DSN (an inline dev DSN via `controlPlane.database.dsn` also exists but is
+dev-only). `controlPlane.nats.persistence.storageClassName` names the StorageClass for the JetStream
+PVC — KSquad never binds a PVC to the cluster-default class silently, so this key is required whenever
+the bundled NATS is enabled.
+
+With the Gateway exposure off (the default), every service is ClusterIP-only — the zero-dependency
+path, and you reach the console with `kubectl port-forward`. For production you'll enable the
+Gateway (Gateway API); see [Networking & exposure](/docs/operator-guide/install/#networking--exposure).
 
 `tools.defaultCatalog.enabled=true` renders the curated [Toolchain](/docs/concepts/toolchains/) catalog
 (`kubectl`, `git`, `gh`, `go`, `node`, `dtctl`, `helm`) that skills with `requires.toolchains` resolve
 against — leave it off and Runs demanding a toolchain fail admission with an actionable message.
 
-One install brings up: the **operator**, **apiserver**, **memory service**, **console**, a bundled
-**Postgres** (CNPG), and the **NATS/JetStream** event bus.
+One install brings up: the **operator**, **apiserver**, **memory service**, **console**, and the
+**NATS/JetStream** event bus. Postgres is **not** bundled — point the DSN at one you run (any
+standard Postgres works; it is the sole store of record).
 
 Wait for the control plane to be ready:
 
@@ -64,24 +94,30 @@ kubectl -n ksquad-system get pods
 
 ## 2. Log in to the console (≈2 min)
 
-KSquad ships **no default password**. On first install the chart generates a random admin password
-into a Secret and prints the retrieval command in the install notes. Retrieve it:
+KSquad ships **no default password**. The bootstrap admin you configured in step 1 seeds exactly one
+`admin` user from the Secret you created — the chart never generates or inlines a password. Retrieve
+it:
 
 ```bash
 kubectl -n ksquad-system get secret ksquad-bootstrap-admin \
   -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-Port-forward the console and open it:
+Port-forward the console and open it (the service listens on plain HTTP, port 80):
 
 ```bash
-kubectl -n ksquad-system port-forward svc/ksquad-console 8443:443
-# open https://localhost:8443
+kubectl -n ksquad-system port-forward svc/ksquad-console 8080:80
+# open http://localhost:8080
 ```
 
-Log in as `admin` with the retrieved password. You'll be **required to set a new password** before you
-can do anything else — the install-time password is a one-time bootstrap value, not a durable
-credential.
+Log in as `admin` with that password. The bootstrap seed is a one-time value — after first login,
+turn it off so it can't re-seed on upgrade:
+
+```bash
+helm upgrade ksquad ksquad/ksquad --namespace ksquad-system \
+  --reuse-values \
+  --set controlPlane.apiserver.bootstrapAdmin.enabled=false
+```
 
 ## 3. Connect a credential (≈3 min)
 
@@ -90,8 +126,6 @@ Agents authenticate with **their own** per-user credential — KSquad never hold
 In the console, open **Credentials** and click **Connect Claude**. Complete the browser OAuth flow
 once. KSquad stores the resulting tokens in a per-user Kubernetes Secret and a controller keeps the
 access token fresh automatically — you won't rotate it by hand.
-
-> Prefer the CLI? Run `ksquad auth login` for the same one-time OAuth flow.
 
 Prefer a local model instead? See [Bring your own model endpoint](/docs/operator-guide/credentials/#byo-model-endpoint).
 
@@ -112,7 +146,7 @@ spec:
     ref: main
   workspacePVC:
     size: 10Gi
-    storageClassName: <your-storage-class>
+    class: <your-storage-class>
   goals: "Keep the test suite green and address the open backlog."
 ```
 

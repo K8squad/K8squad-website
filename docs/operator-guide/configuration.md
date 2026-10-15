@@ -19,26 +19,28 @@ This page covers the infrastructure level. For behavior, see the [Author Guide](
 
 | Area | Key values | Notes |
 |------|-----------|-------|
-| Storage | `global.storageClassName`, `postgres.storageClassName` | Required; no cluster-default fallback. |
-| Exposure | `exposure.mode`, `exposure.gateway.gatewayClassName`, `exposure.gateway.hostname` | See [Install & exposure](/docs/operator-guide/install/#networking--exposure). |
-| Postgres | `postgres.ha`, `postgres.storageSize` | Single-instance default; HA is a toggle. |
-| Event bus | `nats.ha`, `nats.jetstream.storageSize` | Single-replica default with a JetStream PVC; HA is a toggle. |
-| Auth | `auth.oidc.*`, `auth.session.accessTokenTTL`, `auth.session.refreshTokenTTL` | Local store by default; OIDC opt-in. See [RBAC](/docs/operator-guide/rbac/). |
-| Warm pool | `sandbox.warmPool.*` | Pre-warm size and policy per runtime. |
-| Egress | `sandbox.egress.defaultPolicy` | The default NetworkPolicy applied to squads. |
+| Default model | `modelConfig.default.model` | **Required** — install aborts without it. |
+| Event bus storage | `controlPlane.nats.persistence.storageClassName`, `.size` | Required when NATS is enabled (default); no cluster-default fallback. HA: `controlPlane.nats.ha.enabled` / `.replicas` (odd, ≥3). |
+| Exposure | `exposure.gateway.enabled`, `exposure.gateway.gatewayClassName`, `exposure.gateway.hostnames.console` / `.apiserver` | See [Install & exposure](/docs/operator-guide/install/#networking--exposure). |
+| Postgres | `controlPlane.database.existingSecret` (or dev-only `.dsn`) | Bring your own — HA/sizing live with your Postgres, not the chart. |
+| Workspace volumes | `workspacePVC.defaultClass`, `.defaultSize`, `.defaultAccessModes` | Operator defaults for per-Run workspace PVCs; per-Project override via `spec.workspacePVC`. |
+| Auth | `controlPlane.auth.jwtSigningKey.existingSecret` | JWT signing key from an existing Secret. |
+| Images | `controlPlane.image.registry`, `.tag`, `.tagOverrides` | Per-component tag overrides for mixed-sha clusters. |
+| Observability | `controlPlane.otel.endpoint`, `observability.otel.*` | OTLP wiring + the rendered `OTelConfig` CR. |
 
 > The exact value paths track the chart version you install — always check `helm show values ksquad/ksquad`
 > for the authoritative list.
 
 ## High availability
 
-Both stateful dependencies default to single-replica for a fast, low-footprint install, and both scale
-out with a values toggle:
+The bundled NATS defaults to a single JetStream replica; cluster it with a values toggle (replicas
+must be odd and ≥3 for a RAFT quorum):
 
 ```bash
---set postgres.ha=true
---set nats.ha=true
+--set controlPlane.nats.ha.enabled=true --set controlPlane.nats.ha.replicas=3
 ```
+
+Postgres HA is yours to run — it is not part of the chart, so size and replicate it where it lives.
 
 The stateless components (operator, apiserver, memory, console) scale horizontally; the operator is
 **leader-elected**, so running multiple replicas gives you failover without double-driving reconciles.
@@ -91,12 +93,8 @@ air-gapped installs practical).
 
 ## Egress defaults
 
-Each squad gets a default NetworkPolicy. Set the cluster-wide default and override per project with a
+Each squad gets a default NetworkPolicy. Author an `EgressPolicy` CR and point projects at it with
 `Project.spec.egressPolicyRef`:
-
-```bash
---set sandbox.egress.defaultPolicy=deny-external
-```
 
 Egress control is part of the safety model — a compromised agent can only reach endpoints it was
 explicitly granted. See [Multi-tenancy & isolation](/docs/concepts/squads/#why-the-tenancy-boundary-matters).
