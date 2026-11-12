@@ -41,7 +41,7 @@ against. An agent whose credential can't be resolved is **rejected**, not silent
 
 `AgentRuntime` makes *which coding CLI runs* a first-class, referenceable object instead of an implicit
 property of a hand-built image. This is what lets KSquad be **agent-runtime-agnostic**: Claude Code,
-OpenClaw, Hermes, and others plug in behind the same shim contract.
+OpenClaw, Hermes, Codex (OpenAI's Rust coding agent), and others plug in behind the same shim contract.
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1

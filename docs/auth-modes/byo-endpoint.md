@@ -1,7 +1,7 @@
 ---
 title: BYO endpoint (modelEndpointRef)
 description: Point a KSquad agent at your own Ollama or OpenAI-compatible model server with modelEndpointRef — OPENAI_BASE_URL (+ optional OPENAI_API_KEY). No vendor OAuth, no paid credits. How to set it up and pass test-connection.
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 # BYO endpoint (modelEndpointRef)
