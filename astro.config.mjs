@@ -43,6 +43,7 @@ export default defineConfig({
         { label: 'Quickstart', link: '/docs/quickstart' },
         { label: 'Concepts', autogenerate: { directory: 'docs/concepts' } },
         { label: 'Operator Guide', autogenerate: { directory: 'docs/operator-guide' } },
+        { label: 'Auth Modes', autogenerate: { directory: 'docs/auth-modes' } },
         { label: 'Author Guide', autogenerate: { directory: 'docs/author-guide' } },
         { label: 'Console Guide', link: '/docs/console-guide' },
         { label: 'API Reference', link: '/docs/api-reference' },

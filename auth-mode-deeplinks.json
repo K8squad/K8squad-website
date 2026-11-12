@@ -1,0 +1,16 @@
+{
+  "_comment": "Canonical Docs↗ deep-link slugs for the console credential/repo-connect sheets (ISI-3687 / FR-10). Coordinate with E3-S4 (ISI-3682 credential-create sheet) and E4-S2 (ISI-3684 connect-repo). Base URL is the published docs host (e.g. https://k8squad.io). Every value below is a real, shipped page — no 404.",
+  "base": "/docs/auth-modes",
+  "links": {
+    "overview": "/docs/auth-modes",
+    "claude-subscription": "/docs/auth-modes/claude-subscription",
+    "anthropic-api-key": "/docs/auth-modes/anthropic-api-key",
+    "openai-compatible-key": "/docs/auth-modes/openai-compatible-key",
+    "byo-endpoint": "/docs/auth-modes/byo-endpoint",
+    "github-connect": "/docs/auth-modes/github-connect"
+  },
+  "credentialClassToLink": {
+    "human-seat": "/docs/auth-modes/claude-subscription",
+    "service-account": "/docs/auth-modes/anthropic-api-key"
+  }
+}
