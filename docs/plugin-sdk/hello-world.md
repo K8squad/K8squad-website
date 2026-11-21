@@ -16,15 +16,18 @@ an event idempotently, and stay a read-only observer.
 
 ## 1. What we're building
 
-A standalone service that subscribes to `ksquad.run.*.*.succeeded` and logs each completed Run. No
-state is mutated; nothing can block the platform. When you've got this working, swapping the log line
-for a Slack post (see [Examples](/docs/plugin-sdk/examples/)) is a one-line change.
+A standalone service that subscribes to `ksquad.run.*.*.ended` and logs each Run that reaches a
+terminal state. No state is mutated; nothing can block the platform. When you've got this working,
+swapping the log line for a Slack post (see [Examples](/docs/plugin-sdk/examples/)) is a one-line
+change.
 
 ## 2. Register the plugin & get NATS access
 
-From the console **Settings → Plugins**, register a new plugin for your project/squad. You'll get the
-connection details your plugin needs to reach NATS (subject prefix, credentials). Store any credentials
-as a Kubernetes Secret — plugins use **BYO Secret refs**, never a shared master credential.
+> **Status:** the console's **Settings → Plugins** page is a placeholder ("plugin management is
+> coming") — there is no registration UI yet. For now, run your plugin as a standalone service and
+> hand it the connection details yourself: the NATS URL, the subject prefix (`ksquad`), and any
+> credentials. Store credentials as a Kubernetes Secret — plugins use **BYO Secret refs**, never a
+> shared master credential.
 
 For local development you can port-forward NATS:
 
@@ -77,10 +80,10 @@ func main() {
 
 	ctx := context.Background()
 
-	// A DURABLE consumer over completed Runs, across all projects/squads.
+	// A DURABLE consumer over terminal Run events, across all projects/squads.
 	cons, err := js.CreateOrUpdateConsumer(ctx, "KSQUAD", jetstream.ConsumerConfig{
 		Durable:       "hello-world-plugin",           // survives restarts → replay/catch-up
-		FilterSubject: "ksquad.run.*.*.succeeded",     // only completed Runs
+		FilterSubject: "ksquad.run.*.*.ended",         // Runs that reached a terminal state
 		AckPolicy:     jetstream.AckExplicitPolicy,     // ack after we handle it
 	})
 	if err != nil {
@@ -104,7 +107,7 @@ func main() {
 		}
 		seen[e.ID] = true
 
-		log.Printf("✅ Run %s completed in project %s (agent %s, started by %s)",
+		log.Printf("Run %s ended in project %s (agent %s, started by %s)",
 			e.Data.RunID, e.Data.Project, e.Data.Agent, e.Data.InitiatedBy)
 
 		_ = msg.Ack() // ack only after the side effect succeeded
@@ -119,9 +122,9 @@ func main() {
 
 ## 4. The three things this teaches
 
-- **Subscribe by subject.** `FilterSubject: "ksquad.run.*.*.succeeded"` uses the
+- **Subscribe by subject.** `FilterSubject: "ksquad.run.*.*.ended"` uses the
   [subject taxonomy](/docs/plugin-sdk/event-reference/#subject-taxonomy) wildcards. Narrow it to one project with
-  `ksquad.run.payments.*.succeeded`.
+  `ksquad.run.payments.*.ended`.
 - **Be idempotent.** Delivery is at-least-once, so we dedupe on the event `id` and **ack only after**
   the work is done. If your handler dies before the ack, JetStream redelivers — and the dedupe makes
   that safe.
@@ -137,14 +140,16 @@ go get github.com/nats-io/nats.go@latest
 go run .
 ```
 
-Now start a Run (from the console or `kubectl apply` a `Run`). When it reaches `Succeeded`, your plugin
-logs a line. Stop the plugin, run a few more, restart it — the durable consumer **replays** the ones it
-missed. That's the whole model.
+Now start a Run (from the console or `kubectl apply` a `Run`). When it reaches a terminal state
+(`Succeeded` / `Failed` / `Cancelled`), the `ended` event fires and your plugin logs a line — the
+event payload's `state` field tells you which. Stop the plugin, run a few more, restart it — the
+durable consumer **replays** the ones it missed. That's the whole model.
 
 ## 6. Where to go next
 
 - **Do something useful:** swap the `log.Printf` for a Slack/webhook call. Remember: outbound calls go
   through a normal, audited API client with a **BYO Secret** — see [Examples](/docs/plugin-sdk/examples/).
-- **Widen or narrow the subjects:** subscribe to work-item claims, artifact registrations, or sync
-  results — see the [Event reference](/docs/plugin-sdk/event-reference/#the-event-taxonomy).
+- **Widen or narrow the subjects:** subscribe to work-item claims (`ksquad.work_item.*.*.claimed`),
+  or — as those emitters land — artifact registrations and source-control mirror results — see the
+  [Event reference](/docs/plugin-sdk/event-reference/#the-event-taxonomy).
 - **Pin your schema revision** so platform upgrades don't surprise you.

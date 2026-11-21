@@ -1,6 +1,6 @@
 ---
 title: Examples
-description: Common KSquad plugin patterns — Slack/notification on Run events, mirroring work items to an external tracker, feeding a dashboard, and reacting to credential-refresh needs.
+description: Common KSquad plugin patterns — Slack/notification on Run outcomes, mirroring work items to an external tracker, feeding a dashboard, and watching credential state via the public APIs.
 sidebar_position: 3
 ---
 
@@ -17,15 +17,17 @@ a BYO Secret** — never a shared master credential, and never through a coordin
 
 **Goal:** post to Slack when a Run fails, and page on-call if it's a production project.
 
-- **Subscribe to:** `ksquad.run.*.*.failed` (and optionally `...succeeded` for a daily summary).
-- **Do:** call the Slack/PagerDuty API. The outbound token is a BYO Secret you configured when
-  registering the plugin.
+- **Subscribe to:** `ksquad.run.*.*.ended` — one event for every terminal state; the payload's
+  `state` field (`completed` | `failed` | `canceled`) tells you which.
+- **Do:** call the Slack/PagerDuty API. The outbound token is a BYO Secret you hand the plugin at
+  deploy time.
 - **Idempotency:** dedupe on the event `id` so a redelivery doesn't double-post.
 
 ```go
-func onRunFailed(e Event) {
+func onRunEnded(e Event) {
 	if seen(e.ID) { return }
-	text := fmt.Sprintf("❌ Run %s failed in %s (agent %s)", e.Data.RunID, e.Data.Project, e.Data.Agent)
+	if e.Data.State != "failed" { return }        // only page on failures
+	text := fmt.Sprintf("Run %s failed in %s (agent %s)", e.Data.RunID, e.Data.Project, e.Data.Agent)
 	slack.Post(channelFor(e.Data.Project), text)   // ordinary API client, BYO token
 	if isProduction(e.Data.Project) {
 		pagerduty.Trigger(text)
@@ -41,10 +43,11 @@ platform — worst case, a notification is delayed and replayed later.
 
 **Goal:** reflect KSquad work items into Jira/Linear so a wider team sees them.
 
-- **Subscribe to:** `ksquad.workitem.*.*.created`, `...claimed`, `...completed`.
+- **Subscribe to:** `ksquad.work_item.*.*.assigned`, `ksquad.work_item.*.*.claimed` (and
+  `...reroute_released` if you track re-dispatches).
 - **Do:** upsert the corresponding external issue via that tracker's API.
 - **Idempotency is essential here:** key the external issue on the KSquad `workItemRef` and **upsert**,
-  never blind-create — so a redelivered `created` event updates rather than duplicates.
+  never blind-create — so a redelivered event updates rather than duplicates.
 
 ```go
 func onWorkItem(e Event) {
@@ -73,31 +76,28 @@ from retained history.
 
 **Goal:** kick off a downstream deploy when a PR mirror shows checks passing.
 
-- **Subscribe to:** `ksquad.sync.*.*.check_run` and `ksquad.sync.*.*.pr`.
+- **Subscribe to:** the `scm` entity — `ksquad.scm.<project>.<squad>.>`.
+- **Status:** the `scm` entity is catalog-admitted but its emitters land incrementally with the
+  source-control mirror; until then, poll the [source-control mirror API](/docs/api-reference/) or
+  watch run events instead.
 - **Do:** when a project's PR reaches a green state, trigger your external CD system (its own API, BYO
   credential).
 
 The plugin observes KSquad's synced view of the repo and drives an **external** system — again, read-in
 via events, write-out via a public API, no coordination primitive touched.
 
-## 5. Credential-refresh watcher
+## 5. Credential-attention watcher
 
-**Goal:** open a ticket / ping an owner when an agent's credential needs attention.
+**Goal:** ping an owner when an agent's credential needs attention.
 
-- **Subscribe to:** `ksquad.credential.*.*.refresh_needed`.
-- **Do:** notify the owning user or open a tracking ticket.
+- **Status:** there is no `credential` entity on the event bus today. Credential expiry surfaces in
+  the control plane as a `Run → Paused` transition and in the console's credential state.
+- **Do:** poll the apiserver's credentials API (an ordinary, audited read) on a timer, and notify
+  the owning user or open a tracking ticket when a credential shows expired.
 
-```go
-func onRefreshNeeded(e Event) {
-	if seen(e.ID) { return }
-	notifyOwner(e.Data.Agent, "Your KSquad credential needs a refresh — click re-login in the console.")
-	markSeen(e.ID)
-}
-```
-
-**Hard boundary:** the plugin **signals** that a refresh is needed. It **never injects the credential
-or resumes the Run** — credential rotation and Run resume stay the control-plane path. This is the
-observe-only rule applied to the one event that most tempts you to break it.
+**Hard boundary:** the plugin **never injects the credential or resumes the Run** — credential
+rotation and Run resume stay the control-plane path. This is the observe-only rule applied to the
+case that most tempts you to break it.
 
 ## Design checklist for any plugin
 

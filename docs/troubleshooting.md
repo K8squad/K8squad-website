@@ -110,17 +110,21 @@ server-side.
 
 - **Nothing exported at all?** That's the default — telemetry stays in-cluster until you create an
   `OTelConfig`. See [Observability](/docs/observability/).
-- **Exporter auth failing?** Confirm the `authSecretRef` Secret exists and holds a valid token; it's
-  never inline and never logged, so check the Secret, not the CRD.
-- **Metrics missing dimensions?** Consumption and rate-limit metrics are labeled by
-  `{team, project, run, agent, principal, model}`; confirm the Run carried an initiating principal.
+- **Exporter auth failing?** Confirm the `auth.name`/`auth.key` Secret referenced by the OTelConfig
+  signal exists and holds a valid token; it's never inline and never logged, so check the Secret,
+  not the CRD.
+- **Metrics missing dimensions?** LLM consumption metrics are labeled `{model, agent}` (tokens add
+  `direction`); run/principal/project/team correlation rides span attributes (`ksquad.run.id`,
+  `ksquad.principal.id`, …). Confirm the Run carried an initiating principal.
 
 ## Plugins not reacting
 
 Plugins are **read-only observers** and can never block a Run — so if a plugin is silent, the platform
 is still healthy.
-- Check the event-seam health metrics (outbox depth, unflushed lag, NATS publish failures, consumer
-  lag) in your metrics backend.
+- Check the event-seam health metrics (`ksquad_outbox_depth`, `ksquad_outbox_unflushed_lag`,
+  `ksquad_outbox_publish_failures_total`, `ksquad_jetstream_consumer_lag`) in your metrics backend.
+- Note the event relay is off unless NATS is configured (`controlPlane.nats` is on by default with
+  `controlPlane.enabled=true`, which auto-enables the relay) — without it, the outbox drains nowhere.
 - Confirm the plugin's NATS subscription subject matches the [subject taxonomy](/docs/plugin-sdk/event-reference/#subject-taxonomy)
   and that its pinned event-schema revision is still served.
 

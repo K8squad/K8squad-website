@@ -45,8 +45,9 @@ never trapped inside a pod**, and knowledge outlives any single Run.
 
 ## Desired state vs. durable state
 
-- **Desired state** — `Team`, `Agent`, `AgentRuntime`, `Role`, `Skill`, `MCPServer`, `Toolchain`,
-  `Project`, `Run`, `OTelConfig` — is expressed as **CRDs** and reconciled by the operator.
+- **Desired state** — `Team`, `Agent`, `AgentRuntime`, `Role`, `RolePool`, `Skill`, `MCPServer`,
+  `Toolchain`, `EgressPolicy`, `ModelConfig`, `Project`, `Run`, `OTelConfig` — is expressed as **CRDs**
+  and reconciled by the operator.
 - **Durable, high-churn app state** — work items, comments, claims, artifacts, memory, users — lives
   in **Postgres**, behind the apiserver and memory APIs. These are *not* CRDs.
 
