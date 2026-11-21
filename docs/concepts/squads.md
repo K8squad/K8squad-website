@@ -32,6 +32,9 @@ metadata:
 spec:
   projects: [payments-api, payments-web]
   agents: [dev-1, dev-2, reviewer-1]
+  grants:                      # role-keyed capability grants (deny-by-default)
+    - role: pm               # every agent whose spec.roleRef resolves to this role
+      capabilities: [work_item.author]
 ```
 
 ## What reconciliation does
@@ -45,6 +48,15 @@ When you create or change a `Team`, the **Team reconciler** ensures the squad's 
 
 Because a squad *is* a namespace, isolation between squads is enforced by Kubernetes itself — not by
 application-level checks that could be bypassed.
+
+## Capability grants
+
+`spec.grants[]` binds capability slugs to a **role** in the squad's composition:
+`grants: [{role: pm, capabilities: [work_item.author]}]`. Every dispatched agent whose
+`spec.roleRef` resolves to that role is granted the listed capabilities at Run assembly. Grants are
+pure config — widening a grant is a Team edit, never a rebuild — and they are **deny-by-default**: a
+role with no matching grant (or a Team with no grants) carries no capability. The capability list is
+an open string set; `work_item.author` is the one defined today.
 
 ## Why the tenancy boundary matters
 

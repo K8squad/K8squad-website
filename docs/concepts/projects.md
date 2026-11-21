@@ -23,10 +23,25 @@ spec:
   repo:
     url: https://github.com/acme/payments-api.git
     ref: main
+    auth:
+      credentialSecretRef: payments-gh-token   # BYO Secret for private-repo clone/sync
     sync:
       provider: github
       webhookSecretRef: payments-webhook
       reflectOutbound: true       # mirror KSquad-produced issues/PRs back to the provider
+      pollIntervalSeconds: 300    # fallback poll when webhooks aren't reachable
+    automation:
+      issueTriage:                  # auto-triage newly opened issues (dispatch a triage agent)
+        enabled: true
+        triageAgentId: triage-1
+      ciFailure:                    # mint a triage ticket on failed CI check runs
+        enabled: true
+        agentId: ci-triage-1
+    reviewAutomation:               # auto-review PRs
+      enabled: true
+      reviewerAgentId: reviewer-1
+      scope: team_authored          # team_authored | all
+      trigger: on_new_commits       # on_open | on_new_commits
   workspacePVC:
     size: 20Gi
     storageClassName: fast-ssd
@@ -37,9 +52,20 @@ spec:
 
 ## What a Project carries
 
-- **`repo`** — the Git repository (URL, ref, and auth), plus a **`sync`** block that configures
-  source-control integration: which provider, the webhook secret, and whether KSquad reflects its own
-  outputs (issues, PRs) back to the provider.
+- **`repo`** — the Git repository: `url` and `ref` (required: `url`), **`auth`**
+  (`credentialSecretRef` — the BYO Secret used to clone/sync a private repo), and a **`sync`** block
+  that configures source-control integration: `provider`, `webhookSecretRef`, `reflectOutbound`
+  (whether KSquad reflects its own outputs back to the provider), plus `issueSync` and `mirror`
+  (which mirror surfaces are on: `issues`, `pullRequests`, `checkRuns`, …) and
+  `pollIntervalSeconds` as a fallback poll when webhooks aren't reachable.
+- **`repo.automation`** — human-enabled, system-executed automations: `issueTriage` (mint an internal
+  ticket and dispatch a configured triage agent for each newly opened issue the mirror captures) and
+  `ciFailure` (mint a triage ticket and dispatch a configured agent when a mirrored CI check run
+  finishes with a configured conclusion on an in-scope ref). A human enabling the policy is the
+  authorizing act; disabled/absent means today's manual behavior.
+- **`repo.reviewAutomation`** — automatic PR review: `enabled`, `reviewerAgentId`, `scope`
+  (`team_authored` — only PRs opened by team agents, the default — or `all`), and `trigger`
+  (`on_open` or `on_new_commits`, the latter re-reviewing when the mirrored head SHA changes).
 - **`workspacePVC`** — the persistent workspace (size and storage class). KSquad **never assumes the
   cluster default StorageClass**; you name it explicitly.
 - **`egressPolicyRef`** — the NetworkPolicy governing what the project's Runs may reach.

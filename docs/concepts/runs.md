@@ -122,6 +122,14 @@ When the model provider throttles an agent, KSquad recovers automatically, in pr
 Attribution is **per credential**, so one subscription's limit never silently blocks or charges
 another.
 
+## Tool credentials
+
+`spec.toolCredentials[]` is the auxiliary, non-model credential set **projected name-only from the
+dispatched Agent(s)** (`Agent.spec.toolCredentials`) onto the Run, so the Run self-describes which
+aux tokens its agent container carries. At sandbox assembly the injection seam maps each entry's
+`purpose` (a closed enum — today `github-token`) to fixed env var names (`GH_TOKEN` +
+`GITHUB_TOKEN`) by reference; the Run never embeds the Secret's value.
+
 ## Human attribution
 
 When a person triggers a Run from the console, KSquad stamps the triggering user onto the Run and into

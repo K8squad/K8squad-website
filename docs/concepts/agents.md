@@ -26,11 +26,20 @@ spec:
   roleRef: software-engineer       # → Role
   skillRefs: [git, run-tests]      # → Skill[]
   credentialSecretRef: claude-oauth
+  credentialClass: human-seat     # human-seat | service-account (empty defaults to service-account)
   model: claude-opus-4-8
   # optional:
   # modelEndpointRef: my-ollama    # BYO model endpoint (see Credentials)
   # fallbackModel: claude-sonnet-5 # used if the primary model is rate-limited
   # capabilityOverrides: { ... }   # narrow the agent's advertised capabilities
+  # contextBudgetOverride:         # per-agent override of the Project's contextBudget
+  #   workItem: 120000
+  #   projectDocs: 40000
+  #   memoryRecall: 20000
+  #   artifacts: 20000
+  # toolCredentials:               # auxiliary NON-model credentials for local CLI tools
+  #   - purpose: github-token      # closed enum; injects GH_TOKEN + GITHUB_TOKEN
+  #     secretRef: { name: gh-pat }
 ```
 
 When you create an `Agent`, the **Agent reconciler** validates that the credential Secret and runtime
@@ -96,6 +105,34 @@ See [Credentials](/docs/operator-guide/credentials/) for the full lifecycle.
 `spec.model` picks the model; `spec.modelEndpointRef` (optional) points at a BYO endpoint; and
 `spec.fallbackModel` (optional) lets a Run switch models mid-flight if the primary is rate-limited,
 instead of pausing. See [Runs → rate-limit recovery](/docs/concepts/runs/#rate-limit-recovery).
+
+A reusable model selection can also be named as a **`ModelConfig`** CRD (`model`, `fallbackModel`,
+`modelEndpointRef`) and referenced where a model choice is needed.
+
+## Credential class
+
+`spec.credentialClass` declares what the `credentialSecretRef` Secret holds: a **`human-seat`**
+interactive OAuth token bound to a person's subscription seat (with its OAuth refresh/concurrency
+lifecycle), or a **`service-account`** long-lived API key / provider token (rotated by Secret
+update). The class selects the runtime-native env var at injection time (e.g.
+`CLAUDE_CODE_OAUTH_TOKEN` for a human seat vs `ANTHROPIC_API_KEY` for a service account). **Empty
+defaults to `service-account`** — a human OAuth seat is opt-in, never inferred.
+
+## Context budget override
+
+`spec.contextBudgetOverride` optionally overrides the Project-level `contextBudget` for this agent,
+per tier (`workItem`, `projectDocs`, `memoryRecall`, `artifacts`). Resolution order: Project default
+→ Agent override → Run dynamic trim, clamped by the resolved model's context window; a value above
+the window is a fail-closed validation error at reconcile time.
+
+## Tool credentials (non-model)
+
+`spec.toolCredentials[]` declares auxiliary, **non-model** credentials injected by reference into the
+Run's agent container for local CLI tools — e.g. a `github-token` entry lands `GH_TOKEN` +
+`GITHUB_TOKEN` so a local `gh`/`git` can push a branch and open a PR. Each entry names a `purpose`
+(a closed enum — users pick the tool, never the env var name, so a Secret cannot shadow `PATH` or a
+model key) and the `secretRef` backing it. The list is projected name-only onto the Run's spec; see
+[Runs](/docs/concepts/runs/#tool-credentials).
 
 ## Related
 

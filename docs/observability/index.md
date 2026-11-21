@@ -46,8 +46,9 @@ Two plumbing notes:
   the same telemetry pipeline, so events emitted inside sandboxes and events dispatched by the
   operator land in one place — the `ksquad_*` series are also scrapeable on the operator's
   `/metrics` endpoint.
-- **The toggle.** The tool-usage pipeline is wired to an `OTelConfig` toggle and defaults to enabled;
-  turning it off emits no spans and no metric samples at all (opt-out, not just filter-out).
+- **The toggle.** The tool-usage pipeline is gated by `OTelConfig.spec.toolUsage.enabled` and defaults
+  to enabled; turning it off emits no spans and no metric samples at all (opt-out, not just
+  filter-out).
 
 The console's Run view surfaces tool and skill activity alongside the live SSE stream, so an operator
 watching a Run sees which capabilities the agent is actually exercising — the same data the exported
@@ -59,7 +60,8 @@ metrics carry, without a backend round-trip.
 `OTelConfig`. This is a deliberate privacy-safe default: KSquad won't egress your telemetry unless you
 ask it to.
 
-`OTelConfig` supports **per-signal routing** — send each signal to a different backend:
+`OTelConfig` supports **per-signal routing** — each signal is a top-level key with its own exporter,
+send each to a different backend:
 
 ```yaml
 apiVersion: ksquad.io/v1alpha1
@@ -68,36 +70,46 @@ metadata:
   name: default
   namespace: ksquad-system
 spec:
-  exporters:
-    traces:
-      endpoint: https://otlp.dynatrace.example/api/v2/otlp
-      protocol: http                 # grpc | http
-      authSecretRef: dynatrace-token # exporter credential is ALWAYS a Secret ref, never inline
-    metrics:
-      endpoint: http://prometheus.monitoring:4317
-      protocol: grpc
-    logs:
-      endpoint: http://loki.monitoring:4317
-      protocol: grpc
-  resourceAttributes:
-    deployment.environment: production
-    service.namespace: ksquad
-  sampling:
-    ratio: 0.25
+  traces:
+    endpoint: https://otlp.dynatrace.example/api/v2/otlp
+    protocol: http/protobuf        # grpc | http/protobuf | http/json
+    auth:                          # exporter credential is ALWAYS a Secret ref, never inline
+      name: dynatrace-token
+      key: token
+    resourceAttributes:
+      deployment.environment: production
+    sampling:                      # traces only
+      type: probabilistic
+      ratio: 0.25
+  metrics:
+    endpoint: prometheus.monitoring:4317
+    protocol: grpc
+  logs:
+    endpoint: http://loki.monitoring:4317
+    protocol: grpc
+  toolUsage:                       # opt-out toggle for the tool-usage pipeline (absent = enabled)
+    enabled: true
 ```
 
-- **Per-signal fan-out** — traces to one backend, metrics to another, logs to a third.
-- **Secret-ref credentials only** — the exporter token is a Kubernetes Secret ref (`authSecretRef`),
-  never inline, and never logged.
+- **Per-signal fan-out** — `spec.traces`, `spec.metrics`, `spec.logs` each carry `endpoint` and
+  `protocol` (required; `grpc` | `http/protobuf` | `http/json`), plus optional per-signal
+  `resourceAttributes` and, for traces, `sampling` (`always_on` | `always_off` | `probabilistic`
+  with `ratio`). At least one signal must be configured.
+- **Secret-ref credentials only** — the exporter token is a Secret ref (`auth: {name, key}`, with
+  optional `namespace`), never inline, and never logged.
+- **`toolUsage` toggle** — `spec.toolUsage.enabled` gates the tool-usage pipeline platform-wide;
+  absent defaults to enabled (opt-out, not filter-out).
 - **Live reconfiguration** — the OTelConfig reconciler applies changes without a restart.
-- **Edit from the console** — Settings → Observability writes it through the apiserver; no direct kube
-  access needed. See [Settings](/docs/operator-guide/settings/#telemetry-export-otelconfig).
+- **Edit from the console** — Settings → Configuration writes it through the apiserver (`/api/otelconfig`);
+  no direct kube access needed. See [Settings](/docs/operator-guide/settings/#telemetry-export-otelconfig).
 
 ## Consumption metering
 
-KSquad meters model/run consumption along four axes — **`{user/principal, agent, run, project}`** — and
-emits it as OTel metrics labeled `{team, project, run, agent, principal, model}`. This feeds the
-console's per-project consumption dashboard.
+KSquad meters model/run consumption along four axes — **`{user/principal, agent, run, project}`** — as
+OTel metrics (`ksquad_llm_calls_total{model, agent}`, `ksquad_llm_tokens_total{model, agent, direction}`,
+with `ksquad.llm.cost.usd` on the spans), correlated to the run/principal via span attributes
+(`ksquad.run.id`, `ksquad.principal.id`, `ksquad.project.name`, `ksquad.team.name`,
+`ksquad.agent.name`). This feeds the console's per-project consumption dashboard.
 
 The metering is **non-forgeable by construction**:
 
@@ -118,23 +130,31 @@ system of record** — an honest limit, surfaced, not hidden.
 ## Rate-limit & fallback signals
 
 The Run [rate-limit recovery](/docs/concepts/runs/#rate-limit-recovery) hierarchy emits named metrics,
-dimensioned per project / agent / role (plus provider/model):
+dimensioned per project / agent / role:
 
-| Metric | Type | Meaning |
-|--------|------|---------|
-| `ksquad.ratelimit.hits` | counter | rate-limit events, `{project, agent, role, provider, model}` |
-| `ksquad.ratelimit.duration_seconds` | histogram | time Runs spent `Paused(rate_limited)` |
-| `ksquad.fallback.activations` | counter | mid-Run fallback-model switches |
-| `ksquad.fallback.duration_seconds` | histogram | time spent on the fallback model |
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `ksquad_fallback_activations_total` | counter | `{project, agent, role, primary_model, fallback_model}` | mid-Run fallback-model switches |
+| `ksquad_fallback_duration_seconds` | histogram | `{project, agent, role}` | time served from the fallback model |
 
-These ride the same `OTelConfig` export path and feed the dashboard's per-project/agent/role panels;
-their transitions also publish events plugins can alert on.
+The rate-limit pair (`ratelimit.hits` / `ratelimit.duration_seconds`) is **planned** — it lands with
+the rate-limit metric stories (ISI-2296/2297); until then, `Paused(rate_limited)` time is visible in
+traces and the Run's status. The fallback metrics ride the same `OTelConfig` export path and feed the
+dashboard's per-project/agent/role panels.
 
 ## Platform health metrics
 
-The plugin event seam is itself observable: outbox depth, unflushed-event lag, NATS publish failures,
-and JetStream consumer lag are all OTel metrics — so you can see whether events are flowing to your
-plugins.
+The plugin event seam is itself observable — the event relay exports these metrics (also scrapeable
+on the operator's `/metrics` endpoint):
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `ksquad_outbox_depth` | gauge | total rows in `coord.outbox` |
+| `ksquad_outbox_unflushed_lag` | gauge | rows not yet published to NATS (relay backlog) |
+| `ksquad_outbox_publish_failures_total` | counter | NATS publish failures (at-least-once retry leaves the row unflushed) |
+| `ksquad_jetstream_consumer_lag` | gauge | messages pending across JetStream consumers (fan-out lag) |
+
+If your plugin seems to be missing events, check these first.
 
 ## Dashboards
 

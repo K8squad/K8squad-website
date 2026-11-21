@@ -90,6 +90,8 @@ sourced from real signals, never placeholders.
 
 The board is the project's work items — created in the console, synced from source control, or raised
 by agents. This is the human-facing view of the durable [coordination record](/docs/author-guide/work-items/).
+(Issue sync via the scm-webhook ships today; PR/check-run mirroring lands incrementally with Epic 11 —
+until then the board shows issues, and PR state is visible on the project's GitHub page.)
 
 ## Discussion room
 
@@ -145,8 +147,10 @@ level on every device, down to a 360px portrait phone.
 
 ![Settings](./images/12-settings.png)
 
-Global configuration — telemetry export (`OTelConfig`), plugins, and platform settings — lives here.
-See [Settings](/docs/operator-guide/settings/).
+Global configuration — telemetry export (`OTelConfig`, under **Configuration**), plugins, and platform
+settings — lives here. **Status note:** the Plugins page is a placeholder — plugin management UI is
+not shipped yet; plugins run as standalone services subscribing to the event bus (see
+[Plugin SDK](/docs/plugin-sdk/)). See [Settings](/docs/operator-guide/settings/).
 
 ## Design principles worth knowing
 

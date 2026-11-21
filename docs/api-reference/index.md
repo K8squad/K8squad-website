@@ -30,8 +30,13 @@ whether it's required, defaults, and validation. The object catalog:
 | `Role` | Namespaced | Behavior profile (`promptRef`, `defaultSkills[]`, `runtimeClassHint`) | [Roles](/docs/concepts/roles/) |
 | `Skill` | Namespaced | Granted capability (`source{inline\|git}`, `mcpToolRefs[]`, `permissions`, `requires{toolchains[],sidecars[]}`) | [Skills](/docs/concepts/skills/) |
 | `Project` | Namespaced | Repo + workspace (`repo{url,ref,sync}`, `workspacePVC`, `egressPolicyRef`, `goals`, `contextBudget`) | [Projects](/docs/concepts/projects/) |
-| `Run` | Namespaced | Unit of work — **spec:** `teamRef`, `projectRef`, `workItemRef`, `inputs`, `sandboxPolicy`, `agents[]`, `retryPolicy`; **status:** `phase`, `sandboxRef`, `claimedAt`, `conditions`, `artifactRefs` | [Runs](/docs/concepts/runs/) |
-| `OTelConfig` | Namespaced | OTLP export config (per-signal `exporters{traces,metrics,logs}`) | [Observability](/docs/observability/) |
+| `Run` | Namespaced | Unit of work — **spec:** `teamRef`, `projectRef`, `workItemRef`, `inputs`, `sandboxPolicy`, `agents[]`, `retryPolicy`, `toolCredentials[]`; **status:** `phase`, `sandboxRef`, `claimedAt`, `conditions`, `artifactRefs` | [Runs](/docs/concepts/runs/) |
+| `OTelConfig` | Namespaced | OTLP export config (per-signal `traces`/`metrics`/`logs` exporters + `toolUsage` toggle) | [Observability](/docs/observability/) |
+| `EgressPolicy` | Namespaced | Network egress allowlist — `allow[]{to{cidr,except[],namespaceSelector},ports[{protocol,port}]}`, optional `proxy{address,port,protocol,podSelector,namespaceSelector}` (short name `egp`) | [Projects](/docs/concepts/projects/) |
+| `MCPServer` | Namespaced | Declared MCP server — `transport` (`stdio`\|`streamable-http`), `endpoint` / `command`+`args` / `image`, `headers`, `credentialSecretRef`, `toolFilter{allow[],deny[]}`, `egressRef`, `discovery{intervalMinutes,mode}`; **status:** `observedTools`, `lastProbedAt`, conditions (`Ready`, `CredentialsValid`, `EgressAllowed`, `ToolsDiscovered`) (short names `mcp`, `mcps`) | [MCP Servers](/docs/concepts/mcp-servers/) |
+| `ModelConfig` | Namespaced | Named model selection — `model` (required), `fallbackModel`, `modelEndpointRef` (short name `modelcfg`) | [Agents](/docs/concepts/agents/#model-selection-and-fallback) |
+| `Toolchain` | Namespaced | Versioned, digest-pinned tool pack — `versions[]{version,image,provides[]}` (required), `rbac{scope,rules[]}` (short name `tc`) | [Toolchains](/docs/concepts/toolchains/) |
+| `RolePool` | Namespaced | Standing pool of agent pods for a role — `roleRef`, `runtimeRef`, `standing{min,max}`, `lifecycle{checkInterval,idleToHibernate,hibernateToStop,alwaysUp}`; **status:** `standing`, `target`, `pod` (short name `rp`) | [Squads](/docs/concepts/squads/) |
 
 ### Common metadata
 

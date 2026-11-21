@@ -21,13 +21,19 @@ The hierarchy lets you subscribe with NATS wildcards (`*` matches one token, `>`
 
 | Subscription | Matches |
 |--------------|---------|
-| `ksquad.run.*.*.completed` | every Run that completed, in any project/squad |
+| `ksquad.run.*.*.ended` | every Run that reached a terminal state, in any project/squad |
 | `ksquad.run.payments.*.>` | every Run event in project `payments`, any squad |
 | `ksquad.*.payments.>` | everything happening in project `payments` |
-| `ksquad.workitem.*.*.claimed` | every work-item claim, anywhere |
+| `ksquad.work_item.*.*.claimed` | every work-item claim, anywhere |
 | `ksquad.>` | everything (use sparingly) |
 
-Subjects are part of the versioned event catalog — the token positions are stable.
+Subjects are part of the versioned event catalog — the token positions are stable. An empty squad
+component is published as the literal token `_` (e.g. `ksquad.run.payments._.ended`), which the `*`
+wildcard matches.
+
+The **entity token** is one of the catalog entities: `run`, `work_item`, `artifact`, `memory`,
+`scm`, `mesh` (enforced by the outbox's database constraint — a typo'd entity is rejected at
+capture time, never published to a garbage subject).
 
 ## The event taxonomy
 
@@ -35,64 +41,52 @@ Every event maps 1:1 onto a real state change (the same transaction that changed
 event). The categories:
 
 ### Run lifecycle
-Entity `run`. Emitted on each phase transition of a [Run](/docs/concepts/runs/):
+Entity `run`. Emitted on each reconcile-step transition of a [Run](/docs/concepts/runs/) (the Run's
+`status.phase` — Pending/Claiming/Running/Paused/… — rides in the event payload; the live SSE stream
+carries the full phase detail):
 
 | `event_type` | Meaning |
 |--------------|---------|
-| `pending` | Run admitted, awaiting scheduling |
-| `claiming` | Run is acquiring a sandbox and assembling its pod |
-| `running` | Agent is executing |
-| `paused` | Legible pause (credential expiry) |
-| `paused_rate_limited` | Provider throttled this credential |
-| `succeeded` | Terminal success |
-| `failed` | Terminal failure (may retry per policy) |
-| `cancelled` | Operator kill |
+| `scheduled` | Run admitted; sandbox claim requested |
+| `sandbox_bound` | Run bound to a sandbox pod |
+| `started` | Agent is executing in the sandbox |
+| `ended` | Terminal state reached (payload `state`: `completed` \| `failed` \| `canceled`) |
+| `thinking` | Progress-mirror event: agent progress within a Run (live activity feed) |
+| `ticket_comment` | A comment was posted on the Run's work item (live-echo) |
+| `discussion_message` | A discussion-room message was written for the Run |
 
 ### Work-item transitions
-Entity `workitem`. The coordination record's lifecycle:
+Entity `work_item`. The coordination record's lifecycle:
 
 | `event_type` | Meaning |
 |--------------|---------|
-| `created` | A new work item exists |
-| `claimed` | An agent took the item (at-most-one-holder) |
-| `handoff` | Control-plane re-dispatch to another agent |
-| `completed` | The item is done |
+| `assigned` | The item's Run was scheduled to an agent/team |
+| `claimed` | An agent took the item (at-most-one-holder, fenced lease) |
+| `reroute_released` | A throttled holder released the claim for control-plane re-dispatch |
 
 ### Build outputs / artifacts
-Entity `artifact`. A produced build, diff, or blob is registered against its work item and Run:
-
-| `event_type` | Meaning |
-|--------------|---------|
-| `registered` | An artifact (`work_item_id`, `run_id`, `kind`) was produced |
+Entity `artifact` — **catalog-admitted; emitters land incrementally.** A produced build, diff, or
+blob is registered against its work item and Run (`work_item_id`, `run_id`, `kind`).
 
 ### Memory writes
-Entity `memory`. Provenanced writes to the knowledge record (memory and discussion):
+Entity `memory` — **catalog-admitted; emitters land incrementally.** Provenanced writes to the
+knowledge record (memory and discussion).
 
-| `event_type` | Meaning |
-|--------------|---------|
-| `written` | A memory/discussion record was written |
+### Source-control mirror results
+Entity `scm` — **catalog-admitted; emitters land incrementally.** Source-control mirror updates
+(issues, PRs, check runs) as the scm-webhook/reposync pipeline lands them.
 
-### Sync / CI results
-Entity `sync`. Source-control mirror updates:
-
-| `event_type` | Meaning |
-|--------------|---------|
-| `issue` | An issue mirror updated |
-| `pr` | A pull-request mirror updated |
-| `check_run` | A CI check-run result updated |
-| `artifact` | A synced build artifact updated |
+### Agent mesh
+Entity `mesh` — **planned, not yet on the bus.** Standing role-provisioned agent-process lifecycle
+(`mesh.register` / `mesh.deregister` / `mesh.hibernate` / `mesh.wake` / `mesh.stop`) will publish
+here once the mesh gateway emits them; the entity is already admitted by the catalog.
 
 ### Credential-refresh needs
-Entity `credential`. The `Run→Paused`-on-credential-expiry transition surfaces "this agent needs a
-token refresh":
-
-| `event_type` | Meaning |
-|--------------|---------|
-| `refresh_needed` | An agent's credential needs attention |
-
-> **Observe-only, even here.** A credential-manager plugin can *react* to `refresh_needed` — notify,
-> open a ticket — but it **never injects the credential or resumes the Run**. That stays the fenced
-> control-plane path.
+There is **no `credential` entity** in the event catalog. Credential expiry surfaces as a
+`Run → Paused` transition in the control plane (visible via the run events above and the console's
+credential state), and a plugin **never injects the credential or resumes the Run** — that stays the
+fenced control-plane path. If you want to alert a human, subscribe to the run events and react to the
+pause.
 
 ## Event envelope
 
@@ -103,16 +97,16 @@ Every event shares a common envelope (illustrative shape; pin the schema revisio
   "specversion": "1.0",
   "id": "evt_01H...",
   "source": "ksquad/apiserver",
-  "type": "ksquad.run.succeeded",
+  "type": "ksquad.run.ended",
   "schemaversion": "v1alpha1",
-  "subject": "ksquad.run.payments.payments-squad.succeeded",
+  "subject": "ksquad.run.payments.payments-squad.ended",
   "time": "2026-08-13T09:41:02Z",
   "data": {
     "runId": "green-tests-1",
     "project": "payments-api",
     "team": "payments-squad",
     "agent": "dev-1",
-    "phase": "Succeeded",
+    "state": "completed",
     "initiatedBy": "alice",
     "workItemRef": "wi-8123"
   }

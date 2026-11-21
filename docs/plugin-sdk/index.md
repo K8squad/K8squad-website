@@ -7,7 +7,7 @@ sidebar_position: 9
 # Plugin SDK
 
 Plugins let you extend KSquad by **reacting to what happens** in the platform — a Run completes, a work
-item is claimed, an artifact is produced, a credential needs a refresh. A plugin might post to Slack,
+item is claimed, an artifact is produced. A plugin might post to Slack,
 mirror work to an external tracker, drive a custom dashboard, or notify an on-call rotation.
 
 This guide covers the plugin model and its guarantees, then walks you through building one.
@@ -23,7 +23,7 @@ This guide covers the plugin model and its guarantees, then walks you through bu
 ## The plugin model in one picture
 
 ```
-   State change (Run, work item, memory, sync, credential)
+   State change (run, work_item, artifact, memory, scm, mesh events)
         │  committed atomically with…
         ▼
    Postgres outbox  ──relay──▶  NATS JetStream subjects  ──▶  your plugin (subscribes, read-only)
@@ -84,9 +84,13 @@ control plane that's driving real work.
 
 ## Registering a plugin
 
-Plugins are registered and configured **per project/squad** from the console
-[Settings](/docs/operator-guide/settings/#plugins). You provide the plugin's connection details and its
-outbound credentials (as BYO Secret refs). From there, subscribe to the subjects you care about — see
+> **Status:** the console's plugin-management surface (Settings → Plugins) is a **placeholder** —
+> it ships as an honest "coming soon" page. Until it lands, run your plugin as a standalone service
+> that subscribes to the NATS subjects directly (see
+> [Hello-world](/docs/plugin-sdk/hello-world/#2-register-the-plugin--get-nats-access)), and hand it
+> its connection details and outbound credentials (as BYO Secret refs) through your own deployment.
+
+From there, subscribe to the subjects you care about — see
 the [Event reference](/docs/plugin-sdk/event-reference/) — and start with the [Hello-world tutorial](/docs/plugin-sdk/hello-world/).
 
 > **Stability.** The plugin SDK and event catalog ship under `v1alpha1`. Pin an event-schema revision
